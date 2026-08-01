@@ -1,13 +1,11 @@
 # WriteMap - Novel Writing Assistant Application
 
 ## Project Overview
-
-**WriteMap** is a web-based novel writing assistant that helps authors organize and develop their stories through structured character, setting, plot, and writing management. The application supports multiple story projects with local storage persistence, with cloud sync as a future enhancement.
+WriteMap is a web-based novel writing assistant that helps authors organize and develop their stories through structured character, setting, plot, and writing management. The application supports multiple story projects with local storage persistence, with cloud sync as a future enhancement.
 
 ---
 
 ## Core Concept: The Element Model (New)
-
 To ensure scalability and allow for user-defined content types, all major modular entities will adhere to a common **Element** base model. This approach allows the system to treat modules like Characters, Places, Scenes, etc., as specialized instances of a generic `Element`.
 
 **Base Element Structure:**
@@ -25,7 +23,7 @@ The system must support a configuration mechanism (e.g., `elementSchemas.json`) 
 ## Core Requirements (Revised)
 
 ### 1. Story Management
-WriteMap allows the user to create any number of stories at a time.  Stories have a title, subtitle, and cover image.  The user is only able to edit one story at a time and will need to save a story, exit to the main menu, and load another story to edit a different one.
+WriteMap allows the user to create any number of stories at a time. Stories have a title, subtitle, and cover image. The user is only able to edit one story at a time and will need to save a story, exit to the main menu, and load another story to edit a different one.
 
 ### Dashboard (Story View)
 TBD
@@ -72,11 +70,12 @@ TBD
 - Responsive design for different screen sizes
 
 ### Data Persistence
-- Initial implementation: Browser IndexedDB. The storage structure must now accommodate the `Element` model, likely using keyed objects like `{ 'storyId': { 'elementType1': [elements], 'elementType2': [...] } }`.
+- Initial implementation: Browser IndexedDB via [Dexie library](https://github.com/dexie/Dexie.js). The storage structure must now accommodate the `Element` model, likely using keyed objects like `{ 'storyId': { 'elementType1': [elements], 'elementType2': [...] } }`.
 - Future enhancement: Cloud sync support (placeholder in architecture).
 
 ### Architecture Notes
 - Single-page application (SPA) design.
+- **Build Tool:** Vite — For fast development and production optimization.
 - **Modular Component Structure**: Components should consume data based on the `Element` interface, rather than being hardcoded for a specific module type.
 - **Schema Validation Layer**: A dedicated service layer must read from element schemas to validate incoming/outgoing data and guide UI rendering.
 - Clean separation between story data and UI components.
