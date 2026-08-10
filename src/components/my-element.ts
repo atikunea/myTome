@@ -3,6 +3,7 @@ import { customElement, property } from 'lit/decorators.js'
 import litLogo from '../assets/lit.svg'
 import viteLogo from '../assets/vite.svg'
 import heroImg from '../assets/hero.png'
+import { db } from '../models/db';
 
 /**
  * An example element.
@@ -117,6 +118,9 @@ export class MyElement extends LitElement {
 
   private _onClick() {
     this.count++
+    db.ElementTypes.each((types) => {
+      console.log('Element types:', types);
+    })
   }
 
   static styles = css`
