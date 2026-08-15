@@ -1,15 +1,17 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Subscription } from "dexie";
-import type { ElementType, FieldDefinition } from "../models/ElementType";
 import type { Element } from "../models/Element";
+import type { ElementType } from "../models/ElementType";
 import type { Tome, TomeStatus } from "../models/Tome";
-import { imageFrom, imageUrl, store } from "../services/store";
+import { imageFrom, store } from "../services/store";
 import "./app-header";
 import "./confirm-dialog";
 import "./side-nav";
 import "../pages/tome-dashboard-page";
 import "../pages/tome-library-page";
+import "../pages/element-list-page";
+import "../pages/element-types-page";
 type Route = {
   page: "library" | "tome" | "elements" | "types";
   tomeId?: string;
@@ -63,12 +65,6 @@ export class AppShell extends LitElement {
   @state()
   private message = "";
   @state()
-  private query = "";
-  @state()
-  private sort = "recent";
-  @state()
-  private list = false;
-  @state()
   private confirm?: {
     text: string;
     action: () => Promise<void>;
@@ -86,7 +82,6 @@ export class AppShell extends LitElement {
   }
   private onRoute = () => {
     this.current = route();
-    this.query = "";
     this.message = "";
     this.sync();
   };
@@ -148,120 +143,6 @@ export class AppShell extends LitElement {
         error instanceof Error ? error.message : "Could not save tome.";
     }
   }
-  private async submitType(e: SubmitEvent) {
-    e.preventDefault();
-    try {
-      const form = e.currentTarget as HTMLFormElement;
-      const editing =
-        this.current.editId && this.current.editId !== "new"
-          ? this.types.find((x) => x.id === this.current.editId)
-          : undefined;
-      const fields = this.readFields(form, editing?.fieldDefinitions ?? []);
-      const saved = await store.saveType({
-        id: editing?.id,
-        tomeId: this.current.tomeId!,
-        name: input(form, "name"),
-        description: input(form, "description"),
-        fieldDefinitions: fields,
-      });
-      go(`/tomes/${saved.tomeId}/elements/settings`);
-    } catch (error) {
-      this.message =
-        error instanceof Error ? error.message : "Could not save element type.";
-    }
-  }
-  private readFields(form: HTMLFormElement, old: FieldDefinition[]) {
-    return [...form.querySelectorAll<HTMLElement>("[data-field]")].map(
-      (row, index) => {
-        const id = row.dataset.id || old[index]?.id || crypto.randomUUID();
-        const name = (
-          row.querySelector('[name="field-name"]') as HTMLInputElement
-        ).value;
-        const kind = (
-          row.querySelector('[name="field-kind"]') as HTMLSelectElement
-        ).value as "text" | "select";
-        const options = (
-          row.querySelector('[name="field-options"]') as HTMLInputElement
-        ).value
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean);
-        return {
-          id,
-          name,
-          kind,
-          options,
-          required: (
-            row.querySelector('[name="field-required"]') as HTMLInputElement
-          ).checked,
-          sortOrder: index,
-        };
-      },
-    );
-  }
-  private async submitElement(e: SubmitEvent) {
-    e.preventDefault();
-    try {
-      const form = e.currentTarget as HTMLFormElement;
-      const type = this.types.find((x) => x.id === this.current.typeId);
-      if (!type) return;
-      const existing =
-        this.current.editId && this.current.editId !== "new"
-          ? this.elements.find((x) => x.id === this.current.editId)
-          : undefined;
-      const attrs: Record<string, string> = {};
-      type.fieldDefinitions.forEach(
-        (field) => (attrs[field.id] = input(form, `attr-${field.id}`)),
-      );
-      const saved = await store.saveElement({
-        id: existing?.id,
-        tomeId: this.current.tomeId!,
-        elementTypeId: type.id,
-        name: input(form, "name"),
-        description: input(form, "description"),
-        attributes: attrs,
-        image:
-          (await imageFrom(
-            input(form, "imageUrl"),
-            (form.elements.namedItem("imageFile") as HTMLInputElement)
-              .files?.[0],
-          )) ?? existing?.image,
-      });
-      go(`/tomes/${saved.tomeId}/elements/${saved.elementTypeId}`);
-    } catch (error) {
-      this.message =
-        error instanceof Error ? error.message : "Could not save element.";
-    }
-  }
-  private addField() {
-    const editor = this.renderRoot.querySelector("#field-list");
-    editor?.insertAdjacentHTML(
-      "beforeend",
-      `<div class="field" data-field><input name="field-name" placeholder="Field name"><select name="field-kind"><option value="text">Text</option><option value="select">Configurable list</option></select><label><input name="field-required" type="checkbox"> Required</label><input name="field-options" placeholder="Choices, separated by commas"><button type="button" class="plain remove-field">Remove</button></div>`,
-    );
-    this.requestUpdate();
-  }
-  private async fieldAction(e: Event) {
-    const target = e.target as HTMLElement;
-    if (!target.classList.contains("remove-field")) return;
-    const row = target.closest<HTMLElement>("[data-field]");
-    const fieldId = row?.dataset.id;
-    const type = this.types.find((x) => x.id === this.current.editId);
-    if (!row) return;
-    if (!fieldId || !type) {
-      row.remove();
-      return;
-    }
-    const field = type.fieldDefinitions.find((x) => x.id === fieldId);
-    const count = await store.countField(type.id, fieldId);
-    this.ask(
-      `Remove “${field?.name ?? "this field"}”? ${count} stored value${count === 1 ? "" : "s"} will be permanently deleted.`,
-      async () => {
-        await store.deleteField(type, fieldId);
-        row.remove();
-      },
-    );
-  }
   private ask(text: string, action: () => Promise<void>) {
     this.confirm = { text, action };
   }
@@ -274,18 +155,6 @@ export class AppShell extends LitElement {
         error instanceof Error ? error.message : "Could not complete action.";
     }
   }
-  private filteredElements() {
-    const needle = this.query.toLowerCase();
-    return [...this.elements]
-      .filter((x) =>
-        `${x.name} ${x.description}`.toLowerCase().includes(needle),
-      )
-      .sort((a, b) =>
-        this.sort === "name"
-          ? a.name.localeCompare(b.name)
-          : b.updatedAt.localeCompare(a.updatedAt),
-      );
-  }
   render() {
     if (this.current.page === "library") return this.library();
     if (!this.tome) return html`<main class="center">Loading tome…</main>`;
@@ -295,11 +164,31 @@ export class AppShell extends LitElement {
           ${this.header()}${this.current.page === "tome"
             ? this.dashboard()
             : this.current.page === "types"
-              ? this.typeSettings()
-              : this.elementPage()}
+              ? html`<element-types-page
+                  .tomeId=${this.tome.id}
+                  .types=${this.types}
+                  .editId=${this.current.editId}
+                  .fresh=${this.current.fresh}
+                  @request-confirm=${this.onConfirmRequest}
+                ></element-types-page>`
+              : html`<element-list-page
+                  .tomeId=${this.tome.id}
+                  .type=${this.types.find(
+                    (type) => type.id === this.current.typeId,
+                  )}
+                  .elements=${this.elements}
+                  .editId=${this.current.editId}
+                  .fresh=${this.current.fresh}
+                  @request-confirm=${this.onConfirmRequest}
+                ></element-list-page>`}
         </main>
       </div>
       ${this.confirmDialog()}`;
+  }
+  private onConfirmRequest(
+    event: CustomEvent<{ text: string; action: () => Promise<void> }>,
+  ) {
+    this.ask(event.detail.text, event.detail.action);
   }
   private library() {
     const editing = this.current.editId
@@ -378,267 +267,6 @@ ${t?.description ?? ""}</textarea
   private dashboard() {
     return html`<tome-dashboard-page .tome=${this.tome}></tome-dashboard-page>
       ${this.current.editId ? this.tomeForm(this.tome) : nothing}`;
-  }
-  private typeSettings() {
-    const editing =
-      this.current.fresh || this.current.editId
-        ? this.types.find((x) => x.id === this.current.editId)
-        : undefined;
-    return html`<section class="page-head">
-        <div>
-          <p class="eyebrow">ELEMENT CONFIGURATION</p>
-          <h2>Element types</h2>
-          <p class="muted">Define the building blocks for this tome.</p>
-        </div>
-        <button
-          @click=${() => go(`/tomes/${this.tome!.id}/elements/settings/new`)}
-        >
-          + New type
-        </button>
-      </section>
-      ${!editing && !this.current.fresh
-        ? html`<section class="type-list">
-            ${this.types.map(
-              (type) =>
-                html`<article>
-                  <h3>${type.name}</h3>
-                  <p>${type.description || "No description"}</p>
-                  <small
-                    >${type.fieldDefinitions.length} custom
-                    field${type.fieldDefinitions.length === 1 ? "" : "s"}</small
-                  >
-                  <footer>
-                    <button
-                      class="plain"
-                      @click=${() =>
-                        go(
-                          `/tomes/${this.tome!.id}/elements/settings/${type.id}`,
-                        )}
-                    >
-                      Configure</button
-                    ><button
-                      class="danger plain"
-                      @click=${async () =>
-                        this.ask(
-                          `Permanently delete “${type.name}” and all ${await store.countElements(type.id)} of its elements? This cannot be undone.`,
-                          async () => {
-                            await store.deleteType(type);
-                            go(`/tomes/${this.tome!.id}/elements/settings`);
-                          },
-                        )}
-                    >
-                      Delete
-                    </button>
-                  </footer>
-                </article>`,
-            )}
-          </section>`
-        : this.typeForm(editing)}`;
-  }
-  private typeForm(type?: ElementType) {
-    const fields = type?.fieldDefinitions ?? [];
-    return html`<form
-      class="editor"
-      @submit=${this.submitType}
-      @click=${this.fieldAction}
-    >
-      <header>
-        <h2>${type ? `Configure ${type.name}` : "New element type"}</h2>
-        <button
-          class="plain"
-          type="button"
-          @click=${() => go(`/tomes/${this.tome!.id}/elements/settings`)}
-        >
-          Cancel
-        </button>
-      </header>
-      ${this.error()}<label
-        >Name<input required name="name" .value=${type?.name ?? ""} /></label
-      ><label
-        >Description<textarea name="description">
-${type?.description ?? ""}</textarea
-        >
-      </label>
-      <div class="field-title">
-        <h3>Custom fields</h3>
-        <button type="button" class="plain" @click=${this.addField}>
-          + Add field
-        </button>
-      </div>
-      <div id="field-list">
-        ${fields.map(
-          (f) =>
-            html`<div class="field" data-field data-id=${f.id}>
-              <input
-                name="field-name"
-                placeholder="Field name"
-                .value=${f.name}
-              /><select name="field-kind" .value=${f.kind}>
-                <option value="text">Text</option>
-                <option value="select">Configurable list</option></select
-              ><label
-                ><input
-                  name="field-required"
-                  type="checkbox"
-                  .checked=${f.required}
-                />
-                Required</label
-              ><input
-                name="field-options"
-                placeholder="Choices, separated by commas"
-                .value=${(f.options ?? []).join(", ")}
-              /><button type="button" class="plain remove-field">Remove</button>
-            </div>`,
-        )}
-      </div>
-      <p class="hint">
-        For configurable lists, enter choices separated by commas. Removing a
-        field deletes its stored values after confirmation.
-      </p>
-      <footer><button>Save type</button></footer>
-    </form>`;
-  }
-  private elementPage() {
-    const type = this.types.find((x) => x.id === this.current.typeId);
-    if (!type)
-      return html`<section class="empty">
-        <h2>Element type not found</h2>
-        <a href=${`#/tomes/${this.tome!.id}/elements/settings`}>Manage types</a>
-      </section>`;
-    const editing =
-      this.current.fresh || this.current.editId
-        ? this.elements.find((x) => x.id === this.current.editId)
-        : undefined;
-    if (this.current.fresh || editing) return this.elementForm(type, editing);
-    const items = this.filteredElements();
-    return html`<section class="page-head">
-        <div>
-          <p class="eyebrow">${type.name.toUpperCase()}S</p>
-          <h2>${type.name}s</h2>
-        </div>
-        <button
-          @click=${() => go(`/tomes/${this.tome!.id}/elements/${type.id}/new`)}
-        >
-          + New ${type.name}
-        </button>
-      </section>
-      <section class="toolbar">
-        <input
-          aria-label="Search elements"
-          placeholder="Search ${type.name.toLowerCase()}s…"
-          @input=${(e: InputEvent) =>
-            (this.query = (e.target as HTMLInputElement).value)}
-        /><select
-          @change=${(e: Event) =>
-            (this.sort = (e.target as HTMLSelectElement).value)}
-        >
-          <option value="recent">Recently updated</option>
-          <option value="name">Name</option></select
-        ><button class="plain" @click=${() => (this.list = !this.list)}>
-          ${this.list ? "Grid view" : "List view"}
-        </button>
-      </section>
-      <section class=${this.list ? "element-list" : "cards"}>
-        ${items.map(
-          (item) =>
-            html`<article class="card element-card">
-              ${this.image(item.image, item.name)}
-              <div class="card-body">
-                <h3>${item.name}</h3>
-                <p>${item.description || "No description yet."}</p>
-                ${type.fieldDefinitions
-                  .filter((f) => item.attributes[f.id])
-                  .slice(0, 2)
-                  .map(
-                    (f) =>
-                      html`<small>${f.name}: ${item.attributes[f.id]}</small>`,
-                  )}
-                <footer>
-                  <button
-                    class="plain"
-                    @click=${() =>
-                      go(
-                        `/tomes/${this.tome!.id}/elements/${type.id}/${item.id}/edit`,
-                      )}
-                  >
-                    Edit</button
-                  ><button
-                    class="danger plain"
-                    @click=${() =>
-                      this.ask(
-                        `Permanently delete “${item.name}”? This cannot be undone.`,
-                        async () => {
-                          await store.deleteElement(item.id);
-                        },
-                      )}
-                  >
-                    Delete
-                  </button>
-                </footer>
-              </div>
-            </article>`,
-        )}
-      </section>
-      ${!items.length
-        ? html`<div class="empty">
-            <h2>No ${type.name.toLowerCase()}s yet</h2>
-            <p>Create one to begin filling out this world.</p>
-          </div>`
-        : nothing}`;
-  }
-  private elementForm(type: ElementType, item?: Element) {
-    return html`<form class="editor" @submit=${this.submitElement}>
-      <header>
-        <h2>${item ? `Edit ${item.name}` : `New ${type.name}`}</h2>
-        <button
-          class="plain"
-          type="button"
-          @click=${() => go(`/tomes/${this.tome!.id}/elements/${type.id}`)}
-        >
-          Cancel
-        </button>
-      </header>
-      ${this.error()}<label
-        >Name<input required name="name" .value=${item?.name ?? ""} /></label
-      ><label
-        >Description<textarea name="description">
-${item?.description ?? ""}</textarea
-        ></label
-      >${type.fieldDefinitions.map(
-        (field) =>
-          html`<label
-            >${field.name}${field.required ? " *" : ""}${field.kind === "select"
-              ? html`<select name=${`attr-${field.id}`}>
-                  <option value="">Select…</option>
-                  ${(field.options ?? []).map(
-                    (o) =>
-                      html`<option
-                        value=${o}
-                        ?selected=${item?.attributes[field.id] === o}
-                      >
-                        ${o}
-                      </option>`,
-                  )}
-                </select>`
-              : html`<input
-                  name=${`attr-${field.id}`}
-                  .value=${item?.attributes[field.id] ?? ""}
-                />`}</label
-          >`,
-      )}<label>Image URL<input name="imageUrl" placeholder="https://…" /></label
-      ><label
-        >Or upload an image<input name="imageFile" type="file" accept="image/*"
-      /></label>
-      <footer><button>Save ${type.name}</button></footer>
-    </form>`;
-  }
-  private image(source: Tome["coverImage"] | Element["image"], name: string) {
-    const url = imageUrl(source);
-    return url
-      ? html`<img class="cover" src=${url} alt="${name} cover" />`
-      : html`<div class="cover fallback" aria-hidden="true">
-          ${name.slice(0, 1).toUpperCase()}
-        </div>`;
   }
   private error() {
     return this.message
