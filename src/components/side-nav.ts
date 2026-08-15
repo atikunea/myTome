@@ -36,7 +36,7 @@ export class SideNav extends LitElement {
         href=${`#/tomes/${this.tome.id}/elements/settings`}
         class=${this.page === "types" ? "active" : ""}
       >
-        ⚙ Manage types
+        ⚙ Manage Elements
       </a>
     </aside>`;
   }

@@ -175,21 +175,24 @@ ${type?.description ?? ""}</textarea
                 name="field-name"
                 placeholder="Field name"
                 .value=${field.name}
-              /><select name="field-kind" .value=${field.kind}>
+              />
+              <select name="field-kind" .value=${field.kind}>
                 <option value="text">Text</option>
-                <option value="select">Configurable list</option></select
-              ><label
-                ><input
-                  name="field-required"
-                  type="checkbox"
-                  .checked=${field.required}
-                />
-                Required</label
-              ><input
+                <option value="select">List</option>
+              </select>
+              ${field.kind === "select" ?
+                html`<input
                 name="field-options"
                 placeholder="Choices, separated by commas"
-                .value=${(field.options ?? []).join(", ")}
-              /><button type="button" class="remove">Remove</button>
+                .value=${(field.options ?? []).join(", ")} />`
+              : nothing }
+              <label>Required</label>
+              <input
+                name="field-required"
+                type="checkbox"
+                .checked=${field.required}
+              />
+              <button type="button" class="remove">Remove</button>
             </div>`,
         )}
       </div>
