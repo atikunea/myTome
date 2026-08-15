@@ -1,7 +1,8 @@
-import { LitElement, css, html, nothing } from "lit";
+import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { ElementType } from "../models/ElementType";
+import type { ElementType, FieldDefinition } from "../models/ElementType";
 import { store } from "../services/store";
+import "../components/field-definitions-editor";
 
 @customElement("element-types-page")
 export class ElementTypesPage extends LitElement {
@@ -10,11 +11,17 @@ export class ElementTypesPage extends LitElement {
   @property() editId?: string;
   @property({ type: Boolean }) fresh = false;
   @state() private error = "";
+  @state() private fields: FieldDefinition[] = [];
 
   private get editing() {
     return this.editId
       ? this.types.find((type) => type.id === this.editId)
       : undefined;
+  }
+  protected willUpdate(changed: PropertyValues) {
+    if (changed.has("editId") || changed.has("fresh")) {
+      this.fields = this.editing?.fieldDefinitions ?? [];
+    }
   }
   private navigate(path = "") {
     location.hash = `/tomes/${this.tomeId}/elements/settings${path}`;
@@ -33,31 +40,12 @@ export class ElementTypesPage extends LitElement {
     try {
       const form = event.currentTarget as HTMLFormElement;
       const existing = this.editing;
-      const fields = [
-        ...form.querySelectorAll<HTMLElement>("[data-field]"),
-      ].map((row, sortOrder) => ({
-        id: row.dataset.id || crypto.randomUUID(),
-        name: (row.querySelector('[name="field-name"]') as HTMLInputElement)
-          .value,
-        kind: (row.querySelector('[name="field-kind"]') as HTMLSelectElement)
-          .value as "text" | "select",
-        options: (
-          row.querySelector('[name="field-options"]') as HTMLInputElement
-        ).value
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
-        required: (
-          row.querySelector('[name="field-required"]') as HTMLInputElement
-        ).checked,
-        sortOrder,
-      }));
       await store.saveType({
         id: existing?.id,
         tomeId: this.tomeId,
         name: String(new FormData(form).get("name") ?? ""),
         description: String(new FormData(form).get("description") ?? ""),
-        fieldDefinitions: fields,
+        fieldDefinitions: this.fields,
       });
       this.navigate();
     } catch (cause) {
@@ -65,33 +53,25 @@ export class ElementTypesPage extends LitElement {
         cause instanceof Error ? cause.message : "Could not save element type.";
     }
   }
-  private addField() {
-    const list = this.renderRoot.querySelector("#field-list");
-    list?.insertAdjacentHTML(
-      "beforeend",
-      `<div class="field" data-field><input name="field-name" placeholder="Field name"><select name="field-kind"><option value="text">Text</option><option value="select">Configurable list</option></select><label><input name="field-required" type="checkbox"> Required</label><input name="field-options" placeholder="Choices, separated by commas"><button type="button" class="remove">Remove</button></div>`,
-    );
+  private onFieldsChange(event: CustomEvent<FieldDefinition[]>) {
+    this.fields = event.detail;
   }
-  private async fieldAction(event: Event) {
-    const target = event.target as HTMLElement;
-    if (!target.classList.contains("remove")) return;
-    const row = target.closest<HTMLElement>("[data-field]");
-    const id = row?.dataset.id;
+  private async onFieldRemove(event: CustomEvent<string>) {
+    const id = event.detail;
     const type = this.editing;
-    if (!row) return;
-    if (!id || !type) {
-      row.remove();
-      return;
-    }
-    const field = type.fieldDefinitions.find(
+    const persisted = type?.fieldDefinitions.find(
       (definition) => definition.id === id,
     );
+    if (!type || !persisted) {
+      this.fields = this.fields.filter((field) => field.id !== id);
+      return;
+    }
     const count = await store.countField(type.id, id);
     this.requestConfirmation(
-      `Remove “${field?.name ?? "this field"}”? ${count} stored value${count === 1 ? "" : "s"} will be permanently deleted.`,
+      `Remove “${persisted.name}”? ${count} stored value${count === 1 ? "" : "s"} will be permanently deleted.`,
       async () => {
         await store.deleteField(type, id);
-        row.remove();
+        this.fields = this.fields.filter((field) => field.id !== id);
       },
     );
   }
@@ -146,8 +126,7 @@ export class ElementTypesPage extends LitElement {
     </section>`;
   }
   private editor(type?: ElementType) {
-    const fields = type?.fieldDefinitions ?? [];
-    return html`<form @submit=${this.submit} @click=${this.fieldAction}>
+    return html`<form @submit=${this.submit}>
       <header>
         <h2>${type ? `Configure ${type.name}` : "New element type"}</h2>
         <button class="plain" type="button" @click=${() => this.navigate()}>
@@ -161,44 +140,11 @@ export class ElementTypesPage extends LitElement {
 ${type?.description ?? ""}</textarea
         >
       </label>
-      <div class="field-title">
-        <h3>Custom fields</h3>
-        <button type="button" class="plain" @click=${this.addField}>
-          + Add field
-        </button>
-      </div>
-      <div id="field-list">
-        ${fields.map(
-          (field) =>
-            html`<div class="field" data-field data-id=${field.id}>
-              <input
-                name="field-name"
-                placeholder="Field name"
-                .value=${field.name}
-              />
-              <select name="field-kind" .value=${field.kind}>
-                <option value="text">Text</option>
-                <option value="select">List</option>
-              </select>
-              ${field.kind === "select" ?
-                html`<input
-                name="field-options"
-                placeholder="Choices, separated by commas"
-                .value=${(field.options ?? []).join(", ")} />`
-              : nothing }
-              <label>Required</label>
-              <input
-                name="field-required"
-                type="checkbox"
-                .checked=${field.required}
-              />
-              <button type="button" class="remove">Remove</button>
-            </div>`,
-        )}
-      </div>
-      <p class="muted">
-        For configurable lists, enter choices separated by commas.
-      </p>
+      <field-definitions-editor
+        .fields=${this.fields}
+        @fields-change=${this.onFieldsChange}
+        @field-remove=${this.onFieldRemove}
+      ></field-definitions-editor>
       <footer><button>Save type</button></footer>
     </form>`;
   }
@@ -206,8 +152,7 @@ ${type?.description ?? ""}</textarea
     :host {
       display: block;
     }
-    header,
-    .field-title {
+    header {
       display: flex;
       justify-content: space-between;
       gap: 16px;
@@ -288,22 +233,6 @@ ${type?.description ?? ""}</textarea
     textarea {
       min-height: 90px;
     }
-    .field {
-      display: grid;
-      grid-template-columns: 1.3fr 1fr auto 1.5fr auto;
-      gap: 8px;
-      align-items: center;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--line);
-    }
-    .field label {
-      margin: 0;
-      white-space: nowrap;
-    }
-    .field input,
-    .field select {
-      margin: 0;
-    }
     .error {
       padding: 10px;
       border-radius: 8px;
@@ -314,12 +243,6 @@ ${type?.description ?? ""}</textarea
       header {
         align-items: flex-start;
         flex-direction: column;
-      }
-      .field {
-        grid-template-columns: 1fr 1fr;
-      }
-      .field [name="field-options"] {
-        grid-column: 1/-1;
       }
     }
   `;
