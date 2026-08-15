@@ -5,6 +5,11 @@ import type { ElementType, FieldDefinition } from "../models/ElementType";
 import type { Element } from "../models/Element";
 import type { Tome, TomeStatus } from "../models/Tome";
 import { imageFrom, imageUrl, store } from "../services/store";
+import "./app-header";
+import "./confirm-dialog";
+import "./side-nav";
+import "../pages/tome-dashboard-page";
+import "../pages/tome-library-page";
 type Route = {
   page: "library" | "tome" | "elements" | "types";
   tomeId?: string;
@@ -59,8 +64,6 @@ export class AppShell extends LitElement {
   private message = "";
   @state()
   private query = "";
-  @state()
-  private status = "All";
   @state()
   private sort = "recent";
   @state()
@@ -271,14 +274,6 @@ export class AppShell extends LitElement {
         error instanceof Error ? error.message : "Could not complete action.";
     }
   }
-  private filteredTomes() {
-    const needle = this.query.toLowerCase();
-    return this.tomes.filter(
-      (x) =>
-        (this.status === "All" || x.status === this.status) &&
-        `${x.title} ${x.subtitle ?? ""}`.toLowerCase().includes(needle),
-    );
-  }
   private filteredElements() {
     const needle = this.query.toLowerCase();
     return [...this.elements]
@@ -310,79 +305,23 @@ export class AppShell extends LitElement {
     const editing = this.current.editId
       ? this.tomes.find((x) => x.id === this.current.editId)
       : undefined;
-    return html`<main class="library">
-      <header>
-        <div>
-          <p class="eyebrow">MY TOME</p>
-          <h1>Your story library</h1>
-          <p class="muted">A quiet place to keep every world together.</p>
-        </div>
-        <button @click=${() => go("/tomes/new")}>+ New tome</button>
-      </header>
-      <section class="toolbar">
-        <input
-          aria-label="Search tomes"
-          placeholder="Search by title…"
-          .value=${this.query}
-          @input=${(e: InputEvent) =>
-            (this.query = (e.target as HTMLInputElement).value)}
-        /><select
-          aria-label="Filter status"
-          @change=${(e: Event) =>
-            (this.status = (e.target as HTMLSelectElement).value)}
-        >
-          <option>All</option>
-          <option>Draft</option>
-          <option>Completed</option>
-          <option>Archived</option>
-        </select>
-      </section>
-      <section class="cards">
-        ${this.filteredTomes().map(
-          (t) =>
-            html`<article class="card">
-              ${this.image(t.coverImage, t.title)}
-              <div class="card-body">
-                <span class="badge ${t.status.toLowerCase()}">${t.status}</span>
-                <h2>${t.title}</h2>
-                <p>${t.subtitle || t.description || "No description yet."}</p>
-                <footer>
-                  <button
-                    class="plain"
-                    @click=${() => go(`/tomes/${t.id}/dashboard`)}
-                  >
-                    Open</button
-                  ><button
-                    class="plain"
-                    @click=${() => go(`/tomes/${t.id}/edit`)}
-                  >
-                    Edit</button
-                  ><button
-                    class="danger plain"
-                    @click=${() =>
-                      this.ask(
-                        `Permanently delete “${t.title}” and everything in it? This cannot be undone.`,
-                        async () => {
-                          await store.deleteTome(t.id);
-                        },
-                      )}
-                  >
-                    Delete
-                  </button>
-                </footer>
-              </div>
-            </article>`,
-        )}${!this.filteredTomes().length
-          ? html`<div class="empty">
-              <h2>No tomes found</h2>
-              <p>Create a tome to start shaping a new story.</p>
-            </div>`
-          : nothing}
-      </section>
-      ${this.current.fresh || editing
-        ? this.tomeForm(editing)
-        : nothing}${this.confirmDialog()}
-    </main>`;
+    return html`<tome-library-page
+        .tomes=${this.tomes}
+        @create-tome=${() => go("/tomes/new")}
+        @open-tome=${(event: CustomEvent<Tome>) =>
+          go(`/tomes/${event.detail.id}/dashboard`)}
+        @edit-tome=${(event: CustomEvent<Tome>) =>
+          go(`/tomes/${event.detail.id}/edit`)}
+        @delete-tome=${(event: CustomEvent<Tome>) =>
+          this.ask(
+            `Permanently delete “${event.detail.title}” and everything in it? This cannot be undone.`,
+            async () => {
+              await store.deleteTome(event.detail.id);
+            },
+          )}
+      ></tome-library-page>
+      ${this.current.fresh || editing ? this.tomeForm(editing) : nothing}
+      ${this.confirmDialog()}`;
   }
   private tomeForm(t?: Tome) {
     return html`<div class="modal">
@@ -426,53 +365,18 @@ ${t?.description ?? ""}</textarea
     </div>`;
   }
   private nav() {
-    return html`<aside>
-      <a class="brand" href="#/tomes">myTome</a>
-      <p class="nav-label">${this.tome!.title}</p>
-      <a
-        href=${`#/tomes/${this.tome!.id}/dashboard`}
-        class=${this.current.page === "tome" ? "active" : ""}
-        >Overview</a
-      >
-      <p class="nav-label">ELEMENTS</p>
-      ${this.types.map(
-        (type) =>
-          html`<a
-            href=${`#/tomes/${this.tome!.id}/elements/${type.id}`}
-            class=${this.current.typeId === type.id ? "active" : ""}
-            >${type.name}</a
-          >`,
-      )}<a
-        href=${`#/tomes/${this.tome!.id}/elements/settings`}
-        class=${this.current.page === "types" ? "active" : ""}
-        >⚙ Manage types</a
-      >
-    </aside>`;
+    return html`<side-nav
+      .tome=${this.tome}
+      .types=${this.types}
+      .page=${this.current.page}
+      .typeId=${this.current.typeId}
+    ></side-nav>`;
   }
   private header() {
-    return html`<header class="tome-head">
-      <div>
-        <a class="back" href="#/tomes">← Library</a>
-        <h1>${this.tome!.title}</h1>
-      </div>
-      <button class="plain" @click=${() => go(`/tomes/${this.tome!.id}/edit`)}>
-        Edit tome
-      </button>
-    </header>`;
+    return html`<app-header .tome=${this.tome}></app-header>`;
   }
   private dashboard() {
-    return html`<section class="summary">
-        <p class="eyebrow">TOME OVERVIEW</p>
-        <h2>${this.tome!.subtitle || "A home for your story"}</h2>
-        <p>
-          ${this.tome!.description ||
-          "Add a description to give this tome its north star."}
-        </p>
-        <div class="callout">
-          Use the Elements navigation to define the people, places, ideas, and
-          events in this world.
-        </div>
-      </section>
+    return html`<tome-dashboard-page .tome=${this.tome}></tome-dashboard-page>
       ${this.current.editId ? this.tomeForm(this.tome) : nothing}`;
   }
   private typeSettings() {
@@ -743,19 +647,11 @@ ${item?.description ?? ""}</textarea
   }
   private confirmDialog() {
     return this.confirm
-      ? html`<div class="modal">
-          <section class="dialog confirm" role="alertdialog" aria-modal="true">
-            <h2>Are you sure?</h2>
-            <p>${this.confirm.text}</p>
-            <footer>
-              <button class="plain" @click=${() => (this.confirm = undefined)}>
-                Cancel</button
-              ><button class="danger" @click=${this.accept}>
-                Delete permanently
-              </button>
-            </footer>
-          </section>
-        </div>`
+      ? html`<confirm-dialog
+          .message=${this.confirm.text}
+          @cancel=${() => (this.confirm = undefined)}
+          @confirm=${this.accept}
+        ></confirm-dialog>`
       : nothing;
   }
   static styles = css`
