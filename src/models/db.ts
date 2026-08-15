@@ -1,18 +1,21 @@
 // src/db.ts
 import { Dexie, type EntityTable } from 'dexie';
+import type { Tome } from './Tome';
 import type { Element } from './Element';
 import { type ElementType, initialElementTypes } from './ElementType';
 
-export class WriteMapDB extends Dexie {
+export class myTomeDB extends Dexie {
+  Tomes!: EntityTable<Tome, 'id'>;
   Elements!: EntityTable<Element, 'id'>;
   ElementTypes!: EntityTable<ElementType, 'id'>;
 
   constructor() {
-    super('WriteMapDB');
+    super('myTomeDB');
 
     this.version(1).stores({
-      Elements: '++id, name, description, type',
-      ElementTypes: '++id, name, description'
+      Tomes: '++id, name',
+      Elements: '++id, tomeId, name, elementTypeId',
+      ElementTypes: '++id, tomeId, name'
     });
   }
 }
@@ -24,14 +27,19 @@ export function resetDatabase() {
   });
 }
 
-export const db = new WriteMapDB();
+export const db = new myTomeDB();
 
 async function populateElementTypes() {
-  // Check if the table already has elements to avoid duplicates
-  const count = await db.ElementTypes.count();
-  if (count === 0) {
-    await db.ElementTypes.bulkAdd(initialElementTypes);
-  }
+  await db.Tomes.add({ name: 'Default Tome', coverImageUrl: '', description: 'This is the default tome.' });
+  await db.Tomes.add({ name: 'Default Tome 2', coverImageUrl: '', description: 'This is the default tome 2.' });
+  await db.table('Tomes').toCollection().each(
+    
+    async (tome: Tome) => {
+      console.log('Populating ElementTypes for tome:', tome.name);
+      const types = initialElementTypes(tome.id);
+      console.log('Initial ElementTypes:', types);
+      db.ElementTypes.bulkAdd(types);
+  });
 }
 
 db.on("populate", populateElementTypes);

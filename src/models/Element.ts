@@ -1,8 +1,7 @@
-import type { ElementType } from "./ElementType";
-
 export interface Element {
   id: number;
+  tomeId: number;
   name: string;
   description: string;
-  type: ElementType;
+  elementTypeId: number;
 }
