@@ -1,24 +1,38 @@
 :root {
-  color-scheme: light dark;
-  background-color: #ffffff;
+    --paper: #fdfbf8;
+    --ink: #29211e;
+    --muted: #766b65;
+    --accent: #9d5537;
+    --line: #e5ddd6;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    background-color: #16171d;
-  }
+* {
+    box-sizing: border-box
 }
 
 body {
-  margin: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-width: 320px;
-  min-height: 100svh;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+    margin: 0;
+    min-width: 320px;
+    min-height: 100svh
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 3px solid #d69b6e;
+    outline-offset: 2px
 }
