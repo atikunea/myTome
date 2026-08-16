@@ -15,6 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
 import UploadIcon from "@mui/icons-material/UploadFile";
@@ -28,10 +29,12 @@ import { useConfirm } from "../context/ConfirmContext";
 import { useObservable } from "../hooks/useObservable";
 import { CoverThumbnail } from "../components/CoverThumbnail";
 import { EmptyState } from "../components/EmptyState";
+import { ElementTypeIcon } from "../components/ElementTypeIcon";
 
 interface RelationshipRow {
   key: string;
   id?: string;
+  direction: "from" | "to";
   otherElementId: string;
   otherElementTypeId: string;
   label: string;
@@ -73,14 +76,17 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
       setRelationshipRows([]);
     } else if (elementId && relationshipsRaw) {
       setRelationshipRows(
-        relationshipsRaw.map((r) => ({
-          key: r.id,
-          id: r.id,
-          otherElementId: r.fromElementId === elementId ? r.toElementId : r.fromElementId,
-          otherElementTypeId:
-            r.fromElementId === elementId ? r.toElementTypeId : r.fromElementTypeId,
-          label: r.label,
-        })),
+        relationshipsRaw.map((r) => {
+          const direction: "from" | "to" = r.fromElementId === elementId ? "from" : "to";
+          return {
+            key: r.id,
+            id: r.id,
+            direction,
+            otherElementId: direction === "from" ? r.toElementId : r.fromElementId,
+            otherElementTypeId: direction === "from" ? r.toElementTypeId : r.fromElementTypeId,
+            label: r.label,
+          };
+        }),
       );
     }
   }, [elementId, creating, relationshipsRaw]);
@@ -97,12 +103,16 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
   const editing = elementId ? elements.find((item) => item.id === elementId) : undefined;
   const targetOptions = tomeElements
     .filter((item) => item.id !== elementId)
-    .map((item) => ({
-      id: item.id,
-      name: item.name,
-      elementTypeId: item.elementTypeId,
-      typeName: types.find((t) => t.id === item.elementTypeId)?.name ?? "",
-    }));
+    .map((item) => {
+      const itemType = types.find((t) => t.id === item.elementTypeId);
+      return {
+        id: item.id,
+        name: item.name,
+        elementTypeId: item.elementTypeId,
+        typeName: itemType?.name ?? "",
+        typeIcon: itemType?.icon,
+      };
+    });
 
   const items = [...elements]
     .filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()))
@@ -158,9 +168,12 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
     return (
       <Box component="form" onSubmit={handleSubmit} sx={{ maxWidth: 750 }}>
         <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-          <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
-            {editing ? `Edit ${editing.name}` : `New ${type.name}`}
-          </Typography>
+          <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+            <ElementTypeIcon icon={type.icon} color="primary" />
+            <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
+              {editing ? `Edit ${editing.name}` : `New ${type.name}`}
+            </Typography>
+          </Stack>
           <IconButton aria-label="Cancel" size="small" onClick={() => goTo()}>
             <CloseIcon fontSize="small" />
           </IconButton>
@@ -215,7 +228,9 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
                 key={row.key}
                 row={row}
                 tomeId={tome.id}
-                fromTypeId={type.id}
+                selfTypeId={type.id}
+                selfLabel={`This ${type.name.toLowerCase()}`}
+                selfIcon={type.icon}
                 targetOptions={targetOptions}
                 onChange={(next) =>
                   setRelationshipRows((rows) =>
@@ -233,7 +248,13 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
               onClick={() =>
                 setRelationshipRows((rows) => [
                   ...rows,
-                  { key: crypto.randomUUID(), otherElementId: "", otherElementTypeId: "", label: "" },
+                  {
+                    key: crypto.randomUUID(),
+                    direction: "from",
+                    otherElementId: "",
+                    otherElementTypeId: "",
+                    label: "",
+                  },
                 ])
               }
               sx={{ alignSelf: "flex-start" }}
@@ -263,9 +284,12 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
           <Typography variant="overline" color="primary" sx={{ fontWeight: 800, letterSpacing: "0.12em" }}>
             {type.name.toUpperCase()}S
           </Typography>
-          <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
-            {type.name}s
-          </Typography>
+          <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+            <ElementTypeIcon icon={type.icon} color="primary" sx={{ fontSize: "1.7rem" }} />
+            <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
+              {type.name}s
+            </Typography>
+          </Stack>
         </Box>
         <Button startIcon={<AddIcon />} onClick={() => goTo("/new")}>
           New {type.name}
@@ -333,25 +357,32 @@ interface TargetOption {
   name: string;
   elementTypeId: string;
   typeName: string;
+  typeIcon?: string;
 }
 
 function RelationshipRowEditor({
   row,
   tomeId,
-  fromTypeId,
+  selfTypeId,
+  selfLabel,
+  selfIcon,
   targetOptions,
   onChange,
   onRemove,
 }: {
   row: RelationshipRow;
   tomeId: string;
-  fromTypeId: string;
+  selfTypeId: string;
+  selfLabel: string;
+  selfIcon?: string;
   targetOptions: TargetOption[];
   onChange: (row: RelationshipRow) => void;
   onRemove: () => void;
 }) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const target = targetOptions.find((option) => option.id === row.otherElementId) ?? null;
+  const fromTypeId = row.direction === "from" ? selfTypeId : row.otherElementTypeId;
+  const toTypeId = row.direction === "from" ? row.otherElementTypeId : selfTypeId;
 
   useEffect(() => {
     if (!row.otherElementTypeId) {
@@ -359,42 +390,80 @@ function RelationshipRowEditor({
       return;
     }
     let active = true;
-    store
-      .suggestRelationshipLabels(tomeId, fromTypeId, row.otherElementTypeId)
-      .then((labels) => {
-        if (active) setSuggestions(labels);
-      });
+    store.suggestRelationshipLabels(tomeId, fromTypeId, toTypeId).then((labels) => {
+      if (active) setSuggestions(labels);
+    });
     return () => {
       active = false;
     };
-  }, [tomeId, fromTypeId, row.otherElementTypeId]);
+  }, [tomeId, fromTypeId, toTypeId, row.otherElementTypeId]);
+
+  const targetPicker = (
+    <Autocomplete
+      options={targetOptions}
+      value={target}
+      getOptionLabel={(option) => `${option.name} (${option.typeName})`}
+      isOptionEqualToValue={(option, value) => option.id === value.id}
+      onChange={(_, value) =>
+        onChange({
+          ...row,
+          otherElementId: value?.id ?? "",
+          otherElementTypeId: value?.elementTypeId ?? "",
+        })
+      }
+      renderOption={(props, option) => (
+        <Box component="li" {...props} key={option.id}>
+          <ElementTypeIcon icon={option.typeIcon} fontSize="small" sx={{ mr: 1, color: "text.secondary" }} />
+          {option.name} ({option.typeName})
+        </Box>
+      )}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label="Related to"
+          size="small"
+          slotProps={{
+            ...params.slotProps,
+            input: {
+              ...params.slotProps.input,
+              startAdornment: target ? (
+                <ElementTypeIcon icon={target.typeIcon} fontSize="small" sx={{ ml: 0.5, color: "text.secondary" }} />
+              ) : null,
+            },
+          }}
+        />
+      )}
+      sx={{ flex: 1, minWidth: 200 }}
+    />
+  );
+  const selfChip = (
+    <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", minWidth: 130, flexShrink: 0 }}>
+      <ElementTypeIcon icon={selfIcon} fontSize="small" color="primary" />
+      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+        {selfLabel}
+      </Typography>
+    </Stack>
+  );
+  const arrow = <ArrowForwardIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />;
+  const labelField = (
+    <Autocomplete
+      freeSolo
+      options={suggestions}
+      inputValue={row.label}
+      onInputChange={(_, value) => onChange({ ...row, label: value })}
+      renderInput={(params) => <TextField {...params} label="Relationship" size="small" />}
+      sx={{ flex: 1, minWidth: 200 }}
+    />
+  );
 
   return (
-    <Stack direction="row" spacing={1.25} sx={{ alignItems: "flex-start", flexWrap: "wrap" }}>
-      <Autocomplete
-        options={targetOptions}
-        value={target}
-        getOptionLabel={(option) => `${option.name} (${option.typeName})`}
-        isOptionEqualToValue={(option, value) => option.id === value.id}
-        onChange={(_, value) =>
-          onChange({
-            ...row,
-            otherElementId: value?.id ?? "",
-            otherElementTypeId: value?.elementTypeId ?? "",
-          })
-        }
-        renderInput={(params) => <TextField {...params} label="Related to" size="small" />}
-        sx={{ flex: 1, minWidth: 200 }}
-      />
-      <Autocomplete
-        freeSolo
-        options={suggestions}
-        inputValue={row.label}
-        onInputChange={(_, value) => onChange({ ...row, label: value })}
-        renderInput={(params) => <TextField {...params} label="Relationship" size="small" />}
-        sx={{ flex: 1, minWidth: 200 }}
-      />
-      <IconButton aria-label="Remove relationship" size="small" onClick={onRemove} sx={{ mt: 0.5 }}>
+    <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+      {row.direction === "from" ? selfChip : targetPicker}
+      {arrow}
+      {labelField}
+      {arrow}
+      {row.direction === "from" ? targetPicker : selfChip}
+      <IconButton aria-label="Remove relationship" size="small" onClick={onRemove}>
         <DeleteIcon fontSize="small" />
       </IconButton>
     </Stack>

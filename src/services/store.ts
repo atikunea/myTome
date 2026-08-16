@@ -191,11 +191,12 @@ export const store = {
   async createStarterTypes(tomeId: string) {
     const time = now();
     await db.elementTypes.bulkAdd(
-      starterTypes.map(([name, description], i) => ({
+      starterTypes.map(([name, description, icon], i) => ({
         id: uid(),
         tomeId,
         name,
         description,
+        icon,
         slug: slugify(name),
         sortOrder: i,
         fieldDefinitions: [],
@@ -216,6 +217,7 @@ export const store = {
       tomeId: input.tomeId,
       name: input.name.trim(),
       description: input.description?.trim() || undefined,
+      icon: input.icon ?? existing?.icon,
       slug: slugify(input.name),
       sortOrder:
         input.sortOrder ??

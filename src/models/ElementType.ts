@@ -20,9 +20,9 @@ export interface ElementType {
   updatedAt: string;
 }
 export const starterTypes = [
-  ["Theme", "The ideas and motifs that shape your story"],
-  ["Character", "The people who bring this story to life"],
-  ["Place", "Locations, regions, and settings"],
-  ["Event", "Important events and turning points"],
-  ["Prop", "Objects with a story of their own"],
+  ["Theme", "The ideas and motifs that shape your story", "Star"],
+  ["Character", "The people who bring this story to life", "Person"],
+  ["Place", "Locations, regions, and settings", "LocationOn"],
+  ["Event", "Important events and turning points", "Event"],
+  ["Prop", "Objects with a story of their own", "Inventory2"],
 ] as const;

@@ -110,6 +110,11 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   `../pages/ElementTypesPage.tsx`.
 - `CoverThumbnail.tsx` — shared cover image / fallback-letter-avatar,
   used by Tome and Element cards.
+- `ElementTypeIcon.tsx` — renders an `ElementType`'s chosen icon (falls back
+  to a generic glyph when unset); also exports `elementTypeIconOptions`, the
+  curated icon set used by the picker in `../pages/ElementTypesPage.tsx`.
+  Used anywhere an ElementType's name is shown — `SideNav`, the type
+  configuration cards/form, `ElementListPage` headers, and relationship rows.
 - `EmptyState.tsx` — shared "nothing here yet" placeholder.
 - `ColorModeToggle.tsx` — fixed-position light/dark toggle, rendered once in
   `App.tsx` so it's available on every route.

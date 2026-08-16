@@ -3,6 +3,7 @@ import { Box, ListItemButton, ListItemText, Typography } from "@mui/material";
 import SettingsIcon from "@mui/icons-material/Settings";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { brandFontFamily } from "../theme";
+import { ElementTypeIcon } from "./ElementTypeIcon";
 
 const navItemSx = {
   color: "#dfd7d1",
@@ -65,6 +66,7 @@ export function SideNav() {
           to={`/tomes/${tome.id}/elements/${type.id}`}
           sx={navItemSx}
         >
+          <ElementTypeIcon icon={type.icon} fontSize="small" sx={{ mr: 1 }} />
           <ListItemText primary={type.name} />
         </ListItemButton>
       ))}

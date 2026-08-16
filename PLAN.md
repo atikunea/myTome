@@ -91,7 +91,9 @@ Validation: block submit (surface via the existing `error` `Alert`) if any row h
 
 ### Display
 
-Each row, once it has both a target and label, also shows the target's element-type name as secondary text (e.g. "Grace — Character") so relationships to same-named-but-different-type elements aren't ambiguous.
+Each row renders as a directional sentence in the relationship's true stored from→to order — `[source] → [label] → [target]` — with an arrow icon between each part, rather than just `[other element] — [label]`. Whichever end is the element currently being edited is shown as a static, bolded "This {type name}" (e.g. "This character") instead of a picker; the other end is the editable target `Autocomplete`, showing the target's element-type name (e.g. "Grace's Manor (Place)") so relationships to same-named-but-different-type elements aren't ambiguous. This means the same underlying `Relationship` reads correctly from either connected element without requiring the author to type separate forward/reverse labels: on the source element it renders "This character → home of → Grace's Manor (Place)"; on the target element it renders "Grace's Manor (Place) → home of → This character".
+
+`RelationshipRow` therefore also tracks `direction: "from" | "to"` (derived from whether `fromElementId` or `toElementId` matches the element being edited) so the editor knows which side is "self" for both the sentence order and which type-pair to query `suggestRelationshipLabels` with (`fromTypeId`/`toTypeId` swap based on direction). New rows added via "Add relationship" are always `direction: "from"`, since a newly authored relationship originates from the element being edited.
 
 No separate read-only "view" page exists in this app today (the edit form doubles as the detail view), so relationships are only ever seen/managed from that form — no additional page is needed.
 
