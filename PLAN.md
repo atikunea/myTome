@@ -1,162 +1,121 @@
-# myTome implementation plan
+# Element relationships implementation plan
 
-## Scope read from the wireframes
+## Feature summary
 
-The PDF shows three core experiences:
+Elements can be related to any number of other elements, within the same tome, regardless of element type (including two elements of the same type, e.g. Character-to-Character). Each relationship carries a single free-text label describing it (e.g. "sister of", "lives in", "sworn enemy of"). A relationship is shown identically on both elements it connects — creating "Ada [sister of] Grace" from Ada's editor makes the same "sister of" entry appear in Grace's relationship list too, and either side can edit its label or remove it. While typing a label, the field autocompletes from labels previously used for the same *from element type → to element type* pair, so once an author has typed "lives in" for a Character→Place relationship, later Character→Place relationships suggest it.
 
-1. **Author dashboard / tome library**: browse tomes as cards, create a tome, edit tome details, search, and filter by status.
-2. **Book dashboard**: a persistent left navigation scoped to the opened tome; its **Elements** links are generated from that tome's element types.
-3. **Element management**: a reusable management page for an element type (the example is Characters), with search, sort, grid/list view, card rendering, create, edit, and delete.
+This is a native capability of every Element — not an author-configurable field on `ElementType` (unlike `FieldDefinition`'s `text`/`select` kinds). Every element gets a Relationships section in its editor regardless of how its type is configured.
 
-The annotations in the wireframes say that the author-level metric cards, recent-activity table, and book-dashboard analytics/activity/deadline panels are **v2** and must not be built in the first pass. The navigation entries beyond Dashboard and dynamic Elements (Manuscript, World Building, Timeline, Research Notes, Settings) are also deferred. Export PDF is explicitly deferred from v1.
+## Confirmed decisions
 
-## Current-state assessment
+- **Display**: symmetric same-label display. One relationship record is visible and editable from both connected elements.
+- **Target scope**: any element in the tome, any type, including same-type and (not disallowed) self-relationships are simply not specially blocked by scope — see validation below for the one exception (no relating an element to itself).
+- **Deletion**: cascades silently. Deleting an element, an element type (which cascades its elements), or a tome removes every relationship that referenced the deleted element(s) as part of the same transaction — no separate confirmation copy needed beyond what already exists for those deletes.
+- **Autocomplete scope**: per tome. Suggestions are built only from relationships that exist within the current tome.
 
-The repository is a Vite + Lit + TypeScript application with Dexie/IndexedDB installed. It currently renders the Vite starter component. The existing data model is a useful beginning but lacks stable timestamps, lifecycle status, images, extensible element data, activities, indexes for the planned queries, and an application/store layer. `element-type-list` also needs replacement: it does not retain fetched data, does not use Lit templates for item rendering, and does not participate in a view lifecycle.
+## Data model
 
-## Proposed first-pass boundary
-
-Deliver a polished, responsive local-first SPA that supports:
-
-- Tome list/grid, search, filter by `Draft`/`Completed`/`Archived`, empty state, create, update, open, and permanently delete after a destructive-action warning.
-- One active tome at a time, represented in the URL and restored on reload.
-- Per-tome navigation containing Dashboard and the tome's dynamic ElementTypes.
-- A simple tome dashboard/summary landing screen. Do not add counts, charts, activity, deadlines, or other analytics until v2.
-- Full per-tome ElementType configuration: create, rename, describe, reorder, and delete types; define the fields for each type; and use that configuration to drive generic element CRUD.
-- Element search, sort by recent update/name, grid/list preference, thumbnail fallback, confirmation before delete, and good empty/loading/error states.
-- IndexedDB persistence, seed data only for development, and tests around repositories/store/query behavior.
-
-## Architecture decisions
-
-### Routing and app shell
-
-Use a small hash router (no new dependency required) with routes:
-
-- `#/tomes`
-- `#/tomes/new` and `#/tomes/:tomeId/edit`
-- `#/tomes/:tomeId/dashboard`
-- `#/tomes/:tomeId/elements/:elementTypeId`
-- `#/tomes/:tomeId/elements/:elementTypeId/new`
-- `#/tomes/:tomeId/elements/:elementTypeId/:elementId/edit`
-
-Add an `app-shell` root component that owns routing and renders either the author layout or the tome workspace layout. The active tome is route state, not a separate persisted global setting; this makes reload, deep links, and browser navigation deterministic.
-
-### Data access and state
-
-Keep components database-free. Introduce:
-
-- `models/db.ts`: Dexie schema/version definitions, reset-and-seed utilities, and testable database factory.
-- `data/*Repository.ts`: typed, query-focused CRUD methods only.
-- `services/tome-service.ts` and `services/element-service.ts`: validation, mutations, and derived query composition.
-- `state/app-store.ts`: a small reactive store using `EventTarget` plus immutable snapshots; it subscribes to `liveQuery` for affected Dexie queries, exposes loading/error state, and keeps only UI state (route, filters, sort, display mode, dialog state).
-
-Lit components receive state as properties and dispatch intent events. Container/page components call the store. This provides immediate reactivity after local writes without adding Redux or another state package.
-
-### Database model and prototype reset
-
-Replace the prototype schema with the v1 Dexie schema and reset existing local prototype data; no compatibility migration is required. Use string UUIDs for new primary keys so a future sync feature can merge records without remapping integer IDs. Keep database versioning in place for future releases, but v1 development may safely clear and reseed the database whenever its schema changes.
-
-Proposed persisted records:
-
-| Record | Key fields and indexes | Purpose |
-| --- | --- | --- |
-| `Tome` | `id`, `title`, `subtitle?`, `description`, `coverImage?`, `status` (`Draft`/`Completed`/`Archived`), `createdAt`, `updatedAt`, `archivedAt?`; indexes: `status`, `updatedAt`, normalized title | library cards, filtering, lifecycle |
-| `ElementType` | `id`, `tomeId`, `slug`, `name`, `description?`, `icon?`, `sortOrder`, `fieldDefinitions`, `createdAt`, `updatedAt`; compound index `[tomeId+sortOrder]` | dynamic navigation and author-configured form/card configuration |
-| `Element` | `id`, `tomeId`, `elementTypeId`, `name`, `description`, `image?`, `attributes`, `createdAt`, `updatedAt`, `deletedAt?`; indexes: `[tomeId+elementTypeId]`, `[elementTypeId+updatedAt]`, normalized name | generic element CRUD and lists |
-| `Activity` (v2-ready, not surfaced in v1) | `id`, `tomeId`, `elementId?`, `action`, `occurredAt`, `summary`; indexes: `[tomeId+occurredAt]` | future activity and streak/analytics derivations |
-
-Images can be supplied through a local upload or an external URL. Model `coverImage` and `image` as an `ImageSource` tagged union: a local record stores a `Blob` in IndexedDB, while an external record stores a validated `https:` URL. Object URLs are UI-only, created from a stored blob and revoked when no longer displayed. Preserve both source types in the domain model so a future export feature can resolve/embed them; PDF export itself is out of scope for v1. Avoid duplicating derived values such as element count and total word count in `Tome`; compute them by query until performance evidence requires a projection table.
-
-### ElementType field configuration (confirmed)
-
-ElementTypes are fully configurable within their Tome. The starting types (Theme, Character, Place, Event, and Prop) are seed data only, not global or fixed definitions. An author may create a different set of types for each book, so configuration must always be queried and mutated in the context of a `tomeId`.
-
-The configuration is a small, intentionally constrained schema for v1. Each ElementType retains a name and optional description and contains ordered field definitions:
+Add a new top-level record, `Relationship`, alongside `Tome`/`ElementType`/`Element`:
 
 ```ts
-type FieldDefinition = {
-  id: string;                 // stable field key, never derived from its label
-  name: string;               // author-visible label, e.g. "Gender"
-  kind: 'text' | 'select';
-  options?: string[];         // required and non-empty only for `select`
-  required: boolean;          // author-configurable; defaults to false
-  sortOrder: number;
-};
-
-type ElementType = {
+// src/models/Relationship.ts
+export interface Relationship {
   id: string;
   tomeId: string;
-  slug: string;
-  name: string;
-  description?: string;
-  fieldDefinitions: FieldDefinition[];
-  // timestamps and display fields listed above
-};
-
-type Element = {
-  // base fields: id, tomeId, elementTypeId, name, description, image, timestamps
-  attributes: Record<string, string>;
-};
+  fromElementId: string;
+  fromElementTypeId: string; // denormalized at creation time, for autocomplete queries
+  toElementId: string;
+  toElementTypeId: string;   // denormalized at creation time
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+}
 ```
 
-`kind: 'text'` renders a text input (or textarea only if we extend the field kinds later). `kind: 'select'` renders a select using `options`, for example `{ name: 'Gender', kind: 'select', options: ['Male', 'Female', 'Other'] }`. The Element editor always renders the base name/description fields followed by `fieldDefinitions` in `sortOrder`; it uses the field ID to read/write `Element.attributes`, not the display name. This allows labels to be renamed without losing values.
+`fromElementId`/`toElementId` are directional only for storage/authorship purposes (which side's editor created the row, and which type-pair its autocomplete draws from). Display treats both ends symmetrically: an element's Relationships section lists every `Relationship` where it appears as either `fromElementId` or `toElementId`.
 
-The ElementType editor needs a field-builder UI: add a field, name it, choose Text or Configurable List, mark it required, edit/reorder list options, reorder fields, and remove a field. Validation must reject blank/duplicate field IDs or names, blank list choices, duplicate choices after normalization, a select field with no choices, and missing values for required fields. The service also validates every element write against the current field definitions.
+An element type is never reassigned after creation in this app, so the denormalized `fromElementTypeId`/`toElementTypeId` values stay correct for the life of the relationship without a sync step.
 
-Schema changes need explicit behavior:
+### Dexie schema (`src/models/db.ts`)
 
-- Renaming a field preserves values because its stable ID remains unchanged.
-- Changing Text to Select preserves an existing value only when it is an allowed option; otherwise the element is flagged for correction rather than silently deleting data.
-- Removing a field is a destructive cascade. Before enabling the action, show the field name and the count of elements with a stored value; the confirmation dialog states that those values will be permanently deleted. On confirmation, update every affected Element atomically in a Dexie transaction to remove `attributes[fieldId]`, then remove the field definition.
-- Deleting an ElementType is a separately confirmed destructive cascade. Before enabling the action, show the ElementType name and total Element count, explain that all of those Elements and their image blobs will be permanently deleted, and require explicit confirmation. Run the Element deletion and ElementType deletion in one Dexie transaction; do not leave orphaned images or Elements.
+Bump to `version(3)` and add a `relationships` table:
 
-For this first version, field values are single strings. A configurable list defines a single-select field, not a multi-select array. Rich text, number/date/boolean fields, relationships to other elements, computed fields, and repeatable fields are deliberately deferred until their data and UX semantics are specified.
+```ts
+this.version(3).stores({
+  tomes: "id, status, updatedAt, title",
+  elementTypes: "id, tomeId, [tomeId+sortOrder], slug",
+  elements:
+    "id, tomeId, elementTypeId, [tomeId+elementTypeId], [elementTypeId+updatedAt], name",
+  activities: "id, tomeId, [tomeId+occurredAt]",
+  relationships:
+    "id, tomeId, fromElementId, toElementId, [tomeId+fromElementTypeId+toElementTypeId]",
+});
+relationships!: EntityTable<Relationship, "id">;
+```
 
-### Reusable component composition
+Per the existing project convention (see `PLAN.md` history / `AGENTS.md`), v1 is still pre-release: no migration path is required, a schema bump that resets local data is acceptable.
 
-Create the following Lit components, composed from small presentational primitives:
+The compound index `[tomeId+fromElementTypeId+toElementTypeId]` powers the per-tome, per-type-pair autocomplete query directly, without a scan.
 
-- `app-shell`, `author-layout`, `tome-layout`, `side-nav`, `app-header`
-- `tome-library-page`, `tome-card`, `tome-editor-dialog/page`, `library-toolbar`
-- `element-type-settings-page`, `element-type-editor`, `field-definition-builder`, `field-option-editor`
-- `tome-dashboard-page` (simple summary only; no analytics components in v1)
-- `element-list-page`, `element-toolbar`, `element-card`, `element-row`, `element-editor`, `empty-state`, `confirm-dialog`
-- shared controls: `app-button`, `app-input`, `app-select`, `icon-button`, `view-toggle`, `status-badge`
+## Service/store changes (`src/services/store.ts`)
 
-Use Web Awesome's components/icons if its current API meets the controls needed; otherwise use accessible native controls and a centralized inline SVG icon set. Establish design tokens in `src/styles/tokens.css` and shared layout/control styles rather than embedding large style blocks in every component.
+- `observeElementRelationships(tomeId, elementId, callback)` — live query returning every `Relationship` where `fromElementId === elementId || toElementId === elementId` for the given tome, newest-updated first.
+- `observeTomeElements(tomeId, callback)` — a new tome-wide (not type-scoped) live query over `db.elements`, needed so the relationship target picker can search/display elements across all types in the tome, and so a relationship row can resolve the "other" element's current name/type for display. (`observeElements` today is type-scoped and insufficient for this.)
+- `suggestRelationshipLabels(tomeId, fromElementTypeId, toElementTypeId)` — queries `relationships` by `[tomeId+fromElementTypeId+toElementTypeId]`, returns the distinct labels (case-preserved, deduped case-insensitively), most-recently-used first, for use as `Autocomplete` options.
+- `validateRelationship(fromElementId, toElementId, label)` — rejects a blank label and rejects `fromElementId === toElementId` (no self-relationships).
+- `saveElementRelationships(element, rows)` — given the just-saved `element` and the editor's current in-memory relationship rows (`{ id?: string; toElementId: string; label: string }[]`), runs one Dexie transaction that:
+  - deletes any existing `Relationship` owned by this editor session's diff (rows removed by the author),
+  - updates the `label`/`updatedAt` of rows that changed,
+  - inserts new `Relationship` records for rows without an `id`, filling `fromElementId`/`fromElementTypeId` from `element` and `toElementId`/`toElementTypeId` from the picked target.
+
+  This only manages rows *authored from this element's side* (`fromElementId === element.id`). Rows where this element is `toElementId` (created from the other side) are rendered read-only-as-a-set-membership but their label remains editable and removable too — editing/removing one of those updates/deletes that `Relationship` row directly (it doesn't matter which side "owns" it once it exists; both sides can edit/remove).
+- Extend `deleteElement(id)` to run inside a transaction that also deletes every `Relationship` where `fromElementId === id || toElementId === id`.
+- Extend `deleteType(type)` to also delete every `Relationship` touching any element being deleted with that type (collect the element ids first, then delete matching relationships, inside the existing transaction).
+- Extend `deleteTome(id)` to also delete `db.relationships.where("tomeId").equals(id)` inside its existing transaction.
+
+## UI changes
+
+### Relationship editor section (in `ElementListPage.tsx`'s create/edit form)
+
+Add a "Relationships" `Stack` after the existing field-definition inputs, before the image inputs (or after — cosmetic). Each relationship row renders:
+
+- An MUI `Autocomplete` for the **target element**, options sourced from `observeTomeElements`, excluding the element currently being edited, labelled by `"{name} ({elementType.name})"`. Free text entry is disabled — target must be an existing element.
+- An MUI `Autocomplete` (freeSolo) for the **label**, options from `suggestRelationshipLabels(tomeId, thisElement.elementTypeId, target.elementTypeId)`, re-queried whenever the selected target's type changes. `freeSolo` lets the author type any new string.
+- A remove (✕) `IconButton`.
+
+An "Add relationship" `Button` appends a new empty row. Rows are local component state (`useState<RelationshipRow[]>`), seeded from `observeElementRelationships` when editing an existing element (empty for a brand-new element, since relationships require a persisted target but not necessarily a persisted source — see below).
+
+On submit, after `store.saveElement(...)` resolves (so a brand-new element has an `id`), call `store.saveElementRelationships(savedElement, rows)`. This lets an author add relationships while creating a brand-new element in one form submission, matching how image/attribute fields already work.
+
+Validation: block submit (surface via the existing `error` `Alert`) if any row has a target but a blank label, or a label but no target, or targets the element itself (guards against a stale self-reference if the element is mid-creation).
+
+### Display
+
+Each row, once it has both a target and label, also shows the target's element-type name as secondary text (e.g. "Grace — Character") so relationships to same-named-but-different-type elements aren't ambiguous.
+
+No separate read-only "view" page exists in this app today (the edit form doubles as the detail view), so relationships are only ever seen/managed from that form — no additional page is needed.
+
+## Validation & edge cases
+
+- A relationship cannot target the element itself.
+- The same two elements may have multiple relationships between them with different labels (e.g. "friend of" and "business partner of" simultaneously) — not deduplicated.
+- Renaming an element does not affect any `Relationship` record (only `fromElementId`/`toElementId` are stored, names are resolved live via `observeTomeElements`).
+- If a target element is deleted while another author's tab has it open in a relationship row, the stale row simply disappears from both live-query-driven views once the cascade delete completes.
+- Autocomplete suggestions never include the current in-progress (unsaved) row's own label.
 
 ## Implementation sequence
 
-1. **Foundation**: replace the starter screen; add design tokens, reset/base styles, icon strategy, responsive breakpoints, `app-shell`, and hash routing. Define desktop sidebar behavior and a compact mobile navigation pattern.
-2. **Domain/data foundation**: introduce the revised types, ElementType field-definition schema, reset-and-reseed prototype database, repositories, validators, and deterministic development seed utility. Add a data reset action only in development.
-3. **Reactive state**: build the app store and `liveQuery` subscriptions; implement route parsing/guards for nonexistent tome or element-type IDs; surface friendly error/empty states.
-4. **Tome library**: implement responsive card/list layout, title/status search/filter, create/edit tome form, Draft/Completed/Archived badges, local-upload or external-URL covers with fallbacks, a clearly worded permanent-delete confirmation, and open navigation.
-5. **Tome workspace**: implement the tome header, dynamic sidebar derived from `ElementType`, simple summary landing screen, and navigation state. Do not implement analytics panels marked v2.
-6. **ElementType settings and generic element management**: implement the type/field builder, required-field validation, confirmed transactional field-value cascade, and separately confirmed ElementType-to-Element cascade; then implement reusable querying, toolbar, grid/list preference, cards/rows, sort/search, create/edit form driven by `fieldDefinitions`, image handling, and deletion confirmation. Verify it with Character, Place, Theme, Event, and Prop seed types plus a custom type.
-7. **Quality pass**: keyboard and screen-reader behavior, focus management for dialogs, form validation, responsive layouts, IndexedDB reset/reseed and persistence tests, service/repository unit tests, and an end-to-end smoke test for create tome -> create element type/element -> search/sort -> reload persistence.
-8. **Deferred v2 planning**: add Activity writes to mutations, then implement history, writing streak/velocity, charts, deadlines/tasks, manuscript, timeline, research, world-building, export, cloud sync, and collaboration only after their requirements are agreed.
+1. **Data layer**: add `src/models/Relationship.ts`, extend `db.ts` with the `relationships` table and version bump.
+2. **Store**: implement `observeElementRelationships`, `observeTomeElements`, `suggestRelationshipLabels`, `validateRelationship`, `saveElementRelationships`; extend `deleteElement`, `deleteType`, `deleteTome` cascades.
+3. **Editor UI**: add the Relationships section to `ElementListPage.tsx`'s form (target picker, label autocomplete, add/remove rows, submit-time save and validation).
+4. **Display polish**: secondary element-type text on each row; confirm empty state ("No relationships yet") when a saved element has none.
+5. **Verification**: manually create relationships between elements of the same type and different types across a tome; confirm autocomplete suggestions are scoped correctly per type-pair and per tome; confirm cascade deletes (delete an element, an element type, and a tome) each remove the expected relationships; confirm reload persistence.
 
-## Acceptance criteria for v1
+## Acceptance criteria
 
-- A user can create and edit a tome, select Draft/Completed/Archived status, attach/change a local or external-URL cover, find it by title, filter it by status, open it after a refresh, or permanently delete it only after a warning confirmation.
-- Opening a tome builds its Elements navigation from that tome's `ElementType` records, without hardcoded Character/Place links.
-- An author can create and configure ElementTypes within a tome. A field can be a required/optional free-text value or a required/optional single-select configurable list, and the generic Element editor validates and renders it correctly.
-- Removing a configured field clearly describes and confirms the permanent cascade of stored values, then completes it atomically.
-- Removing an ElementType clearly describes and confirms the permanent cascade of all of its Elements and image blobs, then completes it atomically.
-- Any element type uses the same list/editor architecture and persists isolated to its tome/type.
-- Search, sorting, grid/list rendering, empty states, and CRUD immediately refresh in every affected view.
-- The application is usable at 320 px through desktop widths, has keyboard-operable controls, and preserves data across reloads.
-- The v2-only wireframe annotations are not inadvertently implemented as production scope.
-
-## Confirmed v1 platform constraints
-
-- Persistence is browser-only IndexedDB. Accounts, sync, import/export, backup, and server APIs are out of scope for v1.
-- Existing prototype data may be reset. No data migration is required before v1 implementation.
-- Use hash URLs for deep links and reload-safe routing; no server fallback configuration is required.
-
-## Risks and decisions to make before coding
-
-- A generic `attributes` object is flexible, but must be paired with a versioned field schema and validation rules; otherwise element forms become inconsistent and difficult to migrate.
-- Full-text search across arbitrary descriptions/attributes is not natively indexed by IndexedDB. V1 should filter loaded items within a tome/type; add a denormalized search index only if data size requires it.
-- Writing streaks and velocity need an explicit definition of what counts as writing and immutable daily activity/word-count data. They should remain v2, as annotated.
-- Client-only IndexedDB does not provide backup, multi-device sync, or recovery after browser-data deletion. Keep repository interfaces async and ID formats sync-friendly so a cloud adapter can be added later.
+- From any element's editor, an author can add any number of relationships to other elements in the same tome (any type), each with a free-text label.
+- Typing a label suggests previously used labels for the same source-type → target-type pair within the current tome, and accepts any new text.
+- A relationship appears identically in both connected elements' Relationship sections and is editable/removable from either side.
+- Deleting an element, an element type, or a tome removes all relationships that referenced the deleted element(s); no orphaned `Relationship` records remain.
+- An element cannot be related to itself.
+- Relationships persist across reload (IndexedDB-backed, live-query-driven like the rest of the app).

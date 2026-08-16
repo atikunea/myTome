@@ -4,6 +4,7 @@ import type { ElementType, FieldDefinition } from "../models/ElementType";
 import { starterTypes } from "../models/ElementType";
 import type { Element } from "../models/Element";
 import type { ImageSource, Tome } from "../models/Tome";
+import type { Relationship } from "../models/Relationship";
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 const slugify = (s: string) =>
@@ -67,6 +68,11 @@ export function validateElement(
       throw new Error(`${field.name} must use a listed choice.`);
   }
 }
+export function validateRelationship(fromElementId: string, toElementId: string, label: string) {
+  if (!label.trim()) throw new Error("Every relationship needs a description.");
+  if (fromElementId === toElementId)
+    throw new Error("An element cannot be related to itself.");
+}
 export const store = {
   observeTomes(callback: (v: Tome[]) => void) {
     return liveQuery(() =>
@@ -100,6 +106,50 @@ export const store = {
         .toArray(),
     ).subscribe({ next: callback, error: console.error });
   },
+  observeTomeElements(tomeId: string, callback: (v: Element[]) => void) {
+    return liveQuery(() =>
+      db.elements
+        .where("tomeId")
+        .equals(tomeId)
+        .filter((x) => !x.deletedAt)
+        .toArray(),
+    ).subscribe({ next: callback, error: console.error });
+  },
+  observeElementRelationships(
+    tomeId: string,
+    elementId: string,
+    callback: (v: Relationship[]) => void,
+  ) {
+    return liveQuery(() =>
+      db.relationships
+        .where("tomeId")
+        .equals(tomeId)
+        .filter((r) => r.fromElementId === elementId || r.toElementId === elementId)
+        .reverse()
+        .sortBy("updatedAt"),
+    ).subscribe({ next: callback, error: console.error });
+  },
+  async suggestRelationshipLabels(
+    tomeId: string,
+    fromElementTypeId: string,
+    toElementTypeId: string,
+  ) {
+    const rows = await db.relationships
+      .where("[tomeId+fromElementTypeId+toElementTypeId]")
+      .equals([tomeId, fromElementTypeId, toElementTypeId])
+      .reverse()
+      .sortBy("updatedAt");
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const row of rows) {
+      const key = row.label.trim().toLocaleLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        labels.push(row.label);
+      }
+    }
+    return labels;
+  },
   async saveTome(
     input: Partial<Tome> & Pick<Tome, "title" | "description" | "status">,
   ) {
@@ -129,7 +179,9 @@ export const store = {
       db.tomes,
       db.elementTypes,
       db.elements,
+      db.relationships,
       async () => {
+        await db.relationships.where("tomeId").equals(id).delete();
         await db.elements.where("tomeId").equals(id).delete();
         await db.elementTypes.where("tomeId").equals(id).delete();
         await db.tomes.delete(id);
@@ -201,10 +253,27 @@ export const store = {
     });
   },
   async deleteType(type: ElementType) {
-    await db.transaction("rw", db.elementTypes, db.elements, async () => {
-      await db.elements.where("elementTypeId").equals(type.id).delete();
-      await db.elementTypes.delete(type.id);
-    });
+    await db.transaction(
+      "rw",
+      db.elementTypes,
+      db.elements,
+      db.relationships,
+      async () => {
+        const elementIds = await db.elements
+          .where("elementTypeId")
+          .equals(type.id)
+          .primaryKeys();
+        await db.relationships
+          .filter(
+            (r) =>
+              elementIds.includes(r.fromElementId) ||
+              elementIds.includes(r.toElementId),
+          )
+          .delete();
+        await db.elements.where("elementTypeId").equals(type.id).delete();
+        await db.elementTypes.delete(type.id);
+      },
+    );
   },
   async saveElement(
     input: Partial<Element> &
@@ -232,8 +301,60 @@ export const store = {
     await db.elements.put(element);
     return element;
   },
-  deleteElement(id: string) {
-    return db.elements.delete(id);
+  async saveElementRelationships(
+    element: Pick<Element, "id" | "tomeId" | "elementTypeId">,
+    rows: {
+      id?: string;
+      otherElementId: string;
+      otherElementTypeId: string;
+      label: string;
+    }[],
+  ) {
+    for (const row of rows)
+      validateRelationship(element.id, row.otherElementId, row.label);
+    await db.transaction("rw", db.relationships, async () => {
+      const existing = await db.relationships
+        .where("tomeId")
+        .equals(element.tomeId)
+        .filter(
+          (r) => r.fromElementId === element.id || r.toElementId === element.id,
+        )
+        .toArray();
+      const keepIds = new Set(rows.filter((r) => r.id).map((r) => r.id));
+      const removed = existing.filter((r) => !keepIds.has(r.id));
+      if (removed.length)
+        await db.relationships.bulkDelete(removed.map((r) => r.id));
+      const time = now();
+      for (const row of rows) {
+        if (row.id) {
+          await db.relationships.update(row.id, {
+            label: row.label.trim(),
+            updatedAt: time,
+          });
+        } else {
+          const relationship: Relationship = {
+            id: uid(),
+            tomeId: element.tomeId,
+            fromElementId: element.id,
+            fromElementTypeId: element.elementTypeId,
+            toElementId: row.otherElementId,
+            toElementTypeId: row.otherElementTypeId,
+            label: row.label.trim(),
+            createdAt: time,
+            updatedAt: time,
+          };
+          await db.relationships.add(relationship);
+        }
+      }
+    });
+  },
+  async deleteElement(id: string) {
+    await db.transaction("rw", db.elements, db.relationships, async () => {
+      await db.relationships
+        .filter((r) => r.fromElementId === id || r.toElementId === id)
+        .delete();
+      await db.elements.delete(id);
+    });
   },
   countField(typeId: string, fieldId: string) {
     return db.elements
