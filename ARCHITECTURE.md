@@ -5,7 +5,9 @@ This document outlines the proposed architecture for WriteMap, a web-based novel
 
 **Technology Stack:**
 *   **Language:** TypeScript
-*   **UI Framework:** Web Components using Lit (lit.dev)
+*   **UI Framework:** React 19, with MUI (mui.com) for components and theming
+*   **Routing:** react-router-dom (`HashRouter`)
+*   **State Management:** React Context (see `src/context/`) for shared/global state; local component state for page-local UI concerns
 *   **Build Tool:** Vite ([https://vite.dev](https://vite.dev)) — For fast module bundling, HMR, and production builds
 *   **Data Persistence:** Dexie library ([https://github.com/dexie/Dexie.js](https://github.com/dexie/Dexie.js)) — A modern wrapper for IndexedDB with Promise-based API
 
@@ -30,10 +32,10 @@ This document outlines the proposed architecture for WriteMap, a web-based novel
 *   **Implementation**: A dedicated `DatabaseService` module responsible solely for CRUD operations using Dexie. It will handle versioning and migrations of the database structure when necessary.
 *   **Schema Mapping**: This service must map the application's logical data model (the Element Model) into Dexie object stores, defining IndexedDB tables per element type (e.g., `characters`, `places`, `scenes`).
 
-### 4. UI Layer (Lit Components)
+### 4. UI Layer (React + MUI Components)
 *   **Goal**: To render views based on state changes reactively.
-*   **Implementation**: Each major module (CharacterView, PlaceView, etc.) will be a self-contained Lit component.
-*   **Data Flow**: A component subscribes to the relevant slice of state exposed by the `StoreService` and renders accordingly. When a user action occurs (e.g., clicking 'Save'), the component emits a custom event that is listened to by the parent/container, which then calls the appropriate mutation method on the `StoreService`.
+*   **Implementation**: Each major module (CharacterView, PlaceView, etc.) is a self-contained React function component, built primarily from MUI components.
+*   **Data Flow**: A component either reads shared state from a React Context (`TomesContext`, `TomeWorkspaceContext`, `ConfirmContext`, `ColorModeContext`) or subscribes directly to `StoreService` via the `useObservable` hook for page-local data. User actions call `StoreService` mutation methods directly, or `useConfirm()` for anything destructive.
 
 ### 5. Element Schema Registry
 *   **Goal**: To define and enforce data structure rules programmatically.
