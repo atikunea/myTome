@@ -5,7 +5,10 @@ components with hooks — no class components, no web components). This
 folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
 `EmptyState`, `ColorModeToggle`, `TimelineCard`, `TimelineConnectorInsert`,
-`PlotItemDialog`, `PlotPicker`). Route-level screens live in `../pages`
+`PlotItemDialog`, `PlotPicker`, `WriteItemCard`, `WriteItemTypeIcon`).
+Lexical editor internals (custom nodes and plugins) live in `../lexical`
+rather than here — they are not MUI components and only the Write editor
+mounts them. Route-level screens live in `../pages`
 instead — a good
 rule of thumb is: if it's mounted directly by a `<Route>` in `App.tsx`, it's
 a page; if it's composed *into* a page (or into the workspace layout), it
@@ -38,6 +41,23 @@ The two components that exist only to emit MUI timeline markup — `TimelineCard
 and `TimelineConnectorInsert` — keep timeline vocabulary, since they are named
 for what they render rather than for the record they display.
 
+## A `PlotItem` *composes* `WriteItem`s — that is not an attachment
+
+A plot item carries two very different id lists, and they must not be
+conflated:
+
+- `attachedElementIds` — an unordered set of elements involved in the beat.
+  Order is meaningless; deduped; rendered as chips.
+- `writeItemIds` — the beat's **manuscript text, in reading order**. A beat
+  might hold an opening snippet, two passages, and the chapter itself. The
+  order *is* the order the prose is read in, so it is authored (drag to
+  reorder in `PlotItemDialog`) and must be preserved exactly. The same
+  `WriteItem` may be composed into several beats, each with its own order.
+
+Deleting a beat never deletes its composed `WriteItem`s — they are tome-level
+content that merely stops being referenced. Deleting a `WriteItem` strips its
+id from every beat via the `*writeItemIds` multiEntry index.
+
 ## State: Context for shared state, local state for page-local UI
 
 This app uses React Context (not Redux/Zustand) for state that's shared
@@ -67,6 +87,24 @@ Context, since only that page needs them.
 `liveQuery`-based `store.observe*` functions (unchanged from before — see
 `services/store.ts`) and React state. Contexts and pages both use it instead
 of duplicating subscribe/unsubscribe `useEffect` boilerplate.
+
+## The Write editor autosaves — it deliberately has no Save button
+
+`../pages/WriteEditorPage.tsx` is the one screen that does **not** follow the
+app's "stage edits, commit on Save" convention. Title, type, and the Lexical
+document are written on a debounce, and there is no Cancel. Two consequences
+worth knowing before editing it:
+
+- **A draft row is created at the click site** (the Write list's "New" menu,
+  or `PlotItemDialog`'s "New text"), never by a `write/new` route that creates
+  on mount. Under `StrictMode` a create-on-mount effect fires twice and would
+  leave an orphan draft on every click.
+- **`store.discardWriteItemIfBlank` runs on unmount, deferred one tick.**
+  StrictMode's dev-only remount runs the cleanup on a page that is about to
+  come straight back; discarding there would delete the draft the author is
+  looking at. The `alive` ref is re-set by the re-run effect before the
+  deferred callback fires, so only a real unmount discards. Don't "simplify"
+  that timeout away.
 
 ## Talking to parents: props and context, not custom events
 
@@ -158,6 +196,14 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   `Relationship`, so do not grow a description field here.
 - `PlotPicker.tsx` — tabs for switching between a tome's plots, plus
   create/rename/delete.
+- `WriteItemCard.tsx` — the small, title-only card in the Write grid. It owns
+  its own 250ms hover timer and `Popover` sample rather than letting the page
+  track which of n cards is hovered. The `Popover` is
+  `pointerEvents: "none"` so it never becomes the mouse target and bounces
+  `mouseleave` off the card beneath it.
+- `WriteItemTypeIcon.tsx` — glyph for a `WriteItemType`. Unlike
+  `ElementTypeIcon` there is no registry or fallback: the four types are a
+  closed union, so the mapping is total.
 - `EmptyState.tsx` — shared "nothing here yet" placeholder.
 - `ColorModeToggle.tsx` — fixed-position light/dark toggle, rendered once in
   `App.tsx` so it's available on every route.

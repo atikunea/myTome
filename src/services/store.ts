@@ -6,6 +6,13 @@ import type { Element } from "../models/Element";
 import type { ImageSource, Tome } from "../models/Tome";
 import type { Relationship } from "../models/Relationship";
 import type { Plot, PlotItem } from "../models/Plot";
+import type { WriteItem, WriteItemType } from "../models/WriteItem";
+import {
+  emptyWriteItemContent,
+  isBlankWriteItem,
+  previewLength,
+  untitledWriteItem,
+} from "../models/WriteItem";
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 const slugify = (s: string) =>
@@ -77,6 +84,17 @@ export function validateRelationship(fromElementId: string, toElementId: string,
   if (fromElementId === toElementId)
     throw new Error("An element cannot be related to itself.");
 }
+/**
+ * Guarantees the array fields a `PlotItem` reader can iterate. A schema
+ * migration already backfills `writeItemIds`, but a missing array must never be
+ * able to blank a page, so every read out of `plotItems` is normalized here
+ * rather than trusting that every database in the wild ran every upgrade.
+ */
+const readPlotItem = (item: PlotItem): PlotItem => ({
+  ...item,
+  attachedElementIds: item.attachedElementIds ?? [],
+  writeItemIds: item.writeItemIds ?? [],
+});
 const plotRange = (tomeId: string) =>
   db.plots
     .where("[tomeId+sortOrder]")
@@ -102,6 +120,24 @@ const detachElements = async (elementIds: readonly string[]) => {
         );
         item.updatedAt = time;
       });
+};
+/**
+ * Strips the given write item id out of every plot item that composes it, using
+ * the `*writeItemIds` multiEntry index. Removal is a splice, not a renumber —
+ * order lives entirely inside the one array field. Call inside a transaction
+ * that includes `db.plotItems`.
+ */
+const detachWriteItem = async (writeItemId: string) => {
+  const time = now();
+  await db.plotItems
+    .where("writeItemIds")
+    .equals(writeItemId)
+    .modify((item) => {
+      item.writeItemIds = (item.writeItemIds ?? []).filter(
+        (x) => x !== writeItemId,
+      );
+      item.updatedAt = time;
+    });
 };
 /** Assigns sortOrder = index across the given ids. Call inside a transaction. */
 const applyOrder = async (
@@ -215,8 +251,17 @@ export const store = {
   async deleteTome(id: string) {
     await db.transaction(
       "rw",
-      [db.tomes, db.elementTypes, db.elements, db.relationships, db.plots, db.plotItems],
+      [
+        db.tomes,
+        db.elementTypes,
+        db.elements,
+        db.relationships,
+        db.plots,
+        db.plotItems,
+        db.writeItems,
+      ],
       async () => {
+        await db.writeItems.where("tomeId").equals(id).delete();
         await db.plotItems.where("tomeId").equals(id).delete();
         await db.plots.where("tomeId").equals(id).delete();
         await db.relationships.where("tomeId").equals(id).delete();
@@ -418,10 +463,9 @@ export const store = {
     });
   },
   observePlotItems(plotId: string, callback: (v: PlotItem[]) => void) {
-    return liveQuery(() => plotItemRange(plotId).toArray()).subscribe({
-      next: callback,
-      error: console.error,
-    });
+    return liveQuery(() =>
+      plotItemRange(plotId).toArray().then((rows) => rows.map(readPlotItem)),
+    ).subscribe({ next: callback, error: console.error });
   },
   async ensureDefaultPlot(tomeId: string) {
     const existing = await plotRange(tomeId).first();
@@ -476,6 +520,9 @@ export const store = {
       attachedElementIds: [
         ...new Set(input.attachedElementIds ?? existing?.attachedElementIds ?? []),
       ],
+      writeItemIds: [
+        ...new Set(input.writeItemIds ?? existing?.writeItemIds ?? []),
+      ],
       sortOrder: existing?.sortOrder ?? 0,
       createdAt: existing?.createdAt ?? time,
       updatedAt: time,
@@ -512,6 +559,127 @@ export const store = {
       await db.plotItems.delete(item.id);
       const remaining = await plotItemRange(item.plotId).primaryKeys();
       await applyOrder(db.plotItems, remaining);
+    });
+  },
+  /**
+   * Replaces a beat's composed text, in order. A single-row write: unlike
+   * `reorderPlotItems` there are no siblings to renumber, since the order lives
+   * inside the array itself.
+   */
+  async setPlotItemWriteItems(plotItemId: string, orderedIds: string[]) {
+    await db.plotItems.update(plotItemId, {
+      writeItemIds: [...new Set(orderedIds)],
+      updatedAt: now(),
+    });
+  },
+  /**
+   * Every beat in the tome, across all its plots — the Write list needs them in
+   * one pass to resolve story order, rather than one query per write item.
+   */
+  observeTomePlotItems(tomeId: string, callback: (v: PlotItem[]) => void) {
+    return liveQuery(() =>
+      db.plotItems
+        .where("tomeId")
+        .equals(tomeId)
+        .toArray()
+        .then((rows) => rows.map(readPlotItem)),
+    ).subscribe({ next: callback, error: console.error });
+  },
+  observeWriteItems(tomeId: string, callback: (v: WriteItem[]) => void) {
+    return liveQuery(() =>
+      db.writeItems.where("tomeId").equals(tomeId).toArray(),
+    ).subscribe({ next: callback, error: console.error });
+  },
+  /**
+   * Emits `null` for a missing row rather than `undefined`, so the editor can
+   * tell "not loaded yet" (no emission) from "no such item" and avoid flashing
+   * a not-found message while the first query is still in flight.
+   */
+  observeWriteItem(id: string, callback: (v: WriteItem | null) => void) {
+    return liveQuery(async () => (await db.writeItems.get(id)) ?? null).subscribe(
+      { next: callback, error: console.error },
+    );
+  },
+  /**
+   * Every plot item composing the given write item, via the `*writeItemIds`
+   * multiEntry index. One-shot rather than live: the Write list already
+   * re-renders on its own `observeWriteItems` tick, and this is read once per
+   * story-order sort pass.
+   */
+  composingPlotItems(writeItemId: string) {
+    return db.plotItems
+      .where("writeItemIds")
+      .equals(writeItemId)
+      .toArray()
+      .then((rows) => rows.map(readPlotItem));
+  },
+  /**
+   * Creates the row behind a freshly opened editor. The row exists immediately
+   * so autosave has somewhere to write and the URL names something real; an
+   * untouched draft is cleaned up again by `discardWriteItemIfBlank`.
+   * When `plotItemId` is given the new item is appended to that beat's text.
+   */
+  async createDraftWriteItem(
+    tomeId: string,
+    type: WriteItemType,
+    plotItemId?: string,
+  ) {
+    const time = now();
+    const item: WriteItem = {
+      id: uid(),
+      tomeId,
+      title: untitledWriteItem,
+      type,
+      content: emptyWriteItemContent,
+      preview: "",
+      createdAt: time,
+      updatedAt: time,
+    };
+    await db.transaction("rw", db.writeItems, db.plotItems, async () => {
+      await db.writeItems.add(item);
+      if (!plotItemId) return;
+      const beat = await db.plotItems.get(plotItemId);
+      if (!beat) return;
+      await db.plotItems.update(plotItemId, {
+        writeItemIds: [...(beat.writeItemIds ?? []), item.id],
+        updatedAt: time,
+      });
+    });
+    return item;
+  },
+  /**
+   * The autosave target. Deliberately unvalidated — a blank title has to be
+   * allowed to persist mid-typing; the list falls back to "Untitled" for
+   * display.
+   */
+  async saveWriteItem(
+    input: Pick<WriteItem, "id" | "title" | "type" | "content" | "preview">,
+  ) {
+    await db.writeItems.update(input.id, {
+      title: input.title,
+      type: input.type,
+      content: input.content,
+      preview: input.preview.slice(0, previewLength),
+      updatedAt: now(),
+    });
+  },
+  /**
+   * Drops a draft the author opened but never typed into, so abandoning "New"
+   * leaves no "Untitled" card behind — the autosave equivalent of the plot
+   * dialog's "a cancelled create writes nothing" rule.
+   */
+  async discardWriteItemIfBlank(id: string) {
+    await db.transaction("rw", db.writeItems, db.plotItems, async () => {
+      const item = await db.writeItems.get(id);
+      if (!item || !isBlankWriteItem(item)) return;
+      await detachWriteItem(id);
+      await db.writeItems.delete(id);
+    });
+  },
+  async deleteWriteItem(id: string) {
+    await db.transaction("rw", db.writeItems, db.plotItems, async () => {
+      await detachWriteItem(id);
+      await db.writeItems.delete(id);
     });
   },
   countField(typeId: string, fieldId: string) {

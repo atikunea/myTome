@@ -9,6 +9,8 @@ import { TomeDashboardPage } from "./pages/TomeDashboardPage";
 import { ElementTypesPage } from "./pages/ElementTypesPage";
 import { ElementListPage } from "./pages/ElementListPage";
 import { PlotPage } from "./pages/PlotPage";
+import { WriteListPage } from "./pages/WriteListPage";
+import { WriteEditorPage } from "./pages/WriteEditorPage";
 
 export default function App() {
   return (
@@ -32,6 +34,14 @@ export default function App() {
                 <Route path="plots/:plotId" element={<PlotPage />} />
                 <Route path="plots/:plotId/items/:itemId" element={<PlotPage />} />
                 <Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
+                {/*
+                  There is no `write/new` route: a draft row is created at the
+                  click site and the editor is opened on its real id, so a
+                  refresh or back never lands on a route that would create a
+                  second draft.
+                */}
+                <Route path="write" element={<WriteListPage />} />
+                <Route path="write/:writeItemId" element={<WriteEditorPage />} />
                 <Route path="elements/:typeId" element={<ElementListPage />} />
                 <Route path="elements/:typeId/new" element={<ElementListPage creating />} />
                 <Route path="elements/:typeId/:elementId/edit" element={<ElementListPage />} />

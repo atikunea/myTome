@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { Box, ListItemButton, ListItemText, Typography } from "@mui/material";
+import EditNoteIcon from "@mui/icons-material/EditNote";
 import SettingsIcon from "@mui/icons-material/Settings";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import type { Plot } from "../models/Plot";
@@ -83,6 +84,15 @@ export function SideNav() {
           <ListItemText primary="Main Plot" />
         </ListItemButton>
       )}
+      <NavLabel>WRITE</NavLabel>
+      <ListItemButton
+        component={NavLink}
+        to={`/tomes/${tome.id}/write`}
+        sx={navItemSx}
+      >
+        <EditNoteIcon fontSize="small" sx={{ mr: 1 }} />
+        <ListItemText primary="Text" />
+      </ListItemButton>
       <NavLabel>ELEMENTS</NavLabel>
       {types.map((type) => (
         <ListItemButton

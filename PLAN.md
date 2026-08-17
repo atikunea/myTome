@@ -1,135 +1,146 @@
-# Story plotting implementation plan
+# Write feature implementation plan
 
-> Supersedes the completed "Element relationships" plan (shipped in `82b979a`).
+> Supersedes the completed "Story plotting implementation plan" (shipped in
+> `92b236b`, follow-up fix `cd2f067`).
 
 ## Feature summary
 
-A tome gains a **plotting/outlining tool** rendered with MUI's `Timeline` (`@mui/lab`). Each
-tome can hold any number of named **plots** (main plot, a subplot, a POV track), and each
-plot holds an ordered list of **plot items**. An item carries a short spine `name` (the
-label beside the track — "Chapter 1"), a `title`, a `description`, an optional `icon`, and
-an optional dot `color`/`variant`. Items render through a single reusable `TimelineCard`
-component.
+A tome gains a **Write** section: a place to hold any amount of free-form
+prose — **Snippets**, **Lore**, **Passages**, and **Chapters** — all backed by
+one record type, `WriteItem`. Every `WriteItem` has a `title`, a fixed
+`type`, timestamps, and rich text authored in a [lexical.dev](https://lexical.dev)
+editor.
 
-Order is authored, not derived: the author inserts a new item **before or after** any
-existing item by clicking the connector stem in the gap, **drags items by a handle** to
-reorder, and **clicks a card** to open a dialog that edits the item and attaches elements
-to it.
+The **Write list page** shows every `WriteItem` in a tome as small,
+title-only cards in a single grid, filterable by type and sortable by most
+recent, alphabetical, or **story order**. Hovering a card for 250ms opens a
+popover with a plain-text sample of the content. Clicking a card — or "+
+New" — opens a **full-page editor**: an editable title at the top and a
+Lexical editor filling the rest of the page. Typing `@` plus letters opens an
+autocomplete over every `Element` in the tome; picking one inserts an inline
+mention that links to that element. The editor **autosaves** on a debounce;
+there is no explicit Save button.
 
-**Attachments are not relationships.** They are undescribed, unlabelled associations from a
-plot item to any number of elements in the same tome — "this beat involves Ada, the Manor,
-and the Sword." They are stored on the item, not as `Relationship` rows, and never appear in
-an element's Relationships section.
+**A `PlotItem` (beat) composes an ordered sequence of `WriteItem`s** — e.g. a
+beat for "Chapter 3" might hold a starting snippet, two passages, and the
+chapter text itself, in an author-chosen order. This is not a plain
+attachment: order is meaningful (it *is* the manuscript order for that beat),
+it's reorderable independent of the beat's own position on the plot spine,
+and a single `WriteItem` may be composed into more than one beat (e.g. a
+reusable lore snippet). New `WriteItem`s can be created directly from a
+`PlotItem` and are automatically appended to its composition.
 
 ## Naming
 
-The domain records are **`Plot`** and **`PlotItem`**, deliberately *not* `Timeline`/
-`TimelineItem`, so nothing in this codebase ever collides with `@mui/lab`'s exported
-`Timeline` and `TimelineItem` components and no import aliasing is needed anywhere.
-
-The split is: **a plot is the record; a timeline is how it's drawn.** So anything that
-stores, queries, or validates uses plot vocabulary (`Plot`, `PlotItem`, the `plots`/
-`plotItems` tables, `savePlotItem`, `/plots/:plotId`), while the two components that exist
-purely to produce MUI timeline markup keep timeline vocabulary (`TimelineCard`,
-`TimelineConnectorInsert`) — `TimelineCard` renders exactly one MUI `TimelineItem` row, and
-naming it after that is clearer than naming it after the record it happens to display.
+The record is `WriteItem` — mirroring the `Plot`/`PlotItem` convention (record
++ `Item` suffix) with no collision risk (no dependency exports a `WriteItem`,
+unlike the `Plot`/`Timeline` situation). `type` is a closed union
+(`WriteItemType`), not a user-defined `ElementType`-style registry — the four
+kinds are fixed product vocabulary, not something authors extend per tome.
 
 ## Confirmed decisions
 
-- **Multiple named plots per tome.** A `Plot` record exists; the tome auto-creates a "Main
-  Plot" the first time the page is opened, so the author never faces an empty picker.
-- **Drag and drop via `@dnd-kit`** (`core` + `sortable` + `utilities`) — chosen over native
-  HTML5 drag events for keyboard-accessible reordering.
-- **Editing happens in an MUI `Dialog`**, opened by a route (like `TomeFormDialog`) so the
-  back button and deep links work, with the timeline still visible behind it.
-- **Drag is on a handle, not the whole card.** The card's own click opens the editor;
-  making the whole card draggable would make those two gestures fight. Each card gets a
-  `DragIndicator` handle in its top-left corner.
-- **New items are created on save, not on stem click.** Clicking a stem navigates to an
-  insert route carrying the target index; the dialog persists at that index when saved.
-  A cancelled dialog leaves no empty orphan item behind.
+- **Autosave, no Save button.** The editor debounces (title, type, and
+  Lexical content) straight to `store.saveWriteItem`, matching a
+  Google-Docs-style writing experience rather than the app's usual
+  Dialog-with-Save pattern. A Delete action still exists, routed through
+  `useConfirm()`.
+- **Single grid + type filter**, not grouped sections or tabs. "Organizes by
+  type" is one of the sort/filter toolbar controls, alongside most-recent,
+  alphabetical, and story-order — not a fixed page layout.
+- **Composition, not a flat attachment.** `PlotItem` gets an ordered
+  `writeItemIds: string[]` — order is the manuscript order for that beat,
+  reorderable via `@dnd-kit` inside `PlotItemDialog`. A `WriteItem` may appear
+  in more than one `PlotItem`'s list (many-to-many), each with its own
+  independent order.
+- **"Story order" sort** places each `WriteItem` at its *first* composing
+  beat's position (that beat's `Plot.sortOrder`, then the item's index within
+  that beat's `writeItemIds`); items composed into no beat sink to the bottom,
+  ordered by `updatedAt` descending within that bucket.
+- **Empty drafts are silently discarded.** Opening "+ New" creates a real row
+  immediately (so autosave has somewhere to write and the URL is a real id
+  from the start), but if the user navigates away having never changed the
+  default title or typed any content, that row — and its entry in a
+  composing `PlotItem.writeItemIds`, if created from one — is deleted. This
+  mirrors the existing "a cancelled `PlotItemDialog` leaves no orphan" rule,
+  adapted for autosave instead of an explicit Cancel.
+- **Mentions are one-directional and not cascade-maintained.** A mention node
+  stores a denormalized element `id` + `name`; if that element is later
+  deleted, the mention becomes a dead link on click rather than being
+  scrubbed from every document's Lexical content. Scrubbing is out of scope —
+  documented as a known limitation, not silently "fixed" with a background
+  pass.
 
 ## New dependencies
 
 ```bash
-npm install @mui/lab @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+npm install lexical @lexical/react @lexical/rich-text @lexical/list @lexical/link @lexical/utils @lexical/selection @lexical/history
 ```
 
-`@mui/lab`'s major version must track `@mui/material` (currently `^9.3.1`) — `Timeline` and
-its parts live only in lab, not in core.
+No other editor library exists in the app today (confirmed: `package.json`
+has no `lexical`, `slate`, `quill`, `tiptap`, etc.). The mention typeahead
+uses `LexicalTypeaheadMenuPlugin` from `@lexical/react`, following the
+pattern from Lexical's own playground `MentionsPlugin`/`MentionNode` example,
+adapted to query `store.observeTomeElements` instead of a static contact
+list.
 
 ## Data model
 
-### `src/models/Plot.ts`
+### `src/models/WriteItem.ts`
 
 ```ts
-export type PlotDotColor =
-  | "grey" | "primary" | "secondary" | "success" | "warning" | "error" | "info";
+export type WriteItemType = "snippet" | "lore" | "passage" | "chapter";
 
-export interface Plot {
+export const writeItemTypes: WriteItemType[] = [
+  "snippet",
+  "lore",
+  "passage",
+  "chapter",
+];
+
+export const writeItemTypeLabels: Record<WriteItemType, string> = {
+  snippet: "Snippet",
+  lore: "Lore",
+  passage: "Passage",
+  chapter: "Chapter",
+};
+
+export interface WriteItem {
   id: string;
   tomeId: string;
-  name: string;
-  description?: string;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PlotItem {
-  id: string;
-  tomeId: string;          // denormalized: powers tome-scoped cascade deletes
-  plotId: string;
-  name: string;            // spine label rendered in TimelineOppositeContent, e.g. "Chapter 1"
   title: string;
-  description: string;
-  icon?: string;           // key into elementTypeIconOptions (see "Icons" below)
-  dotColor?: PlotDotColor;
-  dotVariant?: "filled" | "outlined";
-  attachedElementIds: string[];  // always an array, never undefined — see multiEntry note
-  sortOrder: number;
+  type: WriteItemType;
+  content: string;   // JSON.stringify(editorState) — Lexical's serialized document
+  preview: string;    // plain-text excerpt (~200 chars), recomputed every save; powers hover preview + avoids parsing Lexical JSON on hover
   createdAt: string;
   updatedAt: string;
 }
 ```
 
-`name` is optional in practice (blank renders no opposite content); `title` is what the card
-leads with, matching the wireframe where "Chapter 3" sits on the spine and "Calm before the
-storm" heads the card.
+`content` starts as the JSON of an empty Lexical paragraph, not `""`, so the
+editor always has something well-formed to parse on load.
 
-### Ordering: dense integers, renumbered per mutation
-
-`sortOrder` is a dense `0..n-1` integer sequence within a plot. Every mutation that changes
-ordering (insert, move, delete) renumbers **the whole plot** inside one Dexie transaction.
-
-This is deliberately not fractional/midpoint indexing. Plots are chapter- and beat-scale
-(tens of items, not thousands), a full renumber is a single indexed range write, and dense
-integers avoid float drift and rebalancing entirely. The `[plotId+sortOrder]` compound index
-makes the ordered read a direct range scan.
-
-Determinism matters for the drag interaction: because the renumber is a pure function of the
-submitted id order, the `liveQuery` echo that follows a drag produces exactly the order
-already on screen, so the optimistic local order never flickers back.
-
-### Attachments: array + multiEntry index
-
-`attachedElementIds` is a plain string array on the item — no join table, since an
-attachment carries no data of its own. Dexie's multiEntry index `*attachedElementIds` makes
-the reverse question ("which plot items reference this element?") an indexed lookup rather
-than a scan, which is what the element-delete cascade needs.
-
-Dexie's multiEntry index requires the field to always be an array; `savePlotItem` must
-normalize `undefined` to `[]` before writing, and the array must be deduped.
-
-### Dexie schema (`src/models/db.ts`)
-
-Bump to `version(4)`, adding two tables and the corresponding `EntityTable` declarations:
+### `PlotItem` gains a composition field (`src/models/Plot.ts`)
 
 ```ts
-plots!: EntityTable<Plot, "id">;
-plotItems!: EntityTable<PlotItem, "id">;
+export interface PlotItem {
+  // ...existing fields unchanged...
+  writeItemIds: string[]; // ordered: this beat's composed manuscript text, always an array
+}
+```
 
-this.version(4).stores({
+Same "always an array, never `undefined`" contract as `attachedElementIds`,
+for the same Dexie `multiEntry` reason below. Unlike `attachedElementIds`,
+order is meaningful and must be preserved exactly as authored — no dedupe
+beyond preventing the same id twice *within one beat's own list* (nothing
+stops the same id appearing in a different beat's list).
+
+### Dexie schema (`src/models/db.ts`), bump to `version(5)`
+
+```ts
+writeItems!: EntityTable<WriteItem, "id">;
+
+this.version(5).stores({
   tomes: "id, status, updatedAt, title",
   elementTypes: "id, tomeId, [tomeId+sortOrder], slug",
   elements:
@@ -138,329 +149,265 @@ this.version(4).stores({
   relationships:
     "id, tomeId, fromElementId, toElementId, [tomeId+fromElementTypeId+toElementTypeId]",
   plots: "id, tomeId, [tomeId+sortOrder]",
-  plotItems: "id, tomeId, plotId, [plotId+sortOrder], *attachedElementIds",
+  plotItems:
+    "id, tomeId, plotId, [plotId+sortOrder], *attachedElementIds, *writeItemIds",
+  writeItems: "id, tomeId, [tomeId+type], [tomeId+updatedAt], title",
 });
 ```
 
-Per the project's pre-release convention (as with the v3 relationships bump), no migration
-path is required — a schema bump that resets local data is acceptable.
+The new `*writeItemIds` multiEntry index answers "which beats compose this
+`WriteItem`?" as an indexed lookup — needed for the story-order sort, the
+"used in ..." badge on the editor/card, and the delete cascade. Per the
+project's pre-release convention (as with prior version bumps), no migration
+path is required.
 
 ## Service/store changes (`src/services/store.ts`)
 
 **Reads**
 
-- `observePlots(tomeId, cb)` — live list ordered by `[tomeId+sortOrder]`.
-- `observePlot(id, cb)` — the single plot, for the header/rename dialog.
-- `observePlotItems(plotId, cb)` — live list ordered by `[plotId+sortOrder]`.
-- `observeTomeElements(tomeId, cb)` — **already exists** (added for relationships); reused
-  verbatim to resolve attachment chips and populate the attachment picker. No new query
-  needed.
+- `observeWriteItems(tomeId, cb)` — live list for the Write page; sorting
+  (recent/alphabetical/story-order) and type-filtering happen client-side in
+  the page, same as `ElementListPage` does for its own list.
+- `observeWriteItem(id, cb)` — the single item, for the editor.
+- `getComposingPlotItems(writeItemId)` — one-shot query via
+  `db.plotItems.where("writeItemIds").equals(id).toArray()`, used to compute
+  story-order sort keys and the "used in ..." badge. Not a live subscription
+  (the Write list already re-renders on its own `observeWriteItems` tick;
+  this is read once per sort pass).
 
-**Plot mutations**
+**Mutations**
 
-- `ensureDefaultPlot(tomeId)` — returns the tome's first plot, creating
-  `{ name: "Main Plot", sortOrder: 0 }` if the tome has none. Called by `PlotPage` when the
-  route carries no `:plotId`.
-- `savePlot(input)` — create/update; trims and requires `name`; assigns
-  `sortOrder = count` for new rows, mirroring `saveType`.
-- `deletePlot(id)` — transaction: delete all `plotItems` where `plotId === id`, then the
-  plot, then renumber the tome's remaining plots.
-
-**Item mutations**
-
-- `validatePlotItem(title)` — rejects a blank `title` (the card would render headless).
-  `name` and `description` are both optional.
-- `savePlotItem(input, insertAt?)` — one transaction:
-  - normalizes `attachedElementIds` to a deduped array,
-  - for an **update**, writes the row and leaves ordering untouched,
-  - for a **create**, reads the plot's current ids in order, splices the new id in at
-    `insertAt` (clamped to `[0, n]`; appended when `insertAt` is undefined), then renumbers.
-- `reorderPlotItems(plotId, orderedIds)` — the drag-drop commit. Verifies the submitted id
-  set matches the stored set for that plot (a mismatch means a concurrent tab changed things
-  — bail without writing rather than corrupting order), then assigns `sortOrder = index`
-  across the list in one transaction.
-- `deletePlotItem(id)` — delete, then renumber the plot's survivors.
-- `setPlotItemAttachments(itemId, elementIds)` — convenience used by the dialog's attachment
-  picker if it saves independently of the main form; otherwise attachments ride along in
-  `savePlotItem`.
-
-**Cascade extensions to existing methods**
-
-- `deleteTome(id)` — also delete `db.plotItems.where("tomeId").equals(id)` and
-  `db.plots.where("tomeId").equals(id)` inside its existing transaction.
-- `deleteElement(id)` — after deleting relationships, strip the id from every item that
-  references it, via the multiEntry index:
-
+- `createDraftWriteItem(tomeId, type, plotItemId?)` — one transaction: inserts
+  `{ title: "Untitled", type, content: <empty doc JSON>, preview: "" }`, and
+  if `plotItemId` is given, appends the new id to that `PlotItem`'s
+  `writeItemIds`. Returns the new id; the editor route navigates
+  (`replace: true`) to it immediately so the URL always names a real row.
+- `saveWriteItem(input: { id, title, type, content, preview })` — the
+  autosave target; updates the row and `updatedAt`. No blocking validation —
+  a blank title is allowed to persist mid-typing (the list falls back to
+  "Untitled" for display).
+- `discardIfEmpty(id)` — called when the editor unmounts. Deletes the row
+  only if `title === "Untitled"` and `content` still deserializes to an empty
+  document; if it was composed into a `PlotItem` at creation, also strips it
+  from that beat's `writeItemIds` in the same transaction.
+- `deleteWriteItem(id)` — transaction: delete the row, then strip the id from
+  every `PlotItem.writeItemIds` via the multiEntry index (mirrors
+  `deleteElement`'s existing `attachedElementIds` cascade):
   ```ts
   await db.plotItems
-    .where("attachedElementIds").equals(id)
+    .where("writeItemIds").equals(id)
     .modify((item) => {
-      item.attachedElementIds = item.attachedElementIds.filter((x) => x !== id);
+      item.writeItemIds = item.writeItemIds.filter((x) => x !== id);
       item.updatedAt = now();
     });
   ```
+- `setPlotItemWriteItems(plotItemId, orderedIds)` — the reorder/add/remove
+  commit from `PlotItemDialog`'s composition list: validates every id exists
+  in `tomeId`'s `writeItems`, then
+  `db.plotItems.update(plotItemId, { writeItemIds: orderedIds, updatedAt: now() })`.
+  Unlike `reorderPlotItems`, this is a single-row write (no renumbering
+  across siblings needed — order lives entirely inside the one array field).
 
-- `deleteType(type)` — the element ids being deleted are already collected in that method;
-  run the same `attachedElementIds` strip for each of them inside the existing transaction.
+**Cascade extensions to existing methods**
 
-Attachment integrity is therefore maintained at delete time, but the render path still
-filters out ids that resolve to no element, so a stale id from an interrupted transaction
-degrades to "not shown" rather than a crash.
+- `deleteTome(id)` — also delete `db.writeItems.where("tomeId").equals(id)`
+  inside its existing transaction.
+- `deletePlotItem(id)` / `deletePlot(id)` — **no change needed.** Deleting a
+  beat removes the row holding `writeItemIds`, which is sufficient; the
+  `WriteItem`s themselves are independent tome-level content and are not
+  deleted — they simply become composed into one fewer (or zero) beats.
 
 ## Components
 
-### `src/components/TimelineCard.tsx`
+### `src/pages/WriteListPage.tsx`
 
-The encapsulated item, and the piece most of this feature's polish lives in. It **returns a
-MUI `TimelineItem`** rather than wrapping one in a `Box` — MUI distributes the timeline's
-`position` through React context, not by cloning children, so a custom component that
-renders a `TimelineItem` as its root participates in alignment correctly; an intervening
-`<div>` would break the layout grid.
+- Header: overline "WRITE" + a toolbar with a type filter (`ToggleButtonGroup`
+  or `Select`: All / Snippet / Lore / Passage / Chapter) and a sort `Select`
+  (Most recent / Story order / Alphabetical), following `ElementListPage`'s
+  existing toolbar layout.
+- "+ New" is a split button/menu offering the four types (each calls
+  `store.createDraftWriteItem(tomeId, type)` and navigates to the editor).
+- `Grid` of `WriteItemCard`, `EmptyState` when the tome has none.
 
-```tsx
-interface TimelineCardProps {
-  item: PlotItem;
-  attachments: Element[];        // resolved by the page, not fetched here
-  types: ElementType[];
-  onOpen: () => void;
-  onInsertAbove: () => void;
-  onInsertBelow: () => void;
-  isFirst: boolean;
-  isLast: boolean;
-}
-```
+### `src/components/WriteItemCard.tsx`
 
-Internally it renders, top to bottom:
+Small `Card variant="outlined"`, title-only face (no type badge on the card
+itself — type is a filter dimension, not shown per the spec's "only displays
+the title"). Owns its own hover-preview behavior: `onMouseEnter` starts a
+250ms timer; on fire, opens an MUI `Popover` anchored to the card showing
+`item.preview` (plain text, a few lines, `variant="body2"`); `onMouseLeave`
+clears the timer / closes immediately if not yet shown. This keeps the
+debounce entirely local to the card, matching how `TimelineCard` is
+self-contained.
 
-- `TimelineOppositeContent` — `item.name`, `variant="body2"`, `color: "text.secondary"`,
-  `m: "auto 0"` (matching the wireframe).
-- `TimelineSeparator` containing `<TimelineConnectorInsert>` (above), `<TimelineDot>`
-  (`color={item.dotColor ?? "grey"}`, `variant={item.dotVariant ?? "filled"}`, wrapping
-  `<ElementTypeIcon icon={item.icon} />` when an icon is set, empty otherwise), and a
-  second `<TimelineConnectorInsert>` (below).
-- `TimelineContent` — a `Card variant="outlined"` that is the click target for `onOpen`,
-  holding the drag handle, `title` (`Typography variant="h6"`), `description`, and the
-  attachment `Chip` row.
+### `src/pages/WriteEditorPage.tsx`
 
-Attachment chips use `<ElementTypeIcon icon={type.icon} />` as the chip avatar and the
-element name as the label, so a beat reads at a glance. Chip clicks navigate to that
-element's editor and call `stopPropagation()` so they don't also open the item dialog.
+Full-page (no `Dialog` — spec calls for a dedicated page). On the `/new`
+route, an effect calls `createDraftWriteItem` once on mount and
+`navigate(..., { replace: true })`s to the resulting `/write/:id`, so refresh
+and back-button behave sanely and a draft is never created twice.
 
-Drag handle: `DragIndicatorIcon` inside an `IconButton` that spreads dnd-kit's
-`attributes`/`listeners`, with `aria-label="Reorder item"`. It is dimmed until the card is
-hovered or the handle is focused, so the timeline stays clean while remaining
-keyboard-reachable.
+- Top bar: back link to `/write`, editable `title` (`TextField
+  variant="standard"`, large `Typography`-scale font per the spec), a small
+  `type` `Select` next to it, Delete (`useConfirm()`) on the right.
+- Body: `LexicalComposer` (`RichTextPlugin` + `HistoryPlugin` + `ListPlugin` +
+  `LinkPlugin` + the new `MentionsPlugin`) filling remaining page height.
+- A single debounced `onChange` (title, type, and Lexical `editorState`
+  together) calls `store.saveWriteItem`, recomputing `preview` via
+  `$getRoot().getTextContent()` truncated to ~200 chars.
+- Cleanup effect on unmount calls `store.discardIfEmpty(id)`.
 
-### `src/components/TimelineConnectorInsert.tsx`
+### `src/lexical/MentionNode.ts` *(new folder for Lexical-specific pieces)*
 
-A `TimelineConnector` wrapped in a relatively-positioned `Box` with a hover/focus-revealed
-`<IconButton size="small"><AddIcon/></IconButton>` centered over it, `aria-label="Insert
-item here"`.
+A `TextNode` subclass storing `{ elementId, elementName }`, styled as an
+inline link (theme `primary.main`, underline) via `createDOM`. Implements
+`exportJSON`/`importJSON`/`static importDOM` so `content` round-trips through
+`JSON.stringify(editorState)`/`editorState.parse(...)`. Click navigates to
+that element's existing edit route
+(`/tomes/:tomeId/elements/:typeId/:elementId/edit`) resolved by looking up
+the element's `elementTypeId`; a since-deleted element renders the mention
+inert (no crash, no navigation) rather than being scrubbed proactively.
 
-The gap between item *i* and item *i+1* is physically made of two stacked connectors —
-item *i*'s bottom one and item *i+1*'s top one. Both map to the **same** insert index
-(*i+1*), so the entire visual gap behaves as one target no matter which half is clicked.
-The first item's top connector inserts at `0`; the last item's bottom connector appends.
+### `src/lexical/MentionsPlugin.tsx`
 
-The connector is also given `sx={{ minHeight: 44 }}` so the hit target is reachable on
-touch even between two short cards.
+`LexicalTypeaheadMenuPlugin` triggered on `@` + word characters. Queries
+`store.observeTomeElements(tomeId)` (already exists, reused verbatim per the
+`Plot` feature's precedent), filters by name prefix, groups by `ElementType`
+the same way `PlotItemDialog`'s attachment `Autocomplete` does. Selecting an
+option inserts a `MentionNode`.
 
-### `src/components/PlotItemDialog.tsx`
+### `src/components/PlotItemDialog.tsx` *(edit)*
 
-Route-driven MUI `Dialog` (`maxWidth="sm"`, `fullWidth`), following `TomeFormDialog`'s
-shape. Fields:
-
-- `name` — "Spine label", helper text "Shown beside the track, e.g. Chapter 1".
-- `title` — required.
-- `description` — `multiline`, `minRows={3}`.
-- **Icon** — a picker over `elementTypeIconOptions` plus a "No icon" choice, matching the
-  existing picker in `ElementTypesPage`.
-- **Dot color** — a row of `ToggleButton`s, each a small filled circle in the
-  corresponding theme color, plus a filled/outlined toggle for `dotVariant`.
-- **Attachments** — `Autocomplete multiple` over `observeTomeElements(tome.id)`, options
-  grouped by element type (`groupBy`), rendering selected values as `Chip`s with the type
-  icon. Free text is disabled — an attachment must be an existing element. There is no
-  label field, by design: this is the whole difference from a `Relationship`.
-
-Actions: **Delete** (left, `color="error"`, routed through `useConfirm()`), **Cancel**, and
-**Save**. Errors surface in the existing `Alert severity="error"` pattern.
-
-### `src/components/PlotPicker.tsx` *(small)*
-
-The header control for switching between a tome's plots: MUI `Tabs` when a tome has a
-handful, with "＋ New plot" as the trailing action, plus rename/delete on the current plot.
-Extracted so `PlotPage` doesn't accumulate it inline.
+New "Composed text" section, below the existing element-attachment picker:
+an ordered, `@dnd-kit`-sortable list of the beat's `writeItemIds` (title +
+`ElementTypeIcon`-style type icon), each row clickable to open that
+`WriteItem` in the full editor (navigating out of the dialog — acceptable,
+since the editor is a dedicated page). A trailing row offers "+ Add
+existing" (`Autocomplete` over the tome's `writeItems` not already
+composed here) and "+ New" (a small type menu, calling
+`createDraftWriteItem(tomeId, type, plotItemId)` then navigating to the new
+item's editor). Removing a row detaches it (`setPlotItemWriteItems` without
+that id) without deleting the `WriteItem`.
 
 ### `src/components/SideNav.tsx` *(edit)*
 
-Add a `<NavLabel>PLOTS</NavLabel>` section listing the tome's plots by name (`TimelineIcon`
-from `@mui/icons-material`), each linking to `/tomes/:tomeId/plots/:plotId`, placed between
-the "Overview" item and the "ELEMENTS" section — outlining is a peer of the element library,
-not a child of it.
+Add a `<NavLabel>WRITE</NavLabel>` entry (icon: `EditNote` or similar from
+`@mui/icons-material`) linking to `/tomes/:tomeId/write`, as a peer section
+alongside PLOTS and ELEMENTS — not nested under either.
 
-### Icons
-
-Reuse `ElementTypeIcon` and its exported `elementTypeIconOptions` rather than standing up a
-second icon registry — it already maps a string key to an icon component with a sensible
-fallback, and the storage contract (`icon?: string`) is identical. The curated set is
-currently world-building-flavoured; extend it with a few beat-shaped entries the wireframe
-implies (`Repeat`, `Favorite`, `Warning`, `Bolt` — the last already present). The
-component's name becomes a slight misnomer once plots use it; renaming it to a neutral
-`AppIcon` is a reasonable follow-up but is deliberately **out of scope** here, since it
-touches every current caller for no behavioural gain.
-
-## Page: `src/pages/PlotPage.tsx`
-
-### Routes (`src/App.tsx`, inside the `/tomes/:tomeId` layout route)
+## Routes (`src/App.tsx`, inside the `/tomes/:tomeId` layout route)
 
 ```tsx
-<Route path="plots" element={<PlotPage />} />
-<Route path="plots/:plotId" element={<PlotPage />} />
-<Route path="plots/:plotId/items/:itemId" element={<PlotPage />} />
-<Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
+<Route path="write" element={<WriteListPage />} />
+<Route path="write/new" element={<WriteEditorPage creating />} />
+<Route path="write/:writeItemId" element={<WriteEditorPage />} />
 ```
 
-- `/plots` with no id resolves via `ensureDefaultPlot` and `<Navigate replace>`s to the
-  resulting plot, so the nav entry always lands somewhere real.
-- `/items/:itemId` renders the timeline with the dialog open on that item.
-- `/insert/:index` renders the timeline with the dialog open on a **new** item that will be
-  spliced in at `index` when saved. Index in the path rather than a search param keeps it
-  consistent with the app's existing all-path routing.
-
-### Composition
-
-```
-PlotPage
-├── header: overline + tome/plot name + PlotPicker
-├── DndContext (sensors: Pointer + Keyboard, restrictToVerticalAxis)
-│   └── SortableContext (verticalListSortingStrategy, items = orderedIds)
-│       └── <Timeline position="right" sx={{ oppositeContent flex: 0.2 }}>
-│           └── TimelineCard × n  (each wrapped by useSortable)
-├── EmptyState when the plot has no items ("Start your outline")
-└── PlotItemDialog (open when :itemId or :index is present)
-```
-
-`TimelineOppositeContent` defaults to taking half the row; constrain it so the spine label
-column stays narrow and the cards get the space, matching the wireframe:
-
-```tsx
-sx={{ [`& .${timelineOppositeContentClasses.root}`]: { flex: 0.2 } }}
-```
-
-`position="right"` is set explicitly rather than relied upon as a default. `"alternate"` is
-deliberately not used — flipping sides every row makes the insert-stem affordance and the
-drag target jump left and right down the page.
-
-### Ordering state during a drag
-
-The `liveQuery` result is the source of truth, but a drag needs an immediate local answer:
-
-1. `orderedIds` is `useState<string[]>`, re-seeded from the live query whenever the live
-   ids change *as a set* (guard on a joined key, not identity, so a re-emit that matches the
-   current order doesn't stomp an in-flight drag).
-2. `onDragEnd` applies dnd-kit's `arrayMove` to `orderedIds` immediately, then fires
-   `store.reorderPlotItems(plotId, next)` without awaiting.
-3. The renumber is deterministic, so the live query echoes back the same order and step 1
-   is a no-op.
-
-Cards are rendered by mapping `orderedIds` through a `Map<id, PlotItem>` built from the live
-query, skipping ids that no longer resolve.
-
-### Attachment resolution
-
-The page holds `observeTomeElements(tome.id)` once and passes each card only its own
-resolved `Element[]`, rather than every card fetching for itself. `types` comes from
-`useTomeWorkspace()`, already in context.
+`type` and an originating `plotItemId` (when created from `PlotItemDialog`)
+travel as search params on the `/new` route
+(`?type=chapter&plotItemId=...`), read once by the mount effect that calls
+`createDraftWriteItem`.
 
 ## Validation & edge cases
 
-- **Blank title** blocks save; `name` and `description` may both be empty.
-- **A plot with zero items** shows `EmptyState` with a single "Add first item" button
-  (there are no stems to click when there are no items).
-- **Deleting the last remaining plot** is allowed; the page then re-runs `ensureDefaultPlot`
-  and lands on a fresh "Main Plot".
-- **Deleting an attached element** strips it from every item (multiEntry cascade); the card
-  simply shows one fewer chip.
-- **An element may be attached to many items, and an item to many elements** — no
-  uniqueness constraint beyond deduping within a single item.
-- **Attachments never appear in an element's Relationships section**, and creating one never
-  writes a `Relationship` row. If a "beats this character appears in" view is wanted on the
-  element editor later, it reads from the `*attachedElementIds` index — a separate feature,
-  not part of this plan.
-- **Concurrent tabs**: `reorderPlotItems` bails when the submitted id set doesn't match
-  storage, so a reorder racing an insert from another tab is dropped rather than applied to
-  a stale list. The dropped reorder is visible immediately (the live query re-seeds).
-- **`dotColor: "secondary"`** currently resolves to MUI's default purple, which clashes with
-  the warm brand palette — `theme.ts` defines `primary`, `error`, `warning`, and `success`
-  but no `secondary`. Add a warm `secondary` to both `lightPalette` and `darkPalette` in
-  `src/theme.ts` as part of this work, or drop `"secondary"` from the offered dot colors.
-  Adding it is preferred: the wireframe uses a secondary-colored dot and connector, and one
-  more palette entry is cheaper than a narrower picker.
+- **Blank title** never blocks autosave; the list and any "used in" badges
+  fall back to "Untitled" for display.
+- **Deleting a `WriteItem`** strips it from every composing `PlotItem`'s
+  `writeItemIds` — the beat just loses that entry, no reorder needed for the
+  survivors (array splice, not a renumbered index).
+- **Deleting a `PlotItem` or `Plot`** leaves every composed `WriteItem`
+  intact; they become composed into one fewer beat (or zero), never deleted.
+- **A `WriteItem` in zero beats** is valid and simply sorts to the bottom
+  under "Story order."
+- **A `WriteItem` in more than one beat** is valid (many-to-many, confirmed);
+  story-order uses its earliest beat as the sort key.
+- **Mentions to a deleted element** render inert rather than being
+  proactively scrubbed from every document — a known, documented limitation.
+- **Concurrent tabs**: last debounced write wins (plain Dexie `put`), same
+  simplicity bar as the rest of the app — no operational-transform/CRDT
+  merge for simultaneous edits to the same `WriteItem`.
+- **Abandoned "+ New"** (opened, nothing typed, navigated away) leaves no
+  orphan row and no dangling `writeItemIds` entry.
 
 ## Implementation sequence
 
-1. **Dependencies** — install `@mui/lab` and the three `@dnd-kit` packages; add the warm
-   `secondary` palette entry to `src/theme.ts`.
-2. **Data layer** — `src/models/Plot.ts`; `db.ts` `version(4)` with `plots` and `plotItems`
-   (including the `*attachedElementIds` multiEntry index).
-3. **Store** — the observe/save/delete/reorder methods above, plus the `deleteTome`,
-   `deleteElement`, and `deleteType` cascade extensions.
-4. **Static render** — `TimelineCard` + `PlotPage` rendering a read-only timeline from
-   seeded data; confirm it matches `wireframes/timeline_example.png` (spine labels, dot
-   colors, icon dots, opposite-content width).
-5. **Editing** — `PlotItemDialog` wired to the `:itemId` route: edit, save, delete.
-6. **Insertion** — `TimelineConnectorInsert` + the `insert/:index` route and the splice path
-   in `savePlotItem`.
-7. **Attachments** — the multi-`Autocomplete` in the dialog and the chip row on the card,
-   plus the element/type delete cascades.
-8. **Drag and drop** — `DndContext`/`SortableContext`, the drag handle, `reorderPlotItems`,
-   and keyboard reordering.
-9. **Multiple plots** — `PlotPicker`, create/rename/delete, `ensureDefaultPlot`, and the
-   `SideNav` PLOTS section.
-10. **Docs** — update `src/components/AGENTS.md`'s "Current components" list with
-    `TimelineCard`, `TimelineConnectorInsert`, `PlotItemDialog`, and `PlotPicker`, and note
-    the `Plot`-record / `Timeline`-rendering naming split.
+1. **Dependencies** — install `lexical` + the `@lexical/react` and
+   supporting subpackages listed above.
+2. **Data layer** — `src/models/WriteItem.ts`; add `writeItemIds` to
+   `PlotItem`; `db.ts` `version(5)` with the `writeItems` table and the
+   `*writeItemIds` index.
+3. **Store** — the observe/create/save/delete/discard methods above, plus
+   the `deleteTome` cascade extension.
+4. **Static render** — `WriteListPage` + `WriteItemCard` against seeded data;
+   confirm the type filter, sort options, and 250ms hover-preview popover.
+5. **Editor shell** — `WriteEditorPage`: title field, type select, draft
+   creation on mount, Delete, discard-if-empty on unmount — no Lexical yet
+   (plain `TextField` placeholder for content).
+6. **Lexical wiring** — swap in `LexicalComposer` with the basic plugin set,
+   debounced autosave of `title`/`type`/`content`, and `preview` derivation.
+7. **Mentions** — `MentionNode` + `MentionsPlugin` (typeahead over
+   `observeTomeElements`), click-through to the element's edit route.
+8. **Plot integration** — `PlotItemDialog`'s "Composed text" section: list,
+   `@dnd-kit` reorder, add existing, add new (per type), remove.
+9. **Nav** — `SideNav` WRITE entry, routes in `App.tsx`.
+10. **Docs** — update `src/components/AGENTS.md`'s "Current components" list
+    with `WriteItemCard`, `MentionsPlugin`/`MentionNode`, and the
+    `PlotItemDialog` composition-section addition; note the
+    `WriteItem`/`PlotItem` composition relationship next to the existing
+    `Plot`/`Timeline` naming note.
 11. **Verification** — see below.
 
 ## Verification
 
 Manual, against `npm run dev`:
 
-- Create a tome, open **Plots → Main Plot**, add four items reproducing the wireframe
-  (spine labels "Chapter 1"–"Chapter 4", the four titles/descriptions, one grey dot, one
-  filled primary, one outlined primary, one secondary) and compare against
-  `wireframes/timeline_example.png`.
-- Click the stem above item 1 → new item lands first. Click the stem between items 2 and 3
-  from **both** halves of the gap → both land at index 2. Click the stem below the last
-  item → appends.
-- Cancel the dialog opened from a stem → no empty item is left behind.
-- Drag item 4 to position 1 with the handle; reload → order persists. Repeat using the
-  keyboard (tab to handle, space, arrows, space).
-- Verify a card click opens the editor and a handle drag does not.
-- Attach three elements of different types to one item; confirm chips render with the right
-  type icons and that clicking a chip navigates to that element.
-- Delete an attached element, then an entire element type → the chips disappear from the
-  timeline and no orphan ids remain (`db.plotItems.toArray()` in the console).
-- Create a second plot, move between them via the picker and the side nav, delete one,
-  delete the tome → no orphan `plots`/`plotItems` rows remain.
-- Check the timeline in both light and dark mode and at the `sm` breakpoint.
+- Create four `WriteItem`s, one of each type, with distinct titles; confirm
+  the Write grid shows title-only cards and the type filter narrows correctly.
+- Hover a card for under 250ms and release — no popover. Hold past 250ms —
+  popover shows a text sample; move away — it closes.
+- Open a new item, type a title and a paragraph, wait for the debounce,
+  reload — content persists. Open "+ New," immediately navigate away without
+  typing — reload the list — no "Untitled" card was left behind.
+- In the editor, type `@` and a few letters of an existing element's name;
+  confirm the autocomplete filters and grouping by element type; select one
+  and confirm an inline link is inserted; click it and confirm navigation to
+  that element's editor; reload the document and confirm the mention
+  survives serialization.
+- From a `PlotItem`'s dialog, add an existing `WriteItem` and create a new
+  one via "+ New"; confirm both appear in "Composed text," reorder them via
+  drag, reload, and confirm the order persisted.
+- Sort the Write list by "Story order" with items composed into beats at
+  different plot positions and some composed into none; confirm the
+  attached items appear in beat order and unattached items trail at the end.
+- Delete a `WriteItem` that is composed into two different beats; confirm it
+  disappears from both beats' "Composed text" lists with no dangling id.
+- Delete a `Plot` whose beats compose several `WriteItem`s; confirm the
+  `WriteItem`s themselves still exist afterward (check the Write list).
+- Delete the tome; confirm no orphan `writeItems` rows remain
+  (`db.writeItems.toArray()` in the console).
+- Check the Write list and editor in both light and dark mode and at the
+  `sm` breakpoint.
 
 ## Acceptance criteria
 
-- A tome supports any number of named plots; opening the plot tool on a tome with none
-  creates "Main Plot" automatically.
-- An item has a spine name, a title, a description, an optional icon, and an optional dot
-  color/variant, and renders through a single `TimelineCard` component.
-- Item order is authored and stable across reloads.
-- Clicking the connector stem between two items inserts a new item at exactly that position;
-  the stems at either end insert first and last respectively.
-- Dragging an item by its handle reorders the plot, and the same reorder is reachable by
-  keyboard.
-- Clicking a card opens a dialog that edits every field and attaches any number of elements
-  from the same tome, with no label or description on the attachment.
-- Attachments are not `Relationship` records and do not appear in any element's
-  Relationships section.
-- Deleting an element, an element type, a plot, or a tome leaves no orphaned plot items or
-  dangling attachment ids.
-- No file in the codebase imports `@mui/lab`'s `TimelineItem` under an alias — the name is
-  unclaimed by the domain model.
+- A tome supports any number of `WriteItem`s across four fixed types, each
+  with a title, type, timestamps, and Lexical-authored text.
+- The Write list shows title-only cards, filterable by type and sortable by
+  most recent, alphabetical, and story order (a beat's position on the plot
+  spine, then the item's position within that beat).
+- Hovering a card for 250ms shows a text-sample popover; releasing early
+  shows nothing.
+- Adding or editing opens a dedicated full-page editor with an editable
+  title and a Lexical rich-text body; changes autosave on a debounce with no
+  explicit Save action.
+- Typing `@` plus letters autocompletes over the tome's `Element`s and
+  inserts a navigable inline mention, grouped by element type in the
+  suggestion list.
+- A `PlotItem` composes an ordered, reorderable list of any number of
+  `WriteItem`s (many-to-many across beats); new items can be created
+  directly from a beat and are auto-composed into it.
+- Deleting a `WriteItem`, `PlotItem`, `Plot`, or tome leaves no orphaned rows
+  or dangling `writeItemIds`/mention references beyond the documented
+  "dead mention link" limitation.
+- Abandoning a freshly opened, untouched "+ New" item leaves no trace in the
+  list or in any beat's composition.

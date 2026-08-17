@@ -22,6 +22,7 @@ import { timelineOppositeContentClasses } from "@mui/lab/TimelineOppositeContent
 import AddIcon from "@mui/icons-material/Add";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem } from "../models/Plot";
+import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
@@ -47,6 +48,8 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
     ) ?? [];
   const elements =
     useObservable<Element[]>((cb) => store.observeTomeElements(tome!.id, cb), [tome?.id]) ?? [];
+  const writeItems =
+    useObservable<WriteItem[]>((cb) => store.observeWriteItems(tome!.id, cb), [tome?.id]) ?? [];
 
   // The live query is the source of truth, but a drag needs an immediate answer, so
   // the rendered order is held locally and re-seeded whenever the stored set changes.
@@ -194,6 +197,10 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
         plotId={plot.id}
         elements={elements}
         types={types}
+        writeItems={writeItems}
+        onOpenWriteItem={(writeItemId) =>
+          navigate(`/tomes/${tome.id}/write/${writeItemId}`)
+        }
         onClose={closeDialog}
       />
     </Box>
