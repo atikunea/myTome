@@ -32,7 +32,7 @@ export function AppHeader() {
         >
           Library
         </Button>
-        <Typography variant="h1" sx={{ fontSize: { xs: "2rem", sm: "3.4rem" }, mt: 1 }}>
+        <Typography variant="h1" sx={{ fontSize: { xs: "1rem", sm: "2rem" }, mt: 1 }}>
           {tome.title}
         </Typography>
       </Box>
