@@ -23,6 +23,10 @@ import PetsIcon from "@mui/icons-material/Pets";
 import TerrainIcon from "@mui/icons-material/Terrain";
 import FlagIcon from "@mui/icons-material/Flag";
 import LanguageIcon from "@mui/icons-material/Language";
+import RepeatIcon from "@mui/icons-material/Repeat";
+import FavoriteIcon from "@mui/icons-material/Favorite";
+import WarningIcon from "@mui/icons-material/Warning";
+import HourglassTopIcon from "@mui/icons-material/HourglassTop";
 import CategoryIcon from "@mui/icons-material/Category";
 
 export const elementTypeIconOptions: { key: string; label: string; Icon: SvgIconComponent }[] = [
@@ -49,6 +53,10 @@ export const elementTypeIconOptions: { key: string; label: string; Icon: SvgIcon
   { key: "Terrain", label: "Terrain", Icon: TerrainIcon },
   { key: "Flag", label: "Nation", Icon: FlagIcon },
   { key: "Language", label: "Culture", Icon: LanguageIcon },
+  { key: "Repeat", label: "Turning point", Icon: RepeatIcon },
+  { key: "Favorite", label: "Bond", Icon: FavoriteIcon },
+  { key: "Warning", label: "Stakes", Icon: WarningIcon },
+  { key: "HourglassTop", label: "Waiting", Icon: HourglassTopIcon },
 ];
 
 const iconsByKey = new Map(elementTypeIconOptions.map((option) => [option.key, option.Icon]));

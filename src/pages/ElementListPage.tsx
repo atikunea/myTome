@@ -18,18 +18,19 @@ import AddIcon from "@mui/icons-material/Add";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
-import UploadIcon from "@mui/icons-material/UploadFile";
 import ViewModuleIcon from "@mui/icons-material/ViewModule";
 import ViewListIcon from "@mui/icons-material/ViewList";
 import type { Element } from "../models/Element";
 import type { Relationship } from "../models/Relationship";
-import { imageFrom, store } from "../services/store";
+import type { ImageSource } from "../models/Tome";
+import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useObservable } from "../hooks/useObservable";
 import { CoverThumbnail } from "../components/CoverThumbnail";
 import { EmptyState } from "../components/EmptyState";
 import { ElementTypeIcon } from "../components/ElementTypeIcon";
+import { ImagePicker } from "../components/ImagePicker";
 
 interface RelationshipRow {
   key: string;
@@ -66,10 +67,15 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
     [tome?.id, elementId],
   );
   const [relationshipRows, setRelationshipRows] = useState<RelationshipRow[]>([]);
+  const [image, setImage] = useState<ImageSource | undefined>();
 
   useEffect(() => {
     setError("");
   }, [elementId, creating]);
+
+  useEffect(() => {
+    setImage(elementId ? elements.find((item) => item.id === elementId)?.image : undefined);
+  }, [elementId, creating, elements]);
 
   useEffect(() => {
     if (creating) {
@@ -136,10 +142,6 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
             "Every relationship needs both a related element and a description.",
           );
       }
-      const image = await imageFrom(
-        String(data.get("imageUrl") ?? ""),
-        (form.elements.namedItem("imageFile") as HTMLInputElement).files?.[0],
-      );
       const saved = await store.saveElement({
         id: editing?.id,
         tomeId: tome.id,
@@ -147,7 +149,7 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
         name: String(data.get("name") ?? ""),
         description: String(data.get("description") ?? ""),
         attributes,
-        image: image ?? editing?.image,
+        image,
       });
       await store.saveElementRelationships(
         saved,
@@ -262,11 +264,16 @@ export function ElementListPage({ creating = false }: { creating?: boolean }) {
               Add relationship
             </Button>
           </Stack>
-          <TextField name="imageUrl" label="Image URL" placeholder="https://…" fullWidth />
-          <Button component="label" variant="outlined" startIcon={<UploadIcon />} sx={{ alignSelf: "flex-start" }}>
-            Upload an image
-            <input type="file" name="imageFile" accept="image/*" hidden />
-          </Button>
+          <Stack spacing={1}>
+            <Typography variant="subtitle2">Image</Typography>
+            <ImagePicker
+              image={image}
+              label={editing?.name || type.name}
+              alt={editing?.name ?? type.name}
+              onChange={setImage}
+              sx={{ height: 160, maxWidth: 320 }}
+            />
+          </Stack>
         </Stack>
         <Stack direction="row" sx={{ justifyContent: "flex-end", mt: 3 }}>
           <Button type="submit" variant="contained">

@@ -4,11 +4,16 @@ const brand = {
   accent: "#9d5537",
   accentDark: "#c98a5e",
   danger: "#b63b3b",
+  // A muted plum that reads as a second voice against the warm paper palette —
+  // used for plot dots/connectors, where MUI's default purple would clash.
+  secondary: "#6b4a6e",
+  secondaryDark: "#a888ab",
 };
 
 const lightPalette: ThemeOptions["palette"] = {
   mode: "light" as PaletteMode,
   primary: { main: brand.accent, contrastText: "#ffffff" },
+  secondary: { main: brand.secondary, contrastText: "#ffffff" },
   error: { main: brand.danger },
   background: { default: "#fdfbf8", paper: "#ffffff" },
   text: { primary: "#29211e", secondary: "#766b65" },
@@ -20,6 +25,7 @@ const lightPalette: ThemeOptions["palette"] = {
 const darkPalette: ThemeOptions["palette"] = {
   mode: "dark" as PaletteMode,
   primary: { main: brand.accentDark, contrastText: "#241a12" },
+  secondary: { main: brand.secondaryDark, contrastText: "#241a12" },
   error: { main: "#e07272" },
   background: { default: "#1c1815", paper: "#251f1a" },
   text: { primary: "#f3ece6", secondary: "#b8a99e" },

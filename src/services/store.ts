@@ -5,6 +5,7 @@ import { starterTypes } from "../models/ElementType";
 import type { Element } from "../models/Element";
 import type { ImageSource, Tome } from "../models/Tome";
 import type { Relationship } from "../models/Relationship";
+import type { Plot, PlotItem } from "../models/Plot";
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 const slugify = (s: string) =>
@@ -68,11 +69,49 @@ export function validateElement(
       throw new Error(`${field.name} must use a listed choice.`);
   }
 }
+export function validatePlotItem(title: string) {
+  if (!title.trim()) throw new Error("Every plot item needs a title.");
+}
 export function validateRelationship(fromElementId: string, toElementId: string, label: string) {
   if (!label.trim()) throw new Error("Every relationship needs a description.");
   if (fromElementId === toElementId)
     throw new Error("An element cannot be related to itself.");
 }
+const plotRange = (tomeId: string) =>
+  db.plots
+    .where("[tomeId+sortOrder]")
+    .between([tomeId, Dexie.minKey], [tomeId, Dexie.maxKey]);
+const plotItemRange = (plotId: string) =>
+  db.plotItems
+    .where("[plotId+sortOrder]")
+    .between([plotId, Dexie.minKey], [plotId, Dexie.maxKey]);
+/**
+ * Strips the given element ids out of every plot item that attaches them, using the
+ * `*attachedElementIds` multiEntry index. Call inside a transaction that includes
+ * `db.plotItems`.
+ */
+const detachElements = async (elementIds: readonly string[]) => {
+  const time = now();
+  for (const elementId of elementIds)
+    await db.plotItems
+      .where("attachedElementIds")
+      .equals(elementId)
+      .modify((item) => {
+        item.attachedElementIds = item.attachedElementIds.filter(
+          (x) => x !== elementId,
+        );
+        item.updatedAt = time;
+      });
+};
+/** Assigns sortOrder = index across the given ids. Call inside a transaction. */
+const applyOrder = async (
+  table: { update: (id: string, changes: { sortOrder: number }) => Promise<number> },
+  orderedIds: string[],
+) => {
+  await Promise.all(
+    orderedIds.map((id, index) => table.update(id, { sortOrder: index })),
+  );
+};
 export const store = {
   observeTomes(callback: (v: Tome[]) => void) {
     return liveQuery(() =>
@@ -176,11 +215,10 @@ export const store = {
   async deleteTome(id: string) {
     await db.transaction(
       "rw",
-      db.tomes,
-      db.elementTypes,
-      db.elements,
-      db.relationships,
+      [db.tomes, db.elementTypes, db.elements, db.relationships, db.plots, db.plotItems],
       async () => {
+        await db.plotItems.where("tomeId").equals(id).delete();
+        await db.plots.where("tomeId").equals(id).delete();
         await db.relationships.where("tomeId").equals(id).delete();
         await db.elements.where("tomeId").equals(id).delete();
         await db.elementTypes.where("tomeId").equals(id).delete();
@@ -260,11 +298,13 @@ export const store = {
       db.elementTypes,
       db.elements,
       db.relationships,
+      db.plotItems,
       async () => {
         const elementIds = await db.elements
           .where("elementTypeId")
           .equals(type.id)
           .primaryKeys();
+        await detachElements(elementIds);
         await db.relationships
           .filter(
             (r) =>
@@ -351,11 +391,127 @@ export const store = {
     });
   },
   async deleteElement(id: string) {
-    await db.transaction("rw", db.elements, db.relationships, async () => {
-      await db.relationships
-        .filter((r) => r.fromElementId === id || r.toElementId === id)
-        .delete();
-      await db.elements.delete(id);
+    await db.transaction(
+      "rw",
+      db.elements,
+      db.relationships,
+      db.plotItems,
+      async () => {
+        await db.relationships
+          .filter((r) => r.fromElementId === id || r.toElementId === id)
+          .delete();
+        await detachElements([id]);
+        await db.elements.delete(id);
+      },
+    );
+  },
+  observePlots(tomeId: string, callback: (v: Plot[]) => void) {
+    return liveQuery(() => plotRange(tomeId).toArray()).subscribe({
+      next: callback,
+      error: console.error,
+    });
+  },
+  observePlot(id: string, callback: (v: Plot | undefined) => void) {
+    return liveQuery(() => db.plots.get(id)).subscribe({
+      next: callback,
+      error: console.error,
+    });
+  },
+  observePlotItems(plotId: string, callback: (v: PlotItem[]) => void) {
+    return liveQuery(() => plotItemRange(plotId).toArray()).subscribe({
+      next: callback,
+      error: console.error,
+    });
+  },
+  async ensureDefaultPlot(tomeId: string) {
+    const existing = await plotRange(tomeId).first();
+    if (existing) return existing;
+    return store.savePlot({ tomeId, name: "Main Plot" });
+  },
+  async savePlot(input: Partial<Plot> & Pick<Plot, "tomeId" | "name">) {
+    const existing = input.id ? await db.plots.get(input.id) : undefined;
+    const time = now();
+    const plot: Plot = {
+      id: existing?.id ?? uid(),
+      tomeId: input.tomeId,
+      name: input.name.trim(),
+      description: input.description?.trim() || undefined,
+      sortOrder:
+        input.sortOrder ??
+        existing?.sortOrder ??
+        (await db.plots.where("tomeId").equals(input.tomeId).count()),
+      createdAt: existing?.createdAt ?? time,
+      updatedAt: time,
+    };
+    if (!plot.name) throw new Error("A plot name is required.");
+    await db.plots.put(plot);
+    return plot;
+  },
+  async deletePlot(plot: Pick<Plot, "id" | "tomeId">) {
+    await db.transaction("rw", db.plots, db.plotItems, async () => {
+      await db.plotItems.where("plotId").equals(plot.id).delete();
+      await db.plots.delete(plot.id);
+      const remaining = await plotRange(plot.tomeId).primaryKeys();
+      await applyOrder(db.plots, remaining);
+    });
+  },
+  async savePlotItem(
+    input: Partial<PlotItem> &
+      Pick<PlotItem, "tomeId" | "plotId" | "name" | "title" | "description">,
+    insertAt?: number,
+  ) {
+    validatePlotItem(input.title);
+    const existing = input.id ? await db.plotItems.get(input.id) : undefined;
+    const time = now();
+    const item: PlotItem = {
+      id: existing?.id ?? uid(),
+      tomeId: input.tomeId,
+      plotId: input.plotId,
+      name: input.name.trim(),
+      title: input.title.trim(),
+      description: input.description.trim(),
+      icon: input.icon,
+      dotColor: input.dotColor,
+      dotVariant: input.dotVariant,
+      attachedElementIds: [
+        ...new Set(input.attachedElementIds ?? existing?.attachedElementIds ?? []),
+      ],
+      sortOrder: existing?.sortOrder ?? 0,
+      createdAt: existing?.createdAt ?? time,
+      updatedAt: time,
+    };
+    await db.transaction("rw", db.plotItems, async () => {
+      if (existing) {
+        await db.plotItems.put(item);
+        return;
+      }
+      const ids = await plotItemRange(item.plotId).primaryKeys();
+      const at = Math.min(Math.max(insertAt ?? ids.length, 0), ids.length);
+      ids.splice(at, 0, item.id);
+      item.sortOrder = at;
+      await db.plotItems.put(item);
+      await applyOrder(db.plotItems, ids);
+    });
+    return item;
+  },
+  async reorderPlotItems(plotId: string, orderedIds: string[]) {
+    await db.transaction("rw", db.plotItems, async () => {
+      const stored = await plotItemRange(plotId).primaryKeys();
+      // A mismatch means another tab inserted or deleted an item while this drag
+      // was in flight — drop the reorder rather than write a stale order.
+      if (
+        stored.length !== orderedIds.length ||
+        !stored.every((id) => orderedIds.includes(id))
+      )
+        return;
+      await applyOrder(db.plotItems, orderedIds);
+    });
+  },
+  async deletePlotItem(item: Pick<PlotItem, "id" | "plotId">) {
+    await db.transaction("rw", db.plotItems, async () => {
+      await db.plotItems.delete(item.id);
+      const remaining = await plotItemRange(item.plotId).primaryKeys();
+      await applyOrder(db.plotItems, remaining);
     });
   },
   countField(typeId: string, fieldId: string) {

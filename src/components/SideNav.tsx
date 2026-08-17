@@ -1,7 +1,11 @@
 import { NavLink } from "react-router-dom";
 import { Box, ListItemButton, ListItemText, Typography } from "@mui/material";
 import SettingsIcon from "@mui/icons-material/Settings";
+import TimelineIcon from "@mui/icons-material/Timeline";
+import type { Plot } from "../models/Plot";
+import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
+import { useObservable } from "../hooks/useObservable";
 import { brandFontFamily } from "../theme";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 
@@ -17,6 +21,8 @@ const navItemSx = {
 
 export function SideNav() {
   const { tome, types } = useTomeWorkspace();
+  const plots =
+    useObservable<Plot[]>((cb) => store.observePlots(tome?.id ?? "", cb), [tome?.id]) ?? [];
   if (!tome) return null;
 
   return (
@@ -58,6 +64,25 @@ export function SideNav() {
       >
         <ListItemText primary="Overview" />
       </ListItemButton>
+      <NavLabel>PLOTS</NavLabel>
+      {plots.length ? (
+        plots.map((plot) => (
+          <ListItemButton
+            key={plot.id}
+            component={NavLink}
+            to={`/tomes/${tome.id}/plots/${plot.id}`}
+            sx={navItemSx}
+          >
+            <TimelineIcon fontSize="small" sx={{ mr: 1 }} />
+            <ListItemText primary={plot.name} />
+          </ListItemButton>
+        ))
+      ) : (
+        <ListItemButton component={NavLink} to={`/tomes/${tome.id}/plots`} sx={navItemSx}>
+          <TimelineIcon fontSize="small" sx={{ mr: 1 }} />
+          <ListItemText primary="Main Plot" />
+        </ListItemButton>
+      )}
       <NavLabel>ELEMENTS</NavLabel>
       {types.map((type) => (
         <ListItemButton
