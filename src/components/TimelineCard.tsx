@@ -13,6 +13,9 @@ import type { ElementType } from "../models/ElementType";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 import { TimelineConnectorInsert } from "./TimelineConnectorInsert";
 
+/** Width of a `TimelineDot` wrapping a default-size icon: 24px icon + 8px padding + 4px border. */
+const ICON_DOT_SIZE = 36;
+
 /**
  * One row of the plot timeline. This renders a MUI `TimelineItem` as its own root
  * rather than wrapping one — `Timeline` distributes its `position` through React
@@ -56,9 +59,23 @@ export function TimelineCard({
       >
         {item.name}
       </TimelineOppositeContent>
-      <TimelineSeparator>
+      {/*
+        The separator is pinned to a fixed width so the track, the cards, and the
+        spine labels line up whether or not an item has an icon. Left to size
+        itself, the column follows its dot — 36px around an icon, 12px around a
+        bare dot — which bends the track and staggers every card beside it.
+        This has to be `flex-basis`, not `width`: the separator's own `flex: 0`
+        sets `flex-basis: 0%`, and basis beats width on a flex item.
+      */}
+      <TimelineSeparator sx={{ flex: `0 0 ${ICON_DOT_SIZE}px` }}>
         <TimelineConnectorInsert label="Insert item above" onInsert={onInsertAbove} />
-        <TimelineDot color={item.dotColor ?? "grey"} variant={item.dotVariant ?? "filled"}>
+        <TimelineDot
+          color={item.dotColor ?? "grey"}
+          variant={item.dotVariant ?? "filled"}
+          // TimelineDot ships `align-self: baseline`, which in this column flex
+          // parent pins a bare dot to the left edge instead of the track.
+          sx={{ alignSelf: "center" }}
+        >
           {item.icon ? <ElementTypeIcon icon={item.icon} /> : null}
         </TimelineDot>
         <TimelineConnectorInsert label="Insert item below" onInsert={onInsertBelow} />
