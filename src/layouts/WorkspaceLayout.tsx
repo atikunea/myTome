@@ -42,7 +42,7 @@ function WorkspaceLayoutInner() {
           p: { xs: "27px 18px", sm: "48px clamp(20px, 5vw, 76px)" },
         }}
       >
-        <AppHeader />
+        {/* <AppHeader /> */}
         <Outlet />
       </Box>
     </Box>

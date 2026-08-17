@@ -106,6 +106,19 @@ worth knowing before editing it:
   deferred callback fires, so only a real unmount discards. Don't "simplify"
   that timeout away.
 
+## The editor toolbar is described by a config, not hand-wired JSX
+
+`../lexical/ToolbarPlugin.tsx` renders from `ToolbarItem[][]` — an array of
+groups, dividers between them — defaulting to the exported
+`defaultToolbarItems`. Add, drop, or regroup controls by changing that array
+or passing an `items` prop; don't hand-place buttons in the JSX.
+
+Its one non-obvious rule: **every button suppresses `mousedown`**. Focus would
+otherwise leave the editor the instant a button is pressed, Lexical's
+selection would collapse, and the command would apply to nothing. `ToolButton`
+does this centrally, which is why toolbar controls go through it rather than
+using `ToggleButton` directly.
+
 ## Talking to parents: props and context, not custom events
 
 Unlike the old Lit version, components here are regular React components:

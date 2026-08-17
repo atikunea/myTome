@@ -31,6 +31,7 @@ import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useObservable } from "../hooks/useObservable";
 import { MentionsPlugin } from "../lexical/MentionsPlugin";
+import { ToolbarPlugin } from "../lexical/ToolbarPlugin";
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
 import { MentionNode } from "../lexical/MentionNode";
 import { WriteItemTypeIcon } from "../components/WriteItemTypeIcon";
@@ -269,12 +270,12 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
       ) : null}
 
       <LexicalComposer initialConfig={initialConfig}>
+        <ToolbarPlugin />
         <Box
           onClick={handleMentionClick}
           sx={{
             position: "relative",
             flex: 1,
-            mt: 2,
             // Mentions are styled from here rather than in `createDOM`, which
             // runs outside React and cannot reach the MUI theme.
             [`& [${MENTION_ATTRIBUTE}]`]: {
@@ -296,7 +297,12 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
                   lineHeight: 1.7,
                   fontSize: "1.02rem",
                   "& p": { m: 0, mb: 1.5 },
-                  "& h1, & h2, & h3": { mt: 2.5, mb: 1 },
+                  "& h1, & h2, & h3": { mt: 2.5, mb: 1, lineHeight: 1.25 },
+                  "& h1": { fontSize: "1.7rem" },
+                  "& h2": { fontSize: "1.4rem" },
+                  "& h3": { fontSize: "1.18rem" },
+                  "& ul, & ol": { m: 0, mb: 1.5, pl: 3.5 },
+                  "& li": { mb: 0.35 },
                   "& blockquote": {
                     borderLeft: 3,
                     borderColor: "divider",
