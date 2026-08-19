@@ -91,7 +91,7 @@ export function SideNav() {
         sx={navItemSx}
       >
         <EditNoteIcon fontSize="small" sx={{ mr: 1 }} />
-        <ListItemText primary="Text" />
+        <ListItemText primary="Write" />
       </ListItemButton>
       <NavLabel>ELEMENTS</NavLabel>
       {types.map((type) => (

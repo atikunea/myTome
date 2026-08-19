@@ -126,7 +126,7 @@ export function WriteListPage() {
             WRITE
           </Typography>
           <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
-            Text
+            Write
           </Typography>
         </Box>
         <Button

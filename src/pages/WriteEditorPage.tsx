@@ -172,6 +172,14 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
     );
   };
 
+  // Return to wherever the reader came from (a plot beat, search, the list).
+  // A direct load has no in-app entry to pop, so fall back to the write list.
+  const goBack = () => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate(`/tomes/${tomeId}/write`);
+  };
+
   return (
     // No `minHeight: 100%` here: `main` already sits in a `100vh` grid, so
     // stretching to its full height and then adding the header would push the
@@ -185,10 +193,10 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
         <Button
           size="small"
           startIcon={<ArrowBackIcon />}
-          onClick={() => navigate(`/tomes/${tomeId}/write`)}
+          onClick={goBack}
           sx={{ alignSelf: "flex-start", flexShrink: 0 }}
         >
-          All text
+          Back
         </Button>
         <Box sx={{ flex: 1 }} />
         <TextField
