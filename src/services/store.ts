@@ -1,7 +1,7 @@
 import Dexie, { liveQuery } from "dexie";
 import { db } from "../models/db";
 import type { ElementType, FieldDefinition } from "../models/ElementType";
-import { starterTypes } from "../models/ElementType";
+import { tomeTemplateById } from "../models/TomeTemplate";
 import type { Element } from "../models/Element";
 import type { ImageSource, Tome } from "../models/Tome";
 import type { Relationship } from "../models/Relationship";
@@ -271,22 +271,68 @@ export const store = {
       },
     );
   },
-  async createStarterTypes(tomeId: string) {
+  /**
+   * Seeds a brand-new tome from a template: its element types (with their field
+   * definitions) and, for every template but "General", a starter plot outline.
+   * Only ever called on a tome that has just been created — it adds rows and
+   * never reconciles, so applying a second template would stack the two.
+   */
+  async applyTomeTemplate(tomeId: string, templateId: string) {
+    const template = tomeTemplateById(templateId);
     const time = now();
-    await db.elementTypes.bulkAdd(
-      starterTypes.map(([name, description, icon], i) => ({
-        id: uid(),
+    await db.transaction("rw", db.elementTypes, db.plots, db.plotItems, async () => {
+      await db.elementTypes.bulkAdd(
+        template.types.map((type, i) => ({
+          id: uid(),
+          tomeId,
+          name: type.name,
+          description: type.description,
+          icon: type.icon,
+          slug: slugify(type.name),
+          sortOrder: i,
+          fieldDefinitions: (type.fields ?? []).map((field, position) => ({
+            id: uid(),
+            name: field.name,
+            kind: field.kind,
+            options: field.options,
+            // A template never demands a value: an author sketching a character
+            // should not be blocked by a field the template chose for them.
+            required: false,
+            sortOrder: position,
+          })),
+          createdAt: time,
+          updatedAt: time,
+        })),
+      );
+      if (!template.plot) return;
+      const plotId = uid();
+      await db.plots.add({
+        id: plotId,
         tomeId,
-        name,
-        description,
-        icon,
-        slug: slugify(name),
-        sortOrder: i,
-        fieldDefinitions: [],
+        name: template.plot.name,
+        description: "",
+        sortOrder: 0,
         createdAt: time,
         updatedAt: time,
-      })),
-    );
+      });
+      await db.plotItems.bulkAdd(
+        template.plot.beats.map((beat, i) => ({
+          id: uid(),
+          tomeId,
+          plotId,
+          name: beat.name,
+          title: beat.title,
+          description: beat.description,
+          dotColor: beat.dotColor ?? "grey",
+          dotVariant: "outlined" as const,
+          attachedElementIds: [],
+          writeItemIds: [],
+          sortOrder: i,
+          createdAt: time,
+          updatedAt: time,
+        })),
+      );
+    });
   },
   async saveType(
     input: Partial<ElementType> &

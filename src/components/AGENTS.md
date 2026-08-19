@@ -4,8 +4,9 @@ Shared UI building blocks for myTome (React 19 + TypeScript + MUI, function
 components with hooks — no class components, no web components). This
 folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
-`EmptyState`, `ColorModeToggle`, `TimelineCard`, `TimelineConnectorInsert`,
-`PlotItemDialog`, `PlotPicker`, `WriteItemCard`, `WriteItemTypeIcon`).
+`EmptyState`, `ColorModeToggle`, `PlotTimeline`, `TimelineCard`,
+`TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`, `WriteItemCard`,
+`WriteItemTypeIcon`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
 rather than here — they are not MUI components and only the Write editor
 mounts them. Route-level screens live in `../pages`
@@ -37,9 +38,31 @@ routes). They are deliberately **not** named `Timeline`/`TimelineItem`, because
 import alias in every file that touched both. Keep it that way: no file should
 need to alias `@mui/lab`'s `TimelineItem`.
 
-The two components that exist only to emit MUI timeline markup — `TimelineCard`
-and `TimelineConnectorInsert` — keep timeline vocabulary, since they are named
-for what they render rather than for the record they display.
+The three components that exist only to emit MUI timeline markup —
+`PlotTimeline`, `TimelineCard`, and `TimelineConnectorInsert` — keep timeline
+vocabulary, since they are named for what they render rather than for the
+record they display.
+
+## Tome templates are seeds, not schemas
+
+`../models/TomeTemplate.ts` holds the registry behind the create dialog's
+template picker — General (the historical starter set) plus Fantasy, Science
+Fiction, Horror, Non-fiction, Biography, and Self-Help. Each entry lists the
+element types to create (with their `FieldDefinition`s) and, for every
+template but General, a starter plot outline.
+
+`store.applyTomeTemplate(tomeId, templateId)` runs **once**, right after the
+tome row is written, and only adds rows. Nothing is stored on the `Tome`
+saying which template made it, nothing reads the registry afterward, and a
+second application would stack a second copy — so don't grow this into a
+"change a tome's template later" feature without reconciliation to match.
+Template fields are always created with `required: false`: an author
+sketching a character must never be blocked by a field a template chose for
+them.
+
+The old `starterTypes` constant in `models/ElementType.ts` is gone; the
+General template replaced it. If a past agent's mental model is "new tomes
+get `starterTypes`", that no longer applies.
 
 ## A `PlotItem` *composes* `WriteItem`s — that is not an attachment
 
@@ -157,7 +180,10 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   the original design, which had a permanently-dark sidebar.
 - The one responsive breakpoint used everywhere is MUI's default `sm`
   (600px), typically via `sx={{ flexDirection: { xs: "column", sm: "row" } }}`
-  — match this instead of inventing new breakpoints.
+  — match this instead of inventing new breakpoints. The single deliberate
+  exception is the two-column layout in `../pages/PlotComparePage.tsx`, which
+  stacks until `md` (900px): two timelines each carry a spine, labels, and
+  cards, and do not fit beside each other at 600px.
 - No hand-written inline `<svg>` icons — use `@mui/icons-material`.
 
 ## Current components
@@ -170,7 +196,9 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   `TomeLibraryPage` (`/tomes/new`) and `TomeDashboardPage`
   (`/tomes/:id/edit`) — matches the original behavior where editing a tome
   always lands you on that tome's dashboard with the dialog open on top,
-  regardless of where you clicked "Edit" from.
+  regardless of where you clicked "Edit" from. In create mode it also carries
+  the template picker (see below); in edit mode it does not, because a
+  template is only ever applied at creation.
 - `FieldDefinitionsEditor.tsx` — add/edit/remove UI for an ElementType's
   custom field definitions (`FieldDefinition[]`); used by
   `../pages/ElementTypesPage.tsx`.
@@ -199,6 +227,13 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   Its drag handle is a plain `Box component="button"`, **not** an `IconButton` —
   ButtonBase routes key events through its own `getButtonProps` wrapper, which
   swallows the `onKeyDown` that dnd-kit's `KeyboardSensor` needs to start a lift.
+- `PlotTimeline.tsx` — one plot drawn as a sortable timeline: the `@dnd-kit`
+  context, the locally-held render order, the `TimelineCard` list, and the
+  empty state. Pages hand it a plot's items and callbacks and get a whole
+  timeline back. It owns the drag context **per instance** on purpose, so
+  `../pages/PlotComparePage.tsx` can mount two of them side by side without a
+  card from one plot being droppable into the other. `../pages/PlotPage.tsx`
+  mounts a single one.
 - `TimelineConnectorInsert.tsx` — a `TimelineConnector` that doubles as an
   insert point, revealing a "+" on hover/focus. The gap between two cards is
   two stacked connectors (the upper card's bottom, the lower card's top); both

@@ -2,7 +2,9 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Alert,
+  Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -15,13 +17,19 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import type { ImageSource, Tome, TomeStatus } from "../models/Tome";
+import { defaultTomeTemplateId, tomeTemplateById, tomeTemplates } from "../models/TomeTemplate";
 import { store } from "../services/store";
+import { ElementTypeIcon } from "./ElementTypeIcon";
 import { ImagePicker } from "./ImagePicker";
 
 export function TomeFormDialog({ open, tome }: { open: boolean; tome?: Tome }) {
   const navigate = useNavigate();
   const [error, setError] = useState("");
   const [coverImage, setCoverImage] = useState<ImageSource | undefined>(tome?.coverImage);
+  // Only new tomes are seeded, so the picker is create-only; editing a tome
+  // never re-applies a template.
+  const [templateId, setTemplateId] = useState(defaultTomeTemplateId);
+  const template = tomeTemplateById(templateId);
 
   const close = () => navigate("/tomes");
 
@@ -38,7 +46,7 @@ export function TomeFormDialog({ open, tome }: { open: boolean; tome?: Tome }) {
         status: data.get("status") as TomeStatus,
         coverImage,
       });
-      if (!tome) await store.createStarterTypes(saved.id);
+      if (!tome) await store.applyTomeTemplate(saved.id, templateId);
       navigate(`/tomes/${saved.id}/dashboard`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save tome.");
@@ -82,6 +90,74 @@ export function TomeFormDialog({ open, tome }: { open: boolean; tome?: Tome }) {
               <MenuItem value="Completed">Completed</MenuItem>
               <MenuItem value="Archived">Archived</MenuItem>
             </TextField>
+            {tome ? null : (
+              <Stack spacing={1.25}>
+                <TextField
+                  select
+                  label="Template"
+                  value={templateId}
+                  onChange={(event) => setTemplateId(event.target.value)}
+                  fullWidth
+                  helperText={template.tagline}
+                  slotProps={{
+                    // Without this the closed field would render the whole
+                    // two-line menu item — name, icon, and tagline — inside the
+                    // input.
+                    select: { renderValue: (value) => tomeTemplateById(String(value)).name },
+                  }}
+                >
+                  {tomeTemplates.map((option) => (
+                    <MenuItem key={option.id} value={option.id} sx={{ py: 1, alignItems: "flex-start" }}>
+                      <ElementTypeIcon
+                        icon={option.icon}
+                        fontSize="small"
+                        color="primary"
+                        sx={{ mr: 1.25, mt: 0.25, flexShrink: 0 }}
+                      />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {option.name}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", whiteSpace: "normal" }}
+                        >
+                          {option.tagline}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </TextField>
+                {/*
+                  Everything the template will create, listed before it is
+                  created — a template is only a starting point, and the author
+                  can tell at a glance what they are agreeing to.
+                */}
+                <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
+                  {template.types.map((type) => (
+                    <Chip
+                      key={type.name}
+                      size="small"
+                      variant="outlined"
+                      icon={<ElementTypeIcon icon={type.icon} fontSize="small" />}
+                      label={type.name}
+                    />
+                  ))}
+                  {template.plot ? (
+                    <Chip
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      label={`${template.plot.name} · ${template.plot.beats.length} beats`}
+                    />
+                  ) : null}
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  A starting point — rename, edit, or delete any of it once the tome exists.
+                </Typography>
+              </Stack>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>

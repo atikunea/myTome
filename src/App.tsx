@@ -9,6 +9,7 @@ import { TomeDashboardPage } from "./pages/TomeDashboardPage";
 import { ElementTypesPage } from "./pages/ElementTypesPage";
 import { ElementListPage } from "./pages/ElementListPage";
 import { PlotPage } from "./pages/PlotPage";
+import { PlotComparePage } from "./pages/PlotComparePage";
 import { WriteListPage } from "./pages/WriteListPage";
 import { WriteEditorPage } from "./pages/WriteEditorPage";
 
@@ -34,6 +35,20 @@ export default function App() {
                 <Route path="plots/:plotId" element={<PlotPage />} />
                 <Route path="plots/:plotId/items/:itemId" element={<PlotPage />} />
                 <Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
+                {/*
+                  Compare puts a second plot beside the first. Its insert route
+                  names the plot as well as the index — with two timelines on
+                  screen, a position alone does not say which one to add to.
+                */}
+                <Route path="plots/:plotId/compare/:otherPlotId" element={<PlotComparePage />} />
+                <Route
+                  path="plots/:plotId/compare/:otherPlotId/items/:itemId"
+                  element={<PlotComparePage />}
+                />
+                <Route
+                  path="plots/:plotId/compare/:otherPlotId/insert/:sidePlotId/:index"
+                  element={<PlotComparePage creating />}
+                />
                 {/*
                   There is no `write/new` route: a draft row is created at the
                   click site and the editor is opened on its real id, so a

@@ -19,10 +19,5 @@ export interface ElementType {
   createdAt: string;
   updatedAt: string;
 }
-export const starterTypes = [
-  ["Theme", "The ideas and motifs that shape your story", "Star"],
-  ["Character", "The people who bring this story to life", "Person"],
-  ["Place", "Locations, regions, and settings", "LocationOn"],
-  ["Event", "Important events and turning points", "Event"],
-  ["Prop", "Objects with a story of their own", "Inventory2"],
-] as const;
+// The set a new tome starts with is no longer a constant here: it is the
+// "General" entry in `TomeTemplate.ts`, alongside the genre templates.

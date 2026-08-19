@@ -1,33 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { Box, Button, Stack, Typography } from "@mui/material";
-import Timeline from "@mui/lab/Timeline";
-import { timelineOppositeContentClasses } from "@mui/lab/TimelineOppositeContent";
+  Box,
+  Button,
+  Menu,
+  MenuItem,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem } from "../models/Plot";
 import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
-import { EmptyState } from "../components/EmptyState";
-import { TimelineCard } from "../components/TimelineCard";
+import { PlotTimeline } from "../components/PlotTimeline";
 import { PlotItemDialog } from "../components/PlotItemDialog";
 import { PlotPicker } from "../components/PlotPicker";
 
@@ -39,6 +29,7 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
   }>();
   const { tome, types } = useTomeWorkspace();
   const navigate = useNavigate();
+  const [compareMenu, setCompareMenu] = useState<HTMLElement | null>(null);
 
   const plots = useObservable<Plot[]>((cb) => store.observePlots(tome!.id, cb), [tome?.id]);
   const items =
@@ -51,33 +42,7 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
   const writeItems =
     useObservable<WriteItem[]>((cb) => store.observeWriteItems(tome!.id, cb), [tome?.id]) ?? [];
 
-  // The live query is the source of truth, but a drag needs an immediate answer, so
-  // the rendered order is held locally and re-seeded whenever the stored set changes.
-  const [orderedIds, setOrderedIds] = useState<string[]>([]);
-  const storedKey = items.map((item) => item.id).join("|");
-  useEffect(() => {
-    setOrderedIds((current) => {
-      const stored = storedKey ? storedKey.split("|") : [];
-      const sameSet =
-        current.length === stored.length && current.every((id) => stored.includes(id));
-      // An echo of an order this page already applied must not stomp it.
-      return sameSet ? current : stored;
-    });
-  }, [storedKey]);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
   const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
-  const elementsById = useMemo(
-    () => new Map(elements.map((element) => [element.id, element])),
-    [elements],
-  );
-  const cards = orderedIds
-    .map((id) => byId.get(id))
-    .filter((item): item is PlotItem => Boolean(item));
 
   // No :plotId in the URL — resolve the tome's first plot, creating one if needed.
   useEffect(() => {
@@ -105,17 +70,7 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
   const closeDialog = () => navigate(plotPath);
   const insertAt = creating && index !== undefined ? Number(index) : undefined;
   const editingItem = itemId ? byId.get(itemId) : undefined;
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const from = orderedIds.indexOf(String(active.id));
-    const to = orderedIds.indexOf(String(over.id));
-    if (from < 0 || to < 0) return;
-    const next = arrayMove(orderedIds, from, to);
-    setOrderedIds(next);
-    store.reorderPlotItems(plot.id, next);
-  };
+  const others = plots.filter((candidate) => candidate.id !== plot.id);
 
   return (
     <Box>
@@ -135,59 +90,61 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
             {plot.name}
           </Typography>
         </Box>
-        <Button startIcon={<AddIcon />} onClick={() => navigate(`${plotPath}/insert/${cards.length}`)}>
-          Add item
-        </Button>
+        <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
+          <Tooltip
+            title={
+              others.length
+                ? "Show this plot beside another one"
+                : "Create a second plot to compare timelines"
+            }
+          >
+            {/* A disabled button fires no events, so the tooltip needs a live wrapper. */}
+            <span>
+              <Button
+                startIcon={<CompareArrowsIcon />}
+                disabled={!others.length}
+                onClick={(event) => setCompareMenu(event.currentTarget)}
+              >
+                Compare
+              </Button>
+            </span>
+          </Tooltip>
+          <Menu
+            anchorEl={compareMenu}
+            open={Boolean(compareMenu)}
+            onClose={() => setCompareMenu(null)}
+          >
+            {others.map((other) => (
+              <MenuItem
+                key={other.id}
+                onClick={() => {
+                  setCompareMenu(null);
+                  navigate(`${plotPath}/compare/${other.id}`);
+                }}
+              >
+                {other.name}
+              </MenuItem>
+            ))}
+          </Menu>
+          <Button startIcon={<AddIcon />} onClick={() => navigate(`${plotPath}/insert/${items.length}`)}>
+            Add item
+          </Button>
+        </Stack>
       </Stack>
 
       <PlotPicker tome={tome} plots={plots} current={plot} />
 
-      {cards.length ? (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          modifiers={[restrictToVerticalAxis]}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
-            <Timeline
-              position="right"
-              sx={{
-                px: 0,
-                // Below `sm` the spine column would eat a quarter of the width, so it
-                // is dropped and each card shows its own label instead (TimelineCard).
-                [`& .${timelineOppositeContentClasses.root}`]: {
-                  flex: 0.2,
-                  minWidth: 90,
-                  display: { xs: "none", sm: "block" },
-                },
-              }}
-            >
-              {cards.map((item, position) => (
-                <TimelineCard
-                  key={item.id}
-                  item={item}
-                  types={types}
-                  attachments={item.attachedElementIds
-                    .map((id) => elementsById.get(id))
-                    .filter((element): element is Element => Boolean(element))}
-                  onOpen={() => navigate(`${plotPath}/items/${item.id}`)}
-                  onInsertAbove={() => navigate(`${plotPath}/insert/${position}`)}
-                  onInsertBelow={() => navigate(`${plotPath}/insert/${position + 1}`)}
-                  onOpenElement={(element) =>
-                    navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
-                  }
-                />
-              ))}
-            </Timeline>
-          </SortableContext>
-        </DndContext>
-      ) : (
-        <EmptyState
-          title="Start your outline"
-          body="Add the first beat, chapter, or turning point in this plot."
-        />
-      )}
+      <PlotTimeline
+        plotId={plot.id}
+        items={items}
+        types={types}
+        elements={elements}
+        onOpenItem={(item) => navigate(`${plotPath}/items/${item.id}`)}
+        onInsert={(position) => navigate(`${plotPath}/insert/${position}`)}
+        onOpenElement={(element) =>
+          navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
+        }
+      />
 
       <PlotItemDialog
         open={Boolean(editingItem) || insertAt !== undefined}
