@@ -30,6 +30,7 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
   const { tome, types } = useTomeWorkspace();
   const navigate = useNavigate();
   const [compareMenu, setCompareMenu] = useState<HTMLElement | null>(null);
+  const [newPlotOpen, setNewPlotOpen] = useState(false);
 
   const plots = useObservable<Plot[]>((cb) => store.observePlots(tome!.id, cb), [tome?.id]);
   const items =
@@ -126,13 +127,20 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
               </MenuItem>
             ))}
           </Menu>
-          <Button startIcon={<AddIcon />} onClick={() => navigate(`${plotPath}/insert/${items.length}`)}>
-            Add item
+          <Button startIcon={<AddIcon />} onClick={() => setNewPlotOpen(true)}>
+            New plot
           </Button>
         </Stack>
       </Stack>
 
-      <PlotPicker tome={tome} plots={plots} current={plot} />
+      <PlotPicker
+        tome={tome}
+        plots={plots}
+        current={plot}
+        newPlotOpen={newPlotOpen}
+        onCloseNewPlot={() => setNewPlotOpen(false)}
+        onAddItem={() => navigate(`${plotPath}/insert/${items.length}`)}
+      />
 
       <PlotTimeline
         plotId={plot.id}

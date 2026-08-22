@@ -537,6 +537,19 @@ export const store = {
     await db.plots.put(plot);
     return plot;
   },
+  async reorderPlots(tomeId: string, orderedIds: string[]) {
+    await db.transaction("rw", db.plots, async () => {
+      const stored = await plotRange(tomeId).primaryKeys();
+      // A mismatch means another tab added or deleted a plot while this drag was
+      // in flight — drop the reorder rather than write a stale order.
+      if (
+        stored.length !== orderedIds.length ||
+        !stored.every((id) => orderedIds.includes(id))
+      )
+        return;
+      await applyOrder(db.plots, orderedIds);
+    });
+  },
   async deletePlot(plot: Pick<Plot, "id" | "tomeId">) {
     await db.transaction("rw", db.plots, db.plotItems, async () => {
       await db.plotItems.where("plotId").equals(plot.id).delete();
