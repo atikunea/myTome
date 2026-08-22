@@ -2,7 +2,6 @@ import { Navigate, Outlet, useParams } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import { TomeWorkspaceProvider, useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { SideNav } from "../components/SideNav";
-import { AppHeader } from "../components/AppHeader";
 
 export function WorkspaceLayout() {
   const { tomeId } = useParams<{ tomeId: string }>();
