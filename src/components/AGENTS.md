@@ -4,7 +4,7 @@ Shared UI building blocks for myTome (React 19 + TypeScript + MUI, function
 components with hooks — no class components, no web components). This
 folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
-`EmptyState`, `ColorModeToggle`, `PlotTimeline`, `TimelineCard`,
+`EmptyState`, `ColorModeToggle`, `PlotTimeline`, `TimelineCard`, `PlotBeatCard`,
 `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`, `WriteItemCard`,
 `WriteItemTypeIcon`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
@@ -241,13 +241,26 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   a few beat-shaped icons (`Repeat`, `Favorite`, `Warning`, `HourglassTop`) for
   that use.
 - `TimelineCard.tsx` — one row of the plot timeline, used by
-  `../pages/PlotPage.tsx`. It **returns a MUI `TimelineItem` as its own root**
-  rather than wrapping one: `Timeline` hands its `position` down through React
-  context, so an intervening element breaks the row's layout grid. The
-  `@dnd-kit` sortable ref and transform therefore land on that `TimelineItem`.
-  Its drag handle is a plain `Box component="button"`, **not** an `IconButton` —
-  ButtonBase routes key events through its own `getButtonProps` wrapper, which
-  swallows the `onKeyDown` that dnd-kit's `KeyboardSensor` needs to start a lift.
+  `../pages/PlotPage.tsx`: the label column, the track with its dot and insert
+  affordances, and a `PlotBeatCard` for the beat. It **returns a MUI
+  `TimelineItem` as its own root** rather than wrapping one: `Timeline` hands its
+  `position` down through React context, so an intervening element breaks the
+  row's layout grid. The `@dnd-kit` sortable ref and transform therefore land on
+  that `TimelineItem`, and the handle's wiring is passed down to the card.
+- `PlotBeatCard.tsx` — the beat itself: title, description, attached-element
+  chips, and the drag handle. Split out of `TimelineCard` so the same card can
+  sit in a MUI `TimelineContent` or in a grid cell, since a beat is drawn in both
+  the single-plot timeline and the aligned compare grid. **It does not call
+  `useSortable`** — whichever container registered the beat owns the node ref and
+  the transform and passes `dragHandle` down, because in a grid the draggable
+  node is the cell rather than the card. `labelMode` decides where `item.name` is
+  drawn: `"compact"` only below `sm`, where the timeline's own label column
+  disappears, and `"always"` for a layout with no such column. The drag handle is
+  a plain `Box component="button"`, **not** an `IconButton` — ButtonBase routes
+  key events through its own `getButtonProps` wrapper, which swallows the
+  `onKeyDown` that dnd-kit's `KeyboardSensor` needs to start a lift. The hover
+  reveal for that handle lives on the card's own `sx`, so it travels with the
+  card into whatever layout holds it.
 - `PlotTimeline.tsx` — one plot drawn as a sortable timeline: the `@dnd-kit`
   context, the locally-held render order, the `TimelineCard` list, and the
   empty state. Pages hand it a plot's items and callbacks and get a whole
