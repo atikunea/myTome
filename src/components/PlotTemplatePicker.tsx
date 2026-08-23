@@ -27,9 +27,9 @@ export function PlotTemplatePicker({
   label?: string;
 }) {
   const template = plotTemplateById(value);
-  // The spine labels, deduped but left in beat order — "Act I, Act II, Act III"
+  // The beat labels, deduped but left in beat order — "Act I, Act II, Act III"
   // says more about the shape of a structure than the beat count alone.
-  const spine = [...new Set(template?.beats.map((beat) => beat.name) ?? [])];
+  const beatLabels = [...new Set(template?.beats.map((beat) => beat.name) ?? [])];
 
   return (
     <Stack spacing={1.25}>
@@ -103,7 +103,7 @@ export function PlotTemplatePicker({
             variant="outlined"
             label={`${template.beats.length} beats`}
           />
-          {spine.map((name) => (
+          {beatLabels.map((name) => (
             <Chip key={name} size="small" variant="outlined" label={name} />
           ))}
         </Stack>

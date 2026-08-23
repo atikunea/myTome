@@ -12,7 +12,7 @@ import type { PlotDotColor } from "./Plot";
  * migration to run when a template here changes.
  */
 export interface TemplateBeat {
-  /** The spine label beside the beat, e.g. "Act I". Repeats, to group beats. */
+  /** The beat label shown beside the track, e.g. "Act I". Repeats, to group beats. */
   name: string;
   title: string;
   description: string;

@@ -108,7 +108,7 @@ export function PlotTimeline({
           position="right"
           sx={{
             px: 0,
-            // Below `sm` the spine column would eat a quarter of the width, so it
+            // Below `sm` the label column would eat a quarter of the width, so it
             // is dropped and each card shows its own label instead (TimelineCard).
             [`& .${timelineOppositeContentClasses.root}`]: {
               flex: 0.2,

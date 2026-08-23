@@ -58,7 +58,7 @@ the plot-template picker — Three-Act, Freytag, the Hero's Journey, Seven-Point
 Save the Cat, the Fichtean Curve, the Story Circle, Kishōtenketsu, Romance, and
 Mystery, plus three Non-fiction outlines (Chapter Outline, Life Timeline,
 Chapter Arc) that the retired tome-template plots left behind. Each is a flat
-`TemplateBeat[]`, where `name` is the repeating spine label ("Act I", "Act I",
+`TemplateBeat[]`, where `name` is the repeating beat label ("Act I", "Act I",
 "Act II", …) that groups beats on the timeline. `noPlotTemplateId` is a real
 option in the picker, not an empty value, and has no entry in the registry —
 `plotTemplateById` returns undefined for it.
@@ -203,7 +203,7 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   (600px), typically via `sx={{ flexDirection: { xs: "column", sm: "row" } }}`
   — match this instead of inventing new breakpoints. The single deliberate
   exception is the two-column layout in `../pages/PlotComparePage.tsx`, which
-  stacks until `md` (900px): two timelines each carry a spine, labels, and
+  stacks until `md` (900px): two timelines each carry a track, labels, and
   cards, and do not fit beside each other at 600px.
 - No hand-written inline `<svg>` icons — use `@mui/icons-material`.
 
@@ -270,7 +270,7 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   reset a cancelled rename followed straight by "New plot" reopens carrying the
   old plot's name.
 - `PlotTemplatePicker.tsx` — the story-structure select shared by
-  `TomeFormDialog` and `PlotPicker`, with a preview of the beat count and spine
+  `TomeFormDialog` and `PlotPicker`, with a preview of the beat count and beat
   labels the chosen structure will write. Controlled: the parent owns the id.
 - `WriteItemCard.tsx` — the small, title-only card in the Write grid. It owns
   its own 250ms hover timer and `Popover` sample rather than letting the page

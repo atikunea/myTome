@@ -131,7 +131,7 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
 
       <Stack
         // Two timelines need more room than the app's usual `sm` switch gives
-        // them: each column carries its own spine, labels, and cards, so they
+        // them: each column carries its own track, labels, and cards, so they
         // stay stacked until `md` and only then sit side by side.
         direction={{ xs: "column", md: "row" }}
         spacing={{ xs: 4, md: 3 }}

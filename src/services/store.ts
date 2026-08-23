@@ -6,7 +6,7 @@ import { plotTemplateById } from "../models/PlotTemplate";
 import type { Element } from "../models/Element";
 import type { ImageSource, Tome } from "../models/Tome";
 import type { Relationship } from "../models/Relationship";
-import type { Plot, PlotItem } from "../models/Plot";
+import type { Plot, PlotItem, PlotRow } from "../models/Plot";
 import type { WriteItem, WriteItemType } from "../models/WriteItem";
 import {
   emptyWriteItemContent,
@@ -104,6 +104,74 @@ const plotItemRange = (plotId: string) =>
   db.plotItems
     .where("[plotId+sortOrder]")
     .between([plotId, Dexie.minKey], [plotId, Dexie.maxKey]);
+const plotRowRange = (tomeId: string) =>
+  db.plotRows
+    .where("[tomeId+sortOrder]")
+    .between([tomeId, Dexie.minKey], [tomeId, Dexie.maxKey]);
+/**
+ * Grows a tome's spine by `count` rows at the end. Call inside a transaction
+ * that includes `db.plotRows`.
+ */
+const appendPlotRows = async (tomeId: string, count: number) => {
+  const time = now();
+  const start = await plotRowRange(tomeId).count();
+  const rows: PlotRow[] = Array.from({ length: count }, (_, i) => ({
+    id: uid(),
+    tomeId,
+    sortOrder: start + i,
+    createdAt: time,
+    updatedAt: time,
+  }));
+  await db.plotRows.bulkAdd(rows);
+  return rows;
+};
+/**
+ * Opens a gap in the spine at `index` and returns the new empty row. Every plot's
+ * beats keep the rows they already name, so pushing the tail down moves all of
+ * them together and the alignment across plots is preserved.
+ */
+const insertPlotRowAt = async (tomeId: string, index: number) => {
+  const time = now();
+  const rows = await plotRowRange(tomeId).toArray();
+  const at = Math.min(Math.max(index, 0), rows.length);
+  await Promise.all(
+    rows
+      .slice(at)
+      .map((row, i) =>
+        db.plotRows.update(row.id, { sortOrder: at + i + 1, updatedAt: time }),
+      ),
+  );
+  const row: PlotRow = {
+    id: uid(),
+    tomeId,
+    sortOrder: at,
+    createdAt: time,
+    updatedAt: time,
+  };
+  await db.plotRows.add(row);
+  return row;
+};
+/**
+ * The spine row a new beat should take. A beat inserted between two others opens
+ * a fresh row just above the one it displaces; a beat appended to the end reuses
+ * the next row this plot leaves empty and only grows the spine when there is
+ * none — so writing straight down a single plot does not strand its beats below
+ * everyone else's. Call inside a transaction covering `db.plotRows` and
+ * `db.plotItems`.
+ */
+const rowForNewPlotItem = async (tomeId: string, plotId: string, at: number) => {
+  const rows = await plotRowRange(tomeId).toArray();
+  const siblings = await plotItemRange(plotId).toArray();
+  if (at < siblings.length) {
+    const displaced = rows.findIndex((row) => row.id === siblings[at].plotRowId);
+    return insertPlotRowAt(tomeId, displaced < 0 ? rows.length : displaced);
+  }
+  const held = new Set(siblings.map((item) => item.plotRowId));
+  const lastHeld = rows.reduce((last, row, i) => (held.has(row.id) ? i : last), -1);
+  // Everything past the plot's last beat is free by definition, so the next row
+  // is either there for the taking or the spine has run out.
+  return rows[lastHeld + 1] ?? (await appendPlotRows(tomeId, 1))[0];
+};
 /**
  * Strips the given element ids out of every plot item that attaches them, using the
  * `*attachedElementIds` multiEntry index. Call inside a transaction that includes
@@ -258,12 +326,14 @@ export const store = {
         db.elements,
         db.relationships,
         db.plots,
+        db.plotRows,
         db.plotItems,
         db.writeItems,
       ],
       async () => {
         await db.writeItems.where("tomeId").equals(id).delete();
         await db.plotItems.where("tomeId").equals(id).delete();
+        await db.plotRows.where("tomeId").equals(id).delete();
         await db.plots.where("tomeId").equals(id).delete();
         await db.relationships.where("tomeId").equals(id).delete();
         await db.elements.where("tomeId").equals(id).delete();
@@ -324,13 +394,19 @@ export const store = {
     const template = plotTemplateById(plotTemplateId);
     const name = overrides?.name?.trim() || template?.name || "Main Plot";
     const time = now();
-    return db.transaction("rw", db.plots, db.plotItems, async () => {
+    return db.transaction("rw", db.plots, db.plotRows, db.plotItems, async () => {
       const plot = await store.savePlot({
         tomeId,
         name,
         description: overrides?.description,
       });
       if (!template) return plot;
+      // The template's beats fill the spine from the top rather than queueing
+      // after it, so a subplot added to a tome that already has an outline lines
+      // up with its opening. Only a template deeper than the spine extends it.
+      const rows = await plotRowRange(tomeId).toArray();
+      if (template.beats.length > rows.length)
+        rows.push(...(await appendPlotRows(tomeId, template.beats.length - rows.length)));
       await db.plotItems.bulkAdd(
         template.beats.map((beat, i) => ({
           id: uid(),
@@ -343,6 +419,7 @@ export const store = {
           dotVariant: "outlined" as const,
           attachedElementIds: [],
           writeItemIds: [],
+          plotRowId: rows[i].id,
           sortOrder: i,
           createdAt: time,
           updatedAt: time,
@@ -599,11 +676,15 @@ export const store = {
       writeItemIds: [
         ...new Set(input.writeItemIds ?? existing?.writeItemIds ?? []),
       ],
+      // Like `sortOrder`, a new beat's row is settled inside the transaction —
+      // choosing one means reading the tome's spine. A caller may name the row
+      // itself (the compare grid's empty cells do), and an edit keeps its own.
+      plotRowId: input.plotRowId ?? existing?.plotRowId ?? "",
       sortOrder: existing?.sortOrder ?? 0,
       createdAt: existing?.createdAt ?? time,
       updatedAt: time,
     };
-    await db.transaction("rw", db.plotItems, async () => {
+    await db.transaction("rw", db.plotRows, db.plotItems, async () => {
       if (existing) {
         await db.plotItems.put(item);
         return;
@@ -612,6 +693,8 @@ export const store = {
       const at = Math.min(Math.max(insertAt ?? ids.length, 0), ids.length);
       ids.splice(at, 0, item.id);
       item.sortOrder = at;
+      if (!item.plotRowId)
+        item.plotRowId = (await rowForNewPlotItem(item.tomeId, item.plotId, at)).id;
       await db.plotItems.put(item);
       await applyOrder(db.plotItems, ids);
     });

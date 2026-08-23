@@ -61,7 +61,7 @@ export function TimelineCard({
       </TimelineOppositeContent>
       {/*
         The separator is pinned to a fixed width so the track, the cards, and the
-        spine labels line up whether or not an item has an icon. Left to size
+        beat labels line up whether or not an item has an icon. Left to size
         itself, the column follows its dot — 36px around an icon, 12px around a
         bare dot — which bends the track and staggers every card beside it.
         This has to be `flex-basis`, not `width`: the separator's own `flex: 0`
@@ -147,7 +147,7 @@ export function TimelineCard({
             </Tooltip>
             <Box sx={{ minWidth: 0, flex: 1 }}>
               {item.name ? (
-                // The spine column is hidden below `sm`, so carry the label here.
+                // The label column is hidden below `sm`, so carry the label here.
                 <Typography
                   variant="overline"
                   color="text.secondary"

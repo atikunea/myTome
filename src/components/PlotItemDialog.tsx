@@ -195,7 +195,7 @@ export function PlotItemDialog({
             />
             <TextField
               name="name"
-              label="Spine label"
+              label="Beat label"
               fullWidth
               helperText="Shown beside the track, e.g. Chapter 1"
               defaultValue={item?.name ?? ""}
