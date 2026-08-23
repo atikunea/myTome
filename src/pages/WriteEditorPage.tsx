@@ -15,6 +15,7 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { ListPlugin } from "@lexical/react/LexicalListPlugin";
+import { CheckListPlugin } from "@lexical/react/LexicalCheckListPlugin";
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
@@ -139,6 +140,17 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
         LinkNode,
         MentionNode,
       ],
+      // Bold and italic get `<strong>`/`<em>` from Lexical, but underline and
+      // strikethrough are class-only: with no theme they set state that never
+      // reaches the page. These are the one case that cannot be styled from a
+      // tag or attribute selector, so they get class names to hang CSS on.
+      theme: {
+        text: {
+          underline: "editor-underline",
+          strikethrough: "editor-strikethrough",
+          underlineStrikethrough: "editor-underline-strikethrough",
+        },
+      },
       onError: (error: Error) => console.error(error),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,6 +323,77 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
                   "& h3": { fontSize: "1.18rem" },
                   "& ul, & ol": { m: 0, mb: 1.5, pl: 3.5 },
                   "& li": { mb: 0.35 },
+                  // Check list items are found by the role Lexical stamps on
+                  // them, not a theme class, for the same reason mentions are
+                  // styled from here: `createDOM` runs outside React and cannot
+                  // reach the MUI theme. The box is a `::before` because
+                  // `CheckListPlugin` hit-tests clicks against that
+                  // pseudo-element's computed width — give it none and the
+                  // checkbox cannot be ticked.
+                  '& li[role="checkbox"]': {
+                    listStyle: "none",
+                    position: "relative",
+                    ml: -1.5,
+                    pl: 3,
+                    outline: "none",
+                    "&::before": {
+                      content: '""',
+                      position: "absolute",
+                      left: 0,
+                      top: "0.3em",
+                      width: 16,
+                      height: 16,
+                      boxSizing: "border-box",
+                      border: 1.5,
+                      borderColor: "text.disabled",
+                      borderRadius: "3px",
+                      cursor: "pointer",
+                    },
+                  },
+                  '& li[role="checkbox"][aria-checked="true"]': {
+                    color: "text.secondary",
+                    textDecoration: "line-through",
+                    "&::before": {
+                      bgcolor: "primary.main",
+                      borderColor: "primary.main",
+                    },
+                    "&::after": {
+                      content: '""',
+                      position: "absolute",
+                      left: 5,
+                      top: "calc(0.3em + 2px)",
+                      width: 5,
+                      height: 9,
+                      borderStyle: "solid",
+                      borderColor: "primary.contrastText",
+                      borderWidth: "0 2px 2px 0",
+                      transform: "rotate(45deg)",
+                      pointerEvents: "none",
+                    },
+                  },
+                  "& .editor-underline": { textDecoration: "underline" },
+                  "& .editor-strikethrough": { textDecoration: "line-through" },
+                  "& .editor-underline-strikethrough": {
+                    textDecoration: "underline line-through",
+                  },
+                  "& a": { color: "primary.main", textDecoration: "underline" },
+                  "& code": {
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                    fontSize: "0.88em",
+                    bgcolor: "action.hover",
+                    px: 0.5,
+                    py: "0.1em",
+                    borderRadius: "4px",
+                  },
+                  "& mark": {
+                    bgcolor: "warning.light",
+                    color: "text.primary",
+                    px: 0.25,
+                    borderRadius: "2px",
+                  },
+                  // Keeps a sub/sup from stretching the line it sits on.
+                  "& sub, & sup": { fontSize: "0.75em", lineHeight: 0 },
                   "& blockquote": {
                     borderLeft: 3,
                     borderColor: "divider",
@@ -341,6 +424,7 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
           />
           <HistoryPlugin />
           <ListPlugin />
+          <CheckListPlugin />
           <LinkPlugin />
           <OnChangePlugin onChange={handleChange} />
           <MentionsPlugin elements={elements} types={types} />
