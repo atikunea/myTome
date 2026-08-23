@@ -173,6 +173,37 @@ const rowForNewPlotItem = async (tomeId: string, plotId: string, at: number) => 
   return rows[lastHeld + 1] ?? (await appendPlotRows(tomeId, 1))[0];
 };
 /**
+ * Rewrites every beat's `sortOrder` in a tome from the order of the rows they
+ * stand on, which is the truth — `sortOrder` is a cache of it, kept so that the
+ * `[plotId+sortOrder]` index and every single-plot reader keep working unchanged.
+ *
+ * End every mutation that touches rows or row assignments with this, inside its
+ * transaction. It writes only the rows that actually move, so calling it after a
+ * change that reordered nothing costs one read and fires no live query.
+ */
+const syncPlotSortOrder = async (tomeId: string) => {
+  const rows = await plotRowRange(tomeId).toArray();
+  const rank = new Map(rows.map((row, index) => [row.id, index]));
+  const byPlot = new Map<string, PlotItem[]>();
+  for (const item of await db.plotItems.where("tomeId").equals(tomeId).toArray())
+    byPlot.set(item.plotId, [...(byPlot.get(item.plotId) ?? []), item]);
+  const writes: Promise<number>[] = [];
+  for (const list of byPlot.values()) {
+    // A beat whose row somehow went missing sinks to the end rather than
+    // silently claiming the top of its plot.
+    list.sort(
+      (a, b) =>
+        (rank.get(a.plotRowId) ?? Number.MAX_SAFE_INTEGER) -
+        (rank.get(b.plotRowId) ?? Number.MAX_SAFE_INTEGER),
+    );
+    list.forEach((item, index) => {
+      if (item.sortOrder !== index)
+        writes.push(db.plotItems.update(item.id, { sortOrder: index }));
+    });
+  }
+  await Promise.all(writes);
+};
+/**
  * Strips the given element ids out of every plot item that attaches them, using the
  * `*attachedElementIds` multiEntry index. Call inside a transaction that includes
  * `db.plotItems`.
@@ -700,17 +731,38 @@ export const store = {
     });
     return item;
   },
+  /**
+   * Reorders one plot's beats among themselves. Since row order is what ordering
+   * means now, this permutes which of the plot's beats stands on each of the rows
+   * it already occupies rather than renumbering `sortOrder` directly. The set of
+   * occupied rows is unchanged, so every other plot in the tome keeps its
+   * alignment and no gap opens or closes anywhere else.
+   */
   async reorderPlotItems(plotId: string, orderedIds: string[]) {
-    await db.transaction("rw", db.plotItems, async () => {
-      const stored = await plotItemRange(plotId).primaryKeys();
+    await db.transaction("rw", db.plotRows, db.plotItems, async () => {
+      const stored = await plotItemRange(plotId).toArray();
       // A mismatch means another tab inserted or deleted an item while this drag
       // was in flight — drop the reorder rather than write a stale order.
       if (
         stored.length !== orderedIds.length ||
-        !stored.every((id) => orderedIds.includes(id))
+        !stored.every((item) => orderedIds.includes(item.id))
       )
         return;
-      await applyOrder(db.plotItems, orderedIds);
+      if (!stored.length) return;
+      const rows = await plotRowRange(stored[0].tomeId).toArray();
+      const rank = new Map(rows.map((row, index) => [row.id, index]));
+      const held = stored
+        .map((item) => item.plotRowId)
+        .sort(
+          (a, b) =>
+            (rank.get(a) ?? Number.MAX_SAFE_INTEGER) -
+            (rank.get(b) ?? Number.MAX_SAFE_INTEGER),
+        );
+      await Promise.all(
+        orderedIds.map((id, index) =>
+          db.plotItems.update(id, { plotRowId: held[index], sortOrder: index }),
+        ),
+      );
     });
   },
   async deletePlotItem(item: Pick<PlotItem, "id" | "plotId">) {
@@ -718,6 +770,121 @@ export const store = {
       await db.plotItems.delete(item.id);
       const remaining = await plotItemRange(item.plotId).primaryKeys();
       await applyOrder(db.plotItems, remaining);
+    });
+  },
+  /** The tome's shared spine, in order — the row axis every plot is drawn against. */
+  observePlotRows(tomeId: string, callback: (v: PlotRow[]) => void) {
+    return liveQuery(() => plotRowRange(tomeId).toArray()).subscribe({
+      next: callback,
+      error: console.error,
+    });
+  },
+  /**
+   * Opens an empty row at `index`, pushing the rest of the spine down. Every beat
+   * keeps the row it already names, so all of them shift together and nothing
+   * loses the beat it was aligned against.
+   */
+  async insertPlotRow(tomeId: string, index: number) {
+    return db.transaction("rw", db.plotRows, db.plotItems, async () => {
+      const row = await insertPlotRowAt(tomeId, index);
+      await syncPlotSortOrder(tomeId);
+      return row;
+    });
+  },
+  /** Names a row, or clears the name when given blank text. */
+  async setPlotRowLabel(rowId: string, label: string) {
+    await db.plotRows.update(rowId, {
+      label: label.trim() || undefined,
+      updatedAt: now(),
+    });
+  },
+  /**
+   * What a row is holding, across every plot in the tome. `deletePlotRow` takes
+   * all of it, so the confirm dialog asks with these numbers in hand.
+   */
+  async countPlotRowBeats(rowId: string) {
+    const items = await db.plotItems.where("plotRowId").equals(rowId).toArray();
+    return { beats: items.length, plots: new Set(items.map((item) => item.plotId)).size };
+  },
+  /**
+   * Deletes a row and every beat standing on it. Unlike the rest of the plot
+   * mutations this reaches across plots, which is why it is destructive enough to
+   * confirm first — see `countPlotRowBeats`.
+   */
+  async deletePlotRow(row: Pick<PlotRow, "id" | "tomeId">) {
+    await db.transaction("rw", db.plotRows, db.plotItems, async () => {
+      await db.plotItems.where("plotRowId").equals(row.id).delete();
+      await db.plotRows.delete(row.id);
+      await applyOrder(db.plotRows, await plotRowRange(row.tomeId).primaryKeys());
+      await syncPlotSortOrder(row.tomeId);
+    });
+  },
+  async reorderPlotRows(tomeId: string, orderedIds: string[]) {
+    await db.transaction("rw", db.plotRows, db.plotItems, async () => {
+      const stored = await plotRowRange(tomeId).primaryKeys();
+      // The same stale-drag guard `reorderPlotItems` uses: another tab changed the
+      // spine mid-drag, so this order is about a set that no longer exists.
+      if (
+        stored.length !== orderedIds.length ||
+        !stored.every((id) => orderedIds.includes(id))
+      )
+        return;
+      await applyOrder(db.plotRows, orderedIds);
+      await syncPlotSortOrder(tomeId);
+    });
+  },
+  /**
+   * Moves a beat onto another row of its tome's spine — the compare grid's drop.
+   * Landing on a row that already holds one of the same plot's beats swaps the
+   * two: a plot can only have one beat per row, because a grid cell can only draw
+   * one card.
+   */
+  async movePlotItemToRow(itemId: string, plotRowId: string) {
+    await db.transaction("rw", db.plotRows, db.plotItems, async () => {
+      const item = await db.plotItems.get(itemId);
+      const row = await db.plotRows.get(plotRowId);
+      // A stale drop: the beat or the row went away in another tab, or the drag
+      // ended where it started.
+      if (!item || !row || row.tomeId !== item.tomeId || item.plotRowId === plotRowId)
+        return;
+      const time = now();
+      const displaced = await db.plotItems
+        .where("plotRowId")
+        .equals(plotRowId)
+        .filter((other) => other.plotId === item.plotId)
+        .first();
+      if (displaced)
+        await db.plotItems.update(displaced.id, {
+          plotRowId: item.plotRowId,
+          updatedAt: time,
+        });
+      await db.plotItems.update(itemId, { plotRowId, updatedAt: time });
+      await syncPlotSortOrder(item.tomeId);
+    });
+  },
+  /**
+   * Drops every row no plot has a beat on, and reports how many went. The spine
+   * only ever grows as beats are inserted, and deleting a beat leaves its row
+   * standing, so this is the housekeeping that keeps a long tome's grid from
+   * filling up with dead slots.
+   */
+  async removeEmptyPlotRows(tomeId: string) {
+    return db.transaction("rw", db.plotRows, db.plotItems, async () => {
+      const rows = await plotRowRange(tomeId).toArray();
+      const held = new Set(
+        (await db.plotItems.where("tomeId").equals(tomeId).toArray()).map(
+          (item) => item.plotRowId,
+        ),
+      );
+      const empty = rows.filter((row) => !held.has(row.id));
+      if (!empty.length) return 0;
+      await db.plotRows.bulkDelete(empty.map((row) => row.id));
+      await applyOrder(
+        db.plotRows,
+        rows.filter((row) => held.has(row.id)).map((row) => row.id),
+      );
+      await syncPlotSortOrder(tomeId);
+      return empty.length;
     });
   },
   /**
