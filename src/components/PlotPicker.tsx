@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -42,6 +42,8 @@ import type { Plot } from "../models/Plot";
 import type { Tome } from "../models/Tome";
 import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
+import { defaultPlotTemplateId, plotTemplateById } from "../models/PlotTemplate";
+import { PlotTemplatePicker } from "./PlotTemplatePicker";
 
 /**
  * One draggable plot tab.
@@ -151,13 +153,28 @@ export function PlotPicker({
   const confirmAction = useConfirm();
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState("");
+  const [plotTemplateId, setPlotTemplateId] = useState(defaultPlotTemplateId);
+  const plotTemplate = plotTemplateById(plotTemplateId);
 
   // "New plot" is triggered from the page header, so the parent owns that flag.
   const editing = renaming ? "rename" : newPlotOpen ? "new" : null;
 
+  /*
+   * The dialog's fields are uncontrolled, and MUI keeps the dialog's children
+   * mounted until its close transition finishes — so a rename cancelled and
+   * followed straight by "New plot" would otherwise reopen carrying the old
+   * plot's name. Resetting on open restores whatever `defaultValue` the
+   * current mode asks for.
+   */
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (editing) formRef.current?.reset();
+  }, [editing]);
+
   const closeDialog = () => {
     setError("");
     setRenaming(false);
+    setPlotTemplateId(defaultPlotTemplateId);
     onCloseNewPlot();
   };
 
@@ -199,15 +216,23 @@ export function PlotPicker({
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const name = String(data.get("name") ?? "");
+    const description = String(data.get("description") ?? "");
     try {
-      const plot = await store.savePlot({
-        id: editing === "rename" ? current.id : undefined,
-        tomeId: tome.id,
-        name: String(data.get("name") ?? ""),
-        description: String(data.get("description") ?? ""),
+      if (editing === "rename") {
+        await store.savePlot({ id: current.id, tomeId: tome.id, name, description });
+        closeDialog();
+        return;
+      }
+      // A blank name falls through to the structure's own — see
+      // `createPlotFromTemplate`, which also covers "No plot line" by writing a
+      // plot with no beats.
+      const plot = await store.createPlotFromTemplate(tome.id, plotTemplateId, {
+        name,
+        description,
       });
       closeDialog();
-      if (editing === "new") navigate(`/tomes/${tome.id}/plots/${plot.id}`);
+      navigate(`/tomes/${tome.id}/plots/${plot.id}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save this plot.");
     }
@@ -276,18 +301,32 @@ export function PlotPicker({
       </Stack>
 
       <Dialog open={editing !== null} onClose={closeDialog} maxWidth="xs" fullWidth>
-        <Box component="form" onSubmit={handleSubmit}>
+        <Box component="form" ref={formRef} onSubmit={handleSubmit}>
           <DialogTitle>{editing === "rename" ? "Rename plot" : "New plot"}</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={2.5}>
               {error ? <Alert severity="error">{error}</Alert> : null}
+              {editing === "new" ? (
+                <PlotTemplatePicker value={plotTemplateId} onChange={setPlotTemplateId} />
+              ) : null}
+              {/*
+                Left blank, a new plot takes the structure's name — so the field
+                is optional exactly when there is a structure to name it after,
+                and the placeholder is forced visible so that name is readable
+                without focusing the field.
+              */}
               <TextField
                 name="name"
                 label="Name"
-                required
+                required={editing === "rename" || !plotTemplate}
                 fullWidth
                 autoFocus
                 defaultValue={editing === "rename" ? current.name : ""}
+                placeholder={editing === "new" ? plotTemplate?.name : undefined}
+                helperText={
+                  editing === "new" && plotTemplate ? `Leave blank to use "${plotTemplate.name}".` : undefined
+                }
+                slotProps={editing === "new" ? { inputLabel: { shrink: true } } : undefined}
               />
               <TextField
                 name="description"

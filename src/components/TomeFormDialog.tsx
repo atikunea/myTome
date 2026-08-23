@@ -18,9 +18,11 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import type { ImageSource, Tome, TomeStatus } from "../models/Tome";
 import { defaultTomeTemplateId, tomeTemplateById, tomeTemplates } from "../models/TomeTemplate";
+import { defaultPlotTemplateId, noPlotTemplateId } from "../models/PlotTemplate";
 import { store } from "../services/store";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 import { ImagePicker } from "./ImagePicker";
+import { PlotTemplatePicker } from "./PlotTemplatePicker";
 
 export function TomeFormDialog({ open, tome }: { open: boolean; tome?: Tome }) {
   const navigate = useNavigate();
@@ -29,6 +31,7 @@ export function TomeFormDialog({ open, tome }: { open: boolean; tome?: Tome }) {
   // Only new tomes are seeded, so the picker is create-only; editing a tome
   // never re-applies a template.
   const [templateId, setTemplateId] = useState(defaultTomeTemplateId);
+  const [plotTemplateId, setPlotTemplateId] = useState(defaultPlotTemplateId);
   const template = tomeTemplateById(templateId);
 
   const close = () => navigate("/tomes");
@@ -46,7 +49,13 @@ export function TomeFormDialog({ open, tome }: { open: boolean; tome?: Tome }) {
         status: data.get("status") as TomeStatus,
         coverImage,
       });
-      if (!tome) await store.applyTomeTemplate(saved.id, templateId);
+      if (!tome) {
+        await store.applyTomeTemplate(saved.id, templateId);
+        // "No plot line" writes nothing at all: PlotPage's ensureDefaultPlot
+        // makes a blank "Main Plot" the first time the author opens Plot.
+        if (plotTemplateId !== noPlotTemplateId)
+          await store.createPlotFromTemplate(saved.id, plotTemplateId);
+      }
       navigate(`/tomes/${saved.id}/dashboard`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save tome.");
@@ -144,15 +153,13 @@ export function TomeFormDialog({ open, tome }: { open: boolean; tome?: Tome }) {
                       label={type.name}
                     />
                   ))}
-                  {template.plot ? (
-                    <Chip
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      label={`${template.plot.name} · ${template.plot.beats.length} beats`}
-                    />
-                  ) : null}
                 </Stack>
+                {/*
+                  The plot structure is picked separately from the tome
+                  template: the element types an author needs are a question
+                  about genre, and the shape of the story is not.
+                */}
+                <PlotTemplatePicker value={plotTemplateId} onChange={setPlotTemplateId} />
                 <Typography variant="caption" color="text.secondary">
                   A starting point — rename, edit, or delete any of it once the tome exists.
                 </Typography>

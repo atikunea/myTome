@@ -2,6 +2,7 @@ import Dexie, { liveQuery } from "dexie";
 import { db } from "../models/db";
 import type { ElementType, FieldDefinition } from "../models/ElementType";
 import { tomeTemplateById } from "../models/TomeTemplate";
+import { plotTemplateById } from "../models/PlotTemplate";
 import type { Element } from "../models/Element";
 import type { ImageSource, Tome } from "../models/Tome";
 import type { Relationship } from "../models/Relationship";
@@ -280,7 +281,7 @@ export const store = {
   async applyTomeTemplate(tomeId: string, templateId: string) {
     const template = tomeTemplateById(templateId);
     const time = now();
-    await db.transaction("rw", db.elementTypes, db.plots, db.plotItems, async () => {
+    await db.transaction("rw", db.elementTypes, async () => {
       await db.elementTypes.bulkAdd(
         template.types.map((type, i) => ({
           id: uid(),
@@ -304,22 +305,37 @@ export const store = {
           updatedAt: time,
         })),
       );
-      if (!template.plot) return;
-      const plotId = uid();
-      await db.plots.add({
-        id: plotId,
+    });
+  },
+  /**
+   * Creates a plot line from a named story structure, beats and all.
+   *
+   * Like `applyTomeTemplate` this only ever adds rows, so it is a create-time
+   * operation: call it for a plot that does not exist yet, never to re-apply a
+   * structure over one the author has already written into. An unknown id (or
+   * `noPlotTemplateId`) creates a plain empty plot, which is what the picker's
+   * "No plot line" option relies on.
+   */
+  async createPlotFromTemplate(
+    tomeId: string,
+    plotTemplateId: string,
+    overrides?: { name?: string; description?: string },
+  ) {
+    const template = plotTemplateById(plotTemplateId);
+    const name = overrides?.name?.trim() || template?.name || "Main Plot";
+    const time = now();
+    return db.transaction("rw", db.plots, db.plotItems, async () => {
+      const plot = await store.savePlot({
         tomeId,
-        name: template.plot.name,
-        description: "",
-        sortOrder: 0,
-        createdAt: time,
-        updatedAt: time,
+        name,
+        description: overrides?.description,
       });
+      if (!template) return plot;
       await db.plotItems.bulkAdd(
-        template.plot.beats.map((beat, i) => ({
+        template.beats.map((beat, i) => ({
           id: uid(),
           tomeId,
-          plotId,
+          plotId: plot.id,
           name: beat.name,
           title: beat.title,
           description: beat.description,
@@ -332,6 +348,7 @@ export const store = {
           updatedAt: time,
         })),
       );
+      return plot;
     });
   },
   async saveType(

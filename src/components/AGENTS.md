@@ -43,22 +43,43 @@ The three components that exist only to emit MUI timeline markup —
 vocabulary, since they are named for what they render rather than for the
 record they display.
 
-## Tome templates are seeds, not schemas
+## Templates are seeds, not schemas — and there are two registries
 
 `../models/TomeTemplate.ts` holds the registry behind the create dialog's
 template picker — General (the historical starter set) plus Fantasy, Science
 Fiction, Horror, Non-fiction, Biography, and Self-Help. Each entry lists the
-element types to create (with their `FieldDefinition`s) and, for every
-template but General, a starter plot outline.
+element types to create, with their `FieldDefinition`s. **Element types only:**
+tome templates used to carry a bespoke plot outline each, and no longer do. If a
+past agent's mental model is "the Fantasy template seeds The Quest", that no
+longer applies — plot outlines all come from the second registry.
 
-`store.applyTomeTemplate(tomeId, templateId)` runs **once**, right after the
-tome row is written, and only adds rows. Nothing is stored on the `Tome`
-saying which template made it, nothing reads the registry afterward, and a
-second application would stack a second copy — so don't grow this into a
-"change a tome's template later" feature without reconciliation to match.
-Template fields are always created with `required: false`: an author
-sketching a character must never be blocked by a field a template chose for
-them.
+`../models/PlotTemplate.ts` is that registry: the named story structures behind
+the plot-template picker — Three-Act, Freytag, the Hero's Journey, Seven-Point,
+Save the Cat, the Fichtean Curve, the Story Circle, Kishōtenketsu, Romance, and
+Mystery, plus three Non-fiction outlines (Chapter Outline, Life Timeline,
+Chapter Arc) that the retired tome-template plots left behind. Each is a flat
+`TemplateBeat[]`, where `name` is the repeating spine label ("Act I", "Act I",
+"Act II", …) that groups beats on the timeline. `noPlotTemplateId` is a real
+option in the picker, not an empty value, and has no entry in the registry —
+`plotTemplateById` returns undefined for it.
+
+Both appliers run **once**, at creation, and only add rows:
+`store.applyTomeTemplate(tomeId, templateId)` right after the tome row is
+written, and `store.createPlotFromTemplate(tomeId, plotTemplateId, overrides)`
+for each plot line. Nothing is stored saying which template made a tome or a
+plot, nothing reads either registry afterward, and a second application would
+stack a second copy — so don't grow these into "change a tome's template later"
+or "re-apply a structure" without reconciliation to match. Template fields are
+always created with `required: false`: an author sketching a character must
+never be blocked by a field a template chose for them.
+
+Both pickers are create-only. `TomeFormDialog` shows them side by side (the
+element types an author needs is a question about genre; the shape of the story
+is not), and `PlotPicker`'s "New plot" dialog shows the plot one alone. In that
+dialog the name field is deliberately **optional whenever a structure is
+chosen** — blank means "name it after the structure", which
+`createPlotFromTemplate` resolves — and required when there is no structure to
+borrow a name from.
 
 The old `starterTypes` constant in `models/ElementType.ts` is gone; the
 General template replaced it. If a past agent's mental model is "new tomes
@@ -197,7 +218,7 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   (`/tomes/:id/edit`) — matches the original behavior where editing a tome
   always lands you on that tome's dashboard with the dialog open on top,
   regardless of where you clicked "Edit" from. In create mode it also carries
-  the template picker (see below); in edit mode it does not, because a
+  both template pickers (see above); in edit mode it carries neither, because a
   template is only ever applied at creation.
 - `FieldDefinitionsEditor.tsx` — add/edit/remove UI for an ElementType's
   custom field definitions (`FieldDefinition[]`); used by
@@ -243,7 +264,14 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   associations to elements with no label — that is the whole difference from a
   `Relationship`, so do not grow a description field here.
 - `PlotPicker.tsx` — tabs for switching between a tome's plots, plus
-  create/rename/delete.
+  create/rename/delete. Its "New plot" dialog carries the plot-template picker.
+  The dialog's fields are uncontrolled, so it resets the form on open: MUI keeps
+  a dialog's children mounted until the close transition ends, and without the
+  reset a cancelled rename followed straight by "New plot" reopens carrying the
+  old plot's name.
+- `PlotTemplatePicker.tsx` — the story-structure select shared by
+  `TomeFormDialog` and `PlotPicker`, with a preview of the beat count and spine
+  labels the chosen structure will write. Controlled: the parent owns the id.
 - `WriteItemCard.tsx` — the small, title-only card in the Write grid. It owns
   its own 250ms hover timer and `Popover` sample rather than letting the page
   track which of n cards is hovered. The `Popover` is
