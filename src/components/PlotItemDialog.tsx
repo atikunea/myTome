@@ -75,6 +75,7 @@ export function PlotItemDialog({
   open,
   item,
   insertAt,
+  plotRowId,
   tomeId,
   plotId,
   elements,
@@ -86,6 +87,8 @@ export function PlotItemDialog({
   open: boolean;
   item?: PlotItem;
   insertAt?: number;
+  /** Places a new beat on a specific spine row — the compare grid creates in a cell. */
+  plotRowId?: string;
   tomeId: string;
   plotId: string;
   elements: Element[];
@@ -169,6 +172,7 @@ export function PlotItemDialog({
           dotVariant,
           attachedElementIds: attached.map((element) => element.id),
           writeItemIds: composed,
+          plotRowId,
         },
         insertAt,
       );

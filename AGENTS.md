@@ -3,8 +3,9 @@
 A local-first novel-writing workspace. An author creates **Tomes** (books),
 defines their own **ElementTypes** (Character, Place, Faction, …) with custom
 fields, fills them with **Elements**, links elements with **Relationships**,
-lays out **Plots** as ordered **PlotItem** beats on a timeline, and writes prose
-as **WriteItems** in a Lexical editor.
+lays out **Plots** as ordered **PlotItem** beats on a timeline, aligns those
+plots against each other on a shared axis of **PlotRows**, and writes prose as
+**WriteItems** in a Lexical editor.
 
 **There is no backend.** No server, no API, no auth, no network calls at
 runtime — everything lives in the browser's IndexedDB via Dexie. The app is a
@@ -63,7 +64,7 @@ that.
 ```
 src/
   models/      Data shapes + the two template registries. Only db.ts declares the Dexie schema.
-  services/    store.ts — the single data-access module (771 lines).
+  services/    store.ts — the single data-access module (~1030 lines).
   hooks/       useObservable.ts — Dexie liveQuery → React state.
   context/     App-wide state: tomes, current workspace, confirm dialog, color mode.
   layouts/     WorkspaceLayout.tsx — the /tomes/:tomeId/* shell (nav + header + Outlet).
@@ -104,15 +105,62 @@ Shared conventions inside `store.ts`:
   (`new Date().toISOString()`), never `Date` objects — they are stored,
   indexed, and sorted as strings.
 - Manual ordering is an integer `sortOrder` compacted by the `applyOrder`
-  helper (assigns `sortOrder = index`). Call it inside the transaction.
+  helper (assigns `sortOrder = index`). Call it inside the transaction. **The one
+  exception is `plotItems`** — see the spine section below, where `sortOrder` is
+  derived from row order rather than authored directly.
 - Cascades run in `db.transaction("rw", …)` listing every table touched.
-  Deleting a tome clears all seven tables; deleting an Element also strips its
+  Deleting a tome clears all eight tables; deleting an Element also strips its
   id from relationships and from every beat's `attachedElementIds` via the
   multiEntry index (`detachElements`); deleting a WriteItem does the same
   through `detachWriteItem`.
 - Reads out of `plotItems` go through `readPlotItem`, which defaults the two id
   arrays. That is belt-and-braces on top of the migration — a database that
-  missed an upgrade must degrade to an empty list, never blank a page.
+  missed an upgrade must degrade to an empty list, never blank a page. It does
+  **not** default `plotRowId`: there is no sane stand-in for a row id, so that
+  one leans on the v7 backfill being right, and a beat that somehow lacks one
+  sorts to the end of its plot rather than silently claiming the top.
+
+### The spine: `plotRows` is a tome-level axis, and `PlotItem.sortOrder` derives from it
+
+A tome has **one ordered list of `PlotRow`s** — the spine. Every beat in every
+plot of that tome stands on one of them (`PlotItem.plotRowId`, required). Two
+beats on the same row are contemporaneous, which is what lets `PlotGrid` draw
+several plots side by side with their beats aligned. **A gap is the absence of a
+cell** — a plot with no beat on a row simply shows nothing there — which is why
+this is a shared table rather than a number on each beat.
+
+The rule that governs everything else: **row order is the truth, and
+`PlotItem.sortOrder` is a cache of it.** `sortOrder` survives only so the
+`[plotId+sortOrder]` index and every single-plot reader keep working untouched.
+Consequences, all of them load-bearing:
+
+- **Never write `plotItems.sortOrder` from an index.** End any mutation that
+  touches rows or row assignments with `syncPlotSortOrder(tomeId)`, inside its
+  transaction. It rewrites each beat's `sortOrder` from the rank of its row and
+  skips rows already correct, so calling it after a no-op costs one read and
+  fires no live query. `savePlotItem` calls it too: a beat created in a gap
+  partway up the spine belongs at that point in its plot, and numbering it by
+  insert index leaves the grid and the timeline disagreeing about where it sits.
+- **`reorderPlotItems` permutes rows, it does not renumber.** Dragging within one
+  plot reassigns which of its beats stands on each row it *already occupies*, so
+  the set of occupied rows is unchanged and no other plot loses its alignment or
+  gains a gap.
+- **Inserting a row shifts the whole spine**, and every beat keeps the row id it
+  already names — so all plots move together and stay aligned.
+- **A plot can hold at most one beat per row.** `movePlotItemToRow` enforces it by
+  swapping when the target cell is already taken.
+- **Deleting a beat leaves its row standing** (that is the gap it becomes), so the
+  spine only ever grows. `removeEmptyPlotRows(tomeId)` is the housekeeping that
+  drops rows *no plot in the tome* occupies — note "no plot", not "no visible
+  column", so it can be a no-op while the screen is full of gaps.
+- **`deletePlotRow` reaches across every plot** and takes each beat standing on
+  the row. It is the one plot mutation that is destructive beyond the plot you are
+  looking at; `countPlotRowBeats` exists to tell the confirm dialog the cost.
+
+New beats pick their row in `rowForNewPlotItem`: inserting between two beats opens
+a fresh row above the one displaced, while appending reuses the next row the plot
+leaves empty and only grows the spine when there is none — so writing straight
+down one plot does not strand its beats below everyone else's.
 
 ### Two vestigial things — don't build on them
 
@@ -126,7 +174,7 @@ Shared conventions inside `store.ts`:
 
 ## Dexie schema changes — read before editing `models/db.ts`
 
-The database is `myTomeDB`, currently at **version 6**, and it is running in
+The database is `myTomeDB`, currently at **version 7**, and it is running in
 users' browsers. The rules:
 
 1. **Never edit a shipped `.version(n).stores({…})` block.** Add a new
@@ -146,6 +194,14 @@ users' browsers. The rules:
    them. v6 changes nothing and re-runs the same backfill purely for them. If
    you ship a version whose upgrade was missing or wrong, this is the remedy: a
    new no-op version carrying the corrected upgrade.
+5. **v7 added the spine**, and shows both halves of rule 2 at once: `plotRows` is
+   a new table (no upgrade needed on its own) but `plotRowId` is a new field on
+   `plotItems` (which is). Its `backfillPlotRows` gives each tome a spine as deep
+   as its longest plot and assigns beats by position — reproducing the implicit
+   index-parity the old side-by-side compare view already drew, which is the only
+   alignment the pre-v7 data can justify. It is resumable as well as idempotent:
+   rows are topped up to the depth needed rather than recreated, and a beat that
+   already names a row is skipped.
 
 ## Naming — these are load-bearing
 
@@ -155,6 +211,10 @@ users' browsers. The rules:
   exports components under those names and the collision would force an import
   alias everywhere. Only the components that *render* MUI timeline markup carry
   timeline vocabulary.
+- **"Spine" means the tome's shared row axis — nothing else.** The vertical line
+  MUI draws down a timeline is the **track**, and `PlotItem.name` (labelled "Beat
+  label" in the dialog) is the **beat label** beside it. These three were all
+  called "spine" before `PlotRow` existed; don't reintroduce the collision.
 - **`WriteItem`** is the prose record; its `type` is a closed four-way union
   (`snippet | lore | passage | chapter`), not a user-extensible registry the way
   `ElementType` is.
@@ -175,6 +235,17 @@ The deliberate exception is `write/:writeItemId`, which has **no `write/new`
 sibling**: a draft row is created at the click site and the editor opens on its
 real id, because a create-on-mount effect fires twice under `StrictMode`. See
 `src/components/AGENTS.md` for the full autosave/discard story.
+
+**Compare takes a comma-joined list of plots**, not a pair:
+`plots/compare/:plotIds` (plus `/items/:itemId`, `/rows/:rowId`, and
+`/insert/:sidePlotId` with an optional `/:rowId`). Any number of columns is a
+link like everything else here. The list is canonical — `PlotComparePage` drops
+unknown and repeated ids and rewrites the URL, and anything left with fewer than
+two plots falls back to the single-plot view, since a plot compared with itself
+is not a comparison. The insert route names the plot *and* the row because with
+several columns on screen neither alone identifies a cell; omitting the row
+appends instead. The old `plots/:plotId/compare/:otherPlotId` routes were
+removed outright rather than redirected.
 
 `StrictMode` is on in `main.tsx`. Assume every effect mounts, cleans up, and
 mounts again in dev, and write effects that survive it.

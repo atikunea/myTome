@@ -1,9 +1,14 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
+  Menu,
   MenuItem,
   Stack,
   TextField,
@@ -12,86 +17,117 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CloseIcon from "@mui/icons-material/Close";
-import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import LibraryAddIcon from "@mui/icons-material/LibraryAdd";
+import UnfoldLessIcon from "@mui/icons-material/UnfoldLess";
 import type { Element } from "../models/Element";
-import type { Plot, PlotItem } from "../models/Plot";
+import type { Plot, PlotItem, PlotRow } from "../models/Plot";
 import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
+import { useConfirm } from "../context/ConfirmContext";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
-import { PlotTimeline } from "../components/PlotTimeline";
+import { PlotGrid } from "../components/PlotGrid";
 import { PlotItemDialog } from "../components/PlotItemDialog";
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 /**
- * Two of a tome's plots drawn beside each other — a subplot against the main
- * line, two POV threads, a draft against its rewrite. Both sides stay editable:
- * each column is a full `PlotTimeline`, so beats can be opened, inserted, and
- * reordered without leaving the comparison. Dragging is per-column by design;
- * a beat belongs to one plot, and moving it between plots is not a reorder.
+ * Any number of a tome's plots drawn against its shared row axis — a subplot
+ * against the main line, three POV threads, a draft against its rewrite. Beats
+ * sharing a row line up, and a plot with nothing on a row shows a gap there.
+ *
+ * The columns live in the URL as a comma-joined list (`…/plots/compare/a,b,c`),
+ * so a comparison is a link like everything else in this app. The list is
+ * canonical: unknown and repeated ids are dropped and the URL rewritten, and
+ * anything left with fewer than two plots falls back to the single-plot view,
+ * since one plot compared with itself is not a comparison.
  */
 export function PlotComparePage({ creating = false }: { creating?: boolean }) {
-  const { plotId, otherPlotId, itemId, sidePlotId, index } = useParams<{
-    plotId: string;
-    otherPlotId: string;
+  const { plotIds, itemId, sidePlotId, rowId } = useParams<{
+    plotIds: string;
     itemId?: string;
     sidePlotId?: string;
-    index?: string;
+    rowId?: string;
   }>();
   const { tome, types } = useTomeWorkspace();
   const navigate = useNavigate();
+  const confirmAction = useConfirm();
+  const [addMenu, setAddMenu] = useState<HTMLElement | null>(null);
 
   const plots = useObservable<Plot[]>((cb) => store.observePlots(tome!.id, cb), [tome?.id]);
-  const leftItems =
-    useObservable<PlotItem[]>((cb) => store.observePlotItems(plotId ?? "", cb), [plotId]) ?? [];
-  const rightItems =
-    useObservable<PlotItem[]>(
-      (cb) => store.observePlotItems(otherPlotId ?? "", cb),
-      [otherPlotId],
-    ) ?? [];
+  const rows =
+    useObservable<PlotRow[]>((cb) => store.observePlotRows(tome!.id, cb), [tome?.id]) ?? [];
+  // Every beat in the tome in one query, rather than one subscription per column:
+  // the number of columns is a route parameter, and hooks cannot be counted by it.
+  const allItems =
+    useObservable<PlotItem[]>((cb) => store.observeTomePlotItems(tome!.id, cb), [tome?.id]) ?? [];
   const elements =
     useObservable<Element[]>((cb) => store.observeTomeElements(tome!.id, cb), [tome?.id]) ?? [];
   const writeItems =
     useObservable<WriteItem[]>((cb) => store.observeWriteItems(tome!.id, cb), [tome?.id]) ?? [];
 
-  const byId = useMemo(
-    () => new Map([...leftItems, ...rightItems].map((item) => [item.id, item])),
-    [leftItems, rightItems],
-  );
+  const requested = useMemo(() => (plotIds ?? "").split(",").filter(Boolean), [plotIds]);
+  const columns = useMemo(() => {
+    if (!plots) return [];
+    const resolved: Plot[] = [];
+    for (const id of requested) {
+      const plot = plots.find((candidate) => candidate.id === id);
+      if (plot && !resolved.some((seen) => seen.id === plot.id)) resolved.push(plot);
+    }
+    return resolved;
+  }, [plots, requested]);
 
-  // Comparing a plot with itself is not a comparison — a hand-edited URL that
-  // asks for one falls back to the ordinary single-plot view.
+  const canonical = columns.map((plot) => plot.id).join(",");
+  const comparePath = tome ? `/tomes/${tome.id}/plots/compare/${canonical}` : "";
+
   useEffect(() => {
-    if (!tome || !plotId || plotId !== otherPlotId) return;
-    navigate(`/tomes/${tome.id}/plots/${plotId}`, { replace: true });
-  }, [tome, plotId, otherPlotId, navigate]);
+    if (!tome || !plots) return;
+    if (columns.length < 2) {
+      const fallback = columns[0] ?? plots[0];
+      navigate(fallback ? `/tomes/${tome.id}/plots/${fallback.id}` : `/tomes/${tome.id}/plots`, {
+        replace: true,
+      });
+      return;
+    }
+    // A hand-edited URL naming a deleted or repeated plot is rewritten to what is
+    // actually on screen, so a refresh or a shared link resolves the same way.
+    if (canonical !== plotIds) navigate(comparePath, { replace: true });
+  }, [tome, plots, columns, canonical, plotIds, comparePath, navigate]);
 
-  if (!tome || !plots || !plotId || !otherPlotId) return null;
-  const left = plots.find((plot) => plot.id === plotId);
-  const right = plots.find((plot) => plot.id === otherPlotId);
-  if (!left || !right)
-    return (
-      <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
-        Plot not found
-      </Typography>
-    );
+  if (!tome || !plots) return null;
+  if (columns.length < 2) return null;
 
-  const comparePath = `/tomes/${tome.id}/plots/${left.id}/compare/${right.id}`;
+  const items = allItems.filter((item) => columns.some((plot) => plot.id === item.plotId));
+  const held = new Set(allItems.map((item) => item.plotRowId));
+  const emptyRows = rows.filter((row) => !held.has(row.id)).length;
+  const unused = plots.filter((plot) => !columns.some((column) => column.id === plot.id));
+
   const closeDialog = () => navigate(comparePath);
-  const editingItem = itemId ? byId.get(itemId) : undefined;
-  // The insert route names the plot as well as the position: with two timelines
-  // on screen an index alone does not say which one is being added to.
-  const insertPlotId =
-    creating && sidePlotId === left.id
-      ? left.id
-      : creating && sidePlotId === right.id
-        ? right.id
-        : undefined;
-  const insertAt = insertPlotId && index !== undefined ? Number(index) : undefined;
+  const withColumns = (ids: string[]) => `/tomes/${tome.id}/plots/compare/${ids.join(",")}`;
+  const editingItem = itemId ? allItems.find((item) => item.id === itemId) : undefined;
+  const insertPlot = creating ? columns.find((plot) => plot.id === sidePlotId) : undefined;
+  // `:rowId` serves both the rename route and the insert route; `creating` says which.
+  const renamingRow = !creating && rowId ? rows.find((row) => row.id === rowId) : undefined;
+  const rowName = (row: PlotRow) =>
+    row.label || `Row ${rows.findIndex((candidate) => candidate.id === row.id) + 1}`;
 
-  const columns = [
-    { plot: left, items: leftItems, pairWith: (id: string) => `${id}/compare/${right.id}` },
-    { plot: right, items: rightItems, pairWith: (id: string) => `${left.id}/compare/${id}` },
-  ];
+  const handleDeleteRow = async (row: PlotRow) => {
+    const { beats, plots: affected } = await store.countPlotRowBeats(row.id);
+    confirmAction(
+      beats
+        ? `Delete ${rowName(row)}? This also deletes ${plural(beats, "beat")} across ${plural(affected, "plot")}.`
+        : `Delete ${rowName(row)}?`,
+      () => store.deletePlotRow({ id: row.id, tomeId: tome.id }),
+    );
+  };
+
+  const handleRename = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!renamingRow) return;
+    const label = String(new FormData(event.currentTarget).get("label") ?? "");
+    store.setPlotRowLabel(renamingRow.id, label);
+    closeDialog();
+  };
 
   return (
     <Box>
@@ -111,107 +147,181 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
             Compare timelines
           </Typography>
         </Box>
-        <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
-          <Tooltip title="Swap sides">
-            <IconButton
-              aria-label="Swap sides"
-              onClick={() => navigate(`/tomes/${tome.id}/plots/${right.id}/compare/${left.id}`)}
-            >
-              <SwapHorizIcon />
-            </IconButton>
+        <Stack direction="row" sx={{ alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          <Tooltip title={unused.length ? "Add another plot line" : "Every plot is already shown"}>
+            {/* A disabled button fires no events, so the tooltip needs a live wrapper. */}
+            <span>
+              <Button
+                size="small"
+                startIcon={<LibraryAddIcon />}
+                disabled={!unused.length}
+                onClick={(event) => setAddMenu(event.currentTarget)}
+              >
+                Add plot
+              </Button>
+            </span>
+          </Tooltip>
+          <Menu anchorEl={addMenu} open={Boolean(addMenu)} onClose={() => setAddMenu(null)}>
+            {unused.map((plot) => (
+              <MenuItem
+                key={plot.id}
+                onClick={() => {
+                  setAddMenu(null);
+                  navigate(withColumns([...columns.map((column) => column.id), plot.id]));
+                }}
+              >
+                {plot.name}
+              </MenuItem>
+            ))}
+          </Menu>
+          <Tooltip
+            title={
+              emptyRows
+                ? `Drop ${plural(emptyRows, "row")} no plot has a beat on`
+                : "No empty rows to remove"
+            }
+          >
+            <span>
+              <Button
+                size="small"
+                startIcon={<UnfoldLessIcon />}
+                disabled={!emptyRows}
+                onClick={() => store.removeEmptyPlotRows(tome.id)}
+              >
+                Remove empty rows
+              </Button>
+            </span>
           </Tooltip>
           <Button
+            size="small"
             startIcon={<CloseIcon />}
-            onClick={() => navigate(`/tomes/${tome.id}/plots/${left.id}`)}
+            onClick={() => navigate(`/tomes/${tome.id}/plots/${columns[0].id}`)}
           >
             Exit compare
           </Button>
         </Stack>
       </Stack>
 
-      <Stack
-        // Two timelines need more room than the app's usual `sm` switch gives
-        // them: each column carries its own track, labels, and cards, so they
-        // stay stacked until `md` and only then sit side by side.
-        direction={{ xs: "column", md: "row" }}
-        spacing={{ xs: 4, md: 3 }}
-        sx={{ alignItems: "flex-start" }}
-      >
-        {columns.map(({ plot, items, pairWith }) => (
-          <Box key={plot.id} sx={{ flex: 1, minWidth: 0, width: "100%" }}>
-            <Stack
-              direction="row"
-              sx={{
-                alignItems: "center",
-                gap: 1,
-                pb: 1.5,
-                mb: 2,
-                borderBottom: 1,
-                borderColor: "divider",
-              }}
+      <PlotGrid
+        rows={rows}
+        plots={columns}
+        items={items}
+        types={types}
+        elements={elements}
+        renderColumnHeader={(plot) => (
+          <Stack direction="row" sx={{ alignItems: "center", gap: 0.5 }}>
+            <TextField
+              select
+              size="small"
+              label="Plot"
+              value={plot.id}
+              onChange={(event) =>
+                navigate(
+                  withColumns(
+                    columns.map((column) =>
+                      column.id === plot.id ? event.target.value : column.id,
+                    ),
+                  ),
+                )
+              }
+              sx={{ flex: 1, minWidth: 0 }}
             >
-              <TextField
-                select
+              {plots.map((option) => (
+                <MenuItem
+                  key={option.id}
+                  value={option.id}
+                  // Another column already has it; a plot cannot face itself.
+                  disabled={
+                    option.id !== plot.id && columns.some((column) => column.id === option.id)
+                  }
+                >
+                  {option.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Tooltip title={`Add a beat to ${plot.name}`}>
+              <IconButton
                 size="small"
-                label="Plot"
-                value={plot.id}
-                onChange={(event) =>
-                  navigate(`/tomes/${tome.id}/plots/${pairWith(event.target.value)}`)
-                }
-                sx={{ flex: 1, minWidth: 0 }}
+                aria-label={`Add a beat to ${plot.name}`}
+                onClick={() => navigate(`${comparePath}/insert/${plot.id}`)}
               >
-                {plots.map((option) => (
-                  <MenuItem
-                    key={option.id}
-                    value={option.id}
-                    // The other column already has it; a plot cannot face itself.
-                    disabled={option.id !== plot.id && columns.some((c) => c.plot.id === option.id)}
-                  >
-                    {option.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                sx={{ flexShrink: 0 }}
-                onClick={() => navigate(`${comparePath}/insert/${plot.id}/${items.length}`)}
-              >
-                Add item
-              </Button>
-            </Stack>
-
-            <PlotTimeline
-              plotId={plot.id}
-              items={items}
-              types={types}
-              elements={elements}
-              onOpenItem={(item) => navigate(`${comparePath}/items/${item.id}`)}
-              onInsert={(position) =>
-                navigate(`${comparePath}/insert/${plot.id}/${position}`)
-              }
-              onOpenElement={(element) =>
-                navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
-              }
-            />
-          </Box>
-        ))}
-      </Stack>
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            {columns.length > 2 ? (
+              <Tooltip title={`Stop comparing ${plot.name}`}>
+                <IconButton
+                  size="small"
+                  aria-label={`Remove ${plot.name} from the comparison`}
+                  onClick={() =>
+                    navigate(
+                      withColumns(
+                        columns.filter((column) => column.id !== plot.id).map((c) => c.id),
+                      ),
+                    )
+                  }
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
+          </Stack>
+        )}
+        onOpenItem={(item) => navigate(`${comparePath}/items/${item.id}`)}
+        onOpenElement={(element) =>
+          navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
+        }
+        onAddBeat={(plotId, targetRow) =>
+          navigate(`${comparePath}/insert/${plotId}/${targetRow}`)
+        }
+        onInsertRow={(index) => store.insertPlotRow(tome.id, index)}
+        onRenameRow={(row) => navigate(`${comparePath}/rows/${row.id}`)}
+        onDeleteRow={handleDeleteRow}
+      />
 
       <PlotItemDialog
-        open={Boolean(editingItem) || insertAt !== undefined}
+        open={Boolean(editingItem) || Boolean(insertPlot)}
         item={editingItem}
-        insertAt={insertAt}
+        // Only a create carries a row from the route; an edit keeps the one it has.
+        plotRowId={creating ? rowId : undefined}
         tomeId={tome.id}
-        // An existing beat carries the plot it belongs to; only a new one takes
-        // the plot from the route.
-        plotId={editingItem?.plotId ?? insertPlotId ?? left.id}
+        // An existing beat carries the plot it belongs to; a new one takes it from
+        // the route, because with several grids on screen a position alone does
+        // not say which plot is being added to.
+        plotId={editingItem?.plotId ?? insertPlot?.id ?? columns[0].id}
         elements={elements}
         types={types}
         writeItems={writeItems}
         onOpenWriteItem={(writeItemId) => navigate(`/tomes/${tome.id}/write/${writeItemId}`)}
         onClose={closeDialog}
       />
+
+      <Dialog open={Boolean(renamingRow)} onClose={closeDialog} maxWidth="xs" fullWidth>
+        {/*
+          Keyed on the row so the uncontrolled field re-seeds: MUI keeps a dialog's
+          children mounted until the close transition ends, and without this,
+          renaming one row and then another reopens carrying the first one's label.
+        */}
+        <Box component="form" onSubmit={handleRename} key={renamingRow?.id}>
+          <DialogTitle>Name this row</DialogTitle>
+          <DialogContent dividers>
+            <TextField
+              name="label"
+              label="Row label"
+              fullWidth
+              autoFocus
+              defaultValue={renamingRow?.label ?? ""}
+              helperText="Shown in the gutter beside every plot, e.g. Act I or Day 12"
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeDialog}>Cancel</Button>
+            <Button type="submit" variant="contained">
+              Save
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
     </Box>
   );
 }

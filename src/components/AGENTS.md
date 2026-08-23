@@ -4,9 +4,9 @@ Shared UI building blocks for myTome (React 19 + TypeScript + MUI, function
 components with hooks — no class components, no web components). This
 folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
-`EmptyState`, `ColorModeToggle`, `PlotTimeline`, `TimelineCard`, `PlotBeatCard`,
-`TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`, `WriteItemCard`,
-`WriteItemTypeIcon`).
+`EmptyState`, `ColorModeToggle`, `PlotTimeline`, `PlotGrid`, `TimelineCard`,
+`PlotBeatCard`, `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`,
+`WriteItemCard`, `WriteItemTypeIcon`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
 rather than here — they are not MUI components and only the Write editor
 mounts them. Route-level screens live in `../pages`
@@ -268,6 +268,29 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   `../pages/PlotComparePage.tsx` can mount two of them side by side without a
   card from one plot being droppable into the other. `../pages/PlotPage.tsx`
   mounts a single one.
+- `PlotGrid.tsx` — two or more plots drawn against the tome's shared row axis, so
+  beats sharing a row line up and a plot with nothing on a row shows a gap. The
+  alignment is CSS, not arithmetic: every row's cells are siblings of one
+  `display: grid`, so the grid row grows to its tallest card and the rest stretch
+  beside it. Consequences worth knowing before editing it:
+  - **One `DndContext` for the whole grid**, unlike the per-instance contexts
+    `PlotTimeline` uses. A column's cells are interleaved with every other
+    column's in DOM order, so a provider cannot wrap one column. `sameColumnOnly`
+    filters the droppable candidates by `plotId` instead, which also stops the
+    grid highlighting a cell that would refuse the beat.
+  - **Collisions resolve by overlap (`rectIntersection`), not `closestCenter`.**
+    Rows differ enormously in height — one long beat makes a row several times
+    its neighbour — and `closestCenter` scores a card sitting squarely inside a
+    tall row as *further* from it than from the short row it just left, so the
+    drop silently does nothing. `closestCenter` remains the fallback for when the
+    card is in a gap between rows and overlaps nothing.
+  - **`cellKeyboardCoordinates` aligns top edges deliberately.** dnd-kit's
+    `KeyboardSensor` scrolls the page instead of moving the card whenever the
+    requested position falls past the scrollport's vertical midpoint, so aiming
+    at a tall row's centre turns every keypress into a scroll that never arrives.
+    Short steps keep the move a move.
+  - The row gutter is `position: sticky; left: 0` with an opaque background, so
+    labels hold while the columns scroll horizontally past them.
 - `TimelineConnectorInsert.tsx` — a `TimelineConnector` that doubles as an
   insert point, revealing a "+" on hover/focus. The gap between two cards is
   two stacked connectors (the upper card's bottom, the lower card's top); both

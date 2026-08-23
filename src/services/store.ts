@@ -720,16 +720,22 @@ export const store = {
         await db.plotItems.put(item);
         return;
       }
-      const ids = await plotItemRange(item.plotId).primaryKeys();
-      const at = Math.min(Math.max(insertAt ?? ids.length, 0), ids.length);
-      ids.splice(at, 0, item.id);
-      item.sortOrder = at;
-      if (!item.plotRowId)
+      // A caller that names the row has already said where the beat goes — the
+      // compare grid creates in a specific cell. Only when it does not does the
+      // insert position pick a row.
+      if (!item.plotRowId) {
+        const count = await plotItemRange(item.plotId).count();
+        const at = Math.min(Math.max(insertAt ?? count, 0), count);
         item.plotRowId = (await rowForNewPlotItem(item.tomeId, item.plotId, at)).id;
+      }
       await db.plotItems.put(item);
-      await applyOrder(db.plotItems, ids);
+      // Settled from row order, never from the insert index. A beat created in a
+      // gap partway up the spine belongs at that point in its plot, and numbering
+      // it by index would leave the grid and the single-plot timeline disagreeing
+      // about where it sits.
+      await syncPlotSortOrder(item.tomeId);
     });
-    return item;
+    return (await db.plotItems.get(item.id)) ?? item;
   },
   /**
    * Reorders one plot's beats among themselves. Since row order is what ordering

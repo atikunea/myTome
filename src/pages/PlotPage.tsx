@@ -120,7 +120,7 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
                 key={other.id}
                 onClick={() => {
                   setCompareMenu(null);
-                  navigate(`${plotPath}/compare/${other.id}`);
+                  navigate(`/tomes/${tome.id}/plots/compare/${plot.id},${other.id}`);
                 }}
               >
                 {other.name}

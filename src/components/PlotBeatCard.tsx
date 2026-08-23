@@ -1,10 +1,43 @@
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { Box, Card, Chip, Stack, Tooltip, Typography } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
-import type { PlotItem } from "../models/Plot";
+import type { PlotDotColor, PlotItem } from "../models/Plot";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
 import { ElementTypeIcon } from "./ElementTypeIcon";
+
+/** `PlotDotColor` as a theme token — "grey" is not a palette entry with a `.main`. */
+const dotToken = (color: PlotDotColor) => (color === "grey" ? "grey.500" : `${color}.main`);
+
+/**
+ * The beat's dot, drawn on the card. `TimelineCard` gets this from MUI's
+ * `TimelineDot` on the track; a grid cell has no track, so the same three
+ * properties — colour, variant, icon — are rendered here instead.
+ */
+function BeatDot({ item }: { item: PlotItem }) {
+  const token = dotToken(item.dotColor ?? "grey");
+  const filled = (item.dotVariant ?? "filled") === "filled";
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        flexShrink: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: "50%",
+        width: item.icon ? 28 : 12,
+        height: item.icon ? 28 : 12,
+        border: filled ? 0 : 2,
+        borderColor: token,
+        bgcolor: filled ? token : "transparent",
+        color: filled ? "common.white" : token,
+      }}
+    >
+      {item.icon ? <ElementTypeIcon icon={item.icon} fontSize="small" /> : null}
+    </Box>
+  );
+}
 
 /**
  * The beat itself — title, description, attached elements, and the handle that
@@ -25,6 +58,7 @@ export function PlotBeatCard({
   onOpenElement,
   dragHandle,
   labelMode = "always",
+  showDot = false,
 }: {
   item: PlotItem;
   attachments: Element[];
@@ -43,6 +77,8 @@ export function PlotBeatCard({
    * layout that has no label column of its own.
    */
   labelMode?: "always" | "compact";
+  /** Draws the beat's dot on the card, for a layout with no track to carry it. */
+  showDot?: boolean;
 }) {
   return (
     <Card
@@ -127,9 +163,12 @@ export function PlotBeatCard({
               {item.name}
             </Typography>
           ) : null}
-          <Typography variant="h6" component="h3" sx={{ fontSize: "1.15rem" }}>
-            {item.title}
-          </Typography>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            {showDot ? <BeatDot item={item} /> : null}
+            <Typography variant="h6" component="h3" sx={{ fontSize: "1.15rem", minWidth: 0 }}>
+              {item.title}
+            </Typography>
+          </Stack>
           {item.description ? (
             <Typography color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5 }}>
               {item.description}
