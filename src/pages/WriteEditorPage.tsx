@@ -36,9 +36,8 @@ import { ToolbarPlugin } from "../lexical/ToolbarPlugin";
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
 import { MentionNode } from "../lexical/MentionNode";
 import { WriteItemTypeIcon } from "../components/WriteItemTypeIcon";
-
-/** How long typing pauses before the autosave fires. */
-const AUTOSAVE_MS = 600;
+import { SaveStatus } from "../components/SaveStatus";
+import { useAutosave } from "../hooks/useAutosave";
 
 export function WriteEditorPage() {
   const { writeItemId } = useParams<{ writeItemId: string }>();
@@ -83,38 +82,32 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
     content: item.content,
     preview: item.preview,
   });
-  const saveTimer = useRef<number>(undefined);
-  const dirty = useRef(false);
   const alive = useRef(true);
   const itemId = item.id;
 
-  const scheduleSave = () => {
-    dirty.current = true;
-    window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      dirty.current = false;
-      store.saveWriteItem({ id: itemId, ...latest.current });
-    }, AUTOSAVE_MS);
-  };
+  // All the timing lives in `hooks/autosave.ts`; this page only says when an
+  // edit happened and renders whatever state comes back.
+  const { state: saveState, autosave } = useAutosave(() =>
+    store.saveWriteItem({ id: itemId, ...latest.current }),
+  );
 
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
-      window.clearTimeout(saveTimer.current);
+      // `useAutosave` has already dropped the pending timers; `flush` writes
+      // whatever edit they were holding.
+      //
       // Deferred a tick because StrictMode's dev-only remount runs this cleanup
       // on a page that is about to come straight back; discarding there would
       // delete a draft the author is still looking at. A real unmount leaves
       // `alive` false and the discard goes through.
       window.setTimeout(async () => {
-        if (dirty.current) {
-          dirty.current = false;
-          await store.saveWriteItem({ id: itemId, ...latest.current });
-        }
+        await autosave.flush();
         if (!alive.current) await store.discardWriteItemIfBlank(itemId);
       }, 0);
     };
-  }, [itemId]);
+  }, [itemId, autosave]);
 
   useEffect(() => {
     let active = true;
@@ -158,13 +151,15 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
   );
 
   const handleChange = (editorState: EditorState) => {
+    const content = JSON.stringify(editorState);
+    // Lexical reports selection-only updates through the same callback, and
+    // fires once on mount. Neither is an edit, and both used to schedule a
+    // write: without this guard the indicator announces a save every time the
+    // caret moves, and a freshly opened chapter opens on "Editing…".
+    if (content === latest.current.content) return;
     const preview = editorState.read(() => $getRoot().getTextContent());
-    latest.current = {
-      ...latest.current,
-      content: JSON.stringify(editorState),
-      preview,
-    };
-    scheduleSave();
+    latest.current = { ...latest.current, content, preview };
+    autosave.schedule();
   };
 
   // Mentions are plain DOM inside the contentEditable, so the click is caught
@@ -211,6 +206,13 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
           Back
         </Button>
         <Box sx={{ flex: 1 }} />
+        {/* Sits after the spacer so the spacer, not the type picker, absorbs
+            the width change as the words switch — nothing to its right moves. */}
+        <SaveStatus
+          state={saveState}
+          savedAt={item.updatedAt}
+          onRetry={autosave.saveNow}
+        />
         <TextField
           select
           size="small"
@@ -220,7 +222,7 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
             const next = event.target.value as WriteItemType;
             setType(next);
             latest.current = { ...latest.current, type: next };
-            scheduleSave();
+            autosave.schedule();
           }}
           sx={{ minWidth: 150 }}
         >
@@ -242,9 +244,10 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
               `Permanently delete "${title.trim() || "this text"}"? This cannot be undone.`,
               async () => {
                 // The row is going away; stop the pending autosave from
-                // recreating fields on a deleted id.
-                window.clearTimeout(saveTimer.current);
-                dirty.current = false;
+                // recreating fields on a deleted id, and drop the indicator
+                // back to rest so it cannot sit on "Saving…" over a row that
+                // no longer exists.
+                autosave.reset();
                 await store.deleteWriteItem(itemId);
                 navigate(`/tomes/${tomeId}/write`);
               },
@@ -262,7 +265,7 @@ function WriteEditor({ item, tomeId }: { item: WriteItem; tomeId: string }) {
         onChange={(event) => {
           setTitle(event.target.value);
           latest.current = { ...latest.current, title: event.target.value };
-          scheduleSave();
+          autosave.schedule();
         }}
         fullWidth
         slotProps={{

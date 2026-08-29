@@ -39,10 +39,18 @@ that nothing enforces.
   `noUnusedParameters`, and `noFallthroughCasesInSwitch` are **errors** — a
   leftover import or abandoned variable fails the build. `tsconfig.json`
   includes all of `src`, so the tests are type-checked here too.
-- **The suite covers `src/services` and `models/db.ts` only.** No component,
-  hook, or page tests and no jsdom (`test.environment` is `node`). UI tests
-  would mean adding a DOM environment and React Testing Library — don't, unless
-  asked.
+- **The suite covers `src/services`, `models/db.ts`, and `hooks/autosave.ts`.**
+  Still no component or page tests and **no jsdom** — `test.environment` is
+  `node` and `include` is `*.test.ts`, so a `.test.tsx` would not even be
+  collected. UI tests would mean adding a DOM environment and React Testing
+  Library — don't, unless asked.
+- **That is why `hooks/autosave.ts` holds no React and no DOM.** The Write
+  editor's autosave timing was pulled out of the page precisely so its rules
+  could be driven under `vi.useFakeTimers()` in the `node` environment instead
+  of through a mounted page with Lexical and the store stubbed. Reach for the
+  same split when logic worth testing is trapped in a component: extract the
+  part that is only data and timers, and leave the React binding thin enough
+  not to need a test.
 - For UI behavior, run the app and drive it. Use the `myTome` launch config,
   not a hand-started Vite.
 - Don't add a linter or formatter unless asked. Match surrounding formatting by
@@ -71,7 +79,9 @@ Don't switch router types without solving that.
 src/
   models/      Data shapes + the two template registries. Only db.ts declares the Dexie schema.
   services/    The data layer, split by table behind the store.ts barrel. Tests in __tests__/.
-  hooks/       useObservable.ts — Dexie liveQuery → React state.
+  hooks/       useObservable.ts (Dexie liveQuery → React state) and the
+               autosave machine: autosave.ts is framework-free and tested,
+               useAutosave.ts binds it to React. Tests in __tests__/.
   context/     App-wide state: tomes, current workspace, confirm dialog, color mode.
   layouts/     WorkspaceLayout.tsx — the /tomes/:tomeId/* shell (nav + header + Outlet).
   pages/       Route-level screens, one per <Route> in App.tsx.

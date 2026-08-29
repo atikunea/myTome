@@ -150,6 +150,36 @@ worth knowing before editing it:
   deferred callback fires, so only a real unmount discards. Don't "simplify"
   that timeout away.
 
+### `SaveStatus` is what the author sees of all that
+
+Because there is no Save button, `SaveStatus.tsx` is the only thing that ever
+says a write happened: a caption in the header spacer reading "Saved" in
+`text.secondary` at rest, "Editing…" / "Saving…" as the state moves, and green
+for a moment on each success.
+
+**None of the timing is here, and none of it is in the page either.** It lives
+in `../hooks/autosave.ts`, which holds no React and no DOM so its rules can be
+tested under fake timers in the suite's `node` environment — see the root
+`AGENTS.md`. `useAutosave` binds that machine to React state; `SaveStatus` is
+stateless and renders whatever state it is handed, so the words cannot disagree
+with what was written. Change a timing rule there, not here, and expect
+`hooks/__tests__/autosave.test.ts` to have an opinion.
+
+Three things the page and the component still own:
+
+- **`handleChange` compares the serialized document before scheduling.**
+  Lexical routes selection-only updates through the same callback and fires
+  once on mount; both used to schedule a write. Without the comparison the
+  indicator announces a save every time the caret moves and a freshly opened
+  chapter opens on "Editing…".
+- **The page's `alive` ref is only about the discard again.** `useAutosave`
+  keeps its own for state, so the unmount flush cannot `setState` on a dead
+  component without the page having to think about it.
+- **The indicator sits *after* the header's `flex: 1` spacer.** The spacer, not
+  the type picker, then absorbs the width change as the words switch, so
+  nothing to its right moves. Measured: the picker holds one x through the
+  whole cycle.
+
 ## The editor toolbar is described by a config, not hand-wired JSX
 
 `../lexical/ToolbarPlugin.tsx` renders from `ToolbarItem[][]` — an array of
@@ -316,6 +346,8 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
 - `WriteItemTypeIcon.tsx` — glyph for a `WriteItemType`. Unlike
   `ElementTypeIcon` there is no registry or fallback: the four types are a
   closed union, so the mapping is total.
+- `SaveStatus.tsx` — the Write editor's autosave indicator. Stateless; see the
+  autosave section above for the rules that keep it honest.
 - `EmptyState.tsx` — shared "nothing here yet" placeholder.
 - `ColorModeToggle.tsx` — fixed-position light/dark toggle, rendered once in
   `App.tsx` so it's available on every route.
