@@ -26,20 +26,30 @@ npm run build    # tsc --noEmit, then vite build
 npm run preview  # serve the built dist/
 ```
 
-**`npm run build` is the only gate that exists.** There is no test suite, no
-ESLint config, and no Prettier config — the `eslint-disable` comment in
-`hooks/useObservable.ts` is a leftover and nothing enforces it. So:
+```bash
+npm test         # vitest run — the data layer only (see below)
+npm run test:watch
+```
+
+**Two gates: `npm run build` and `npm test`.** There is no ESLint config and no
+Prettier config — the `eslint-disable` comment in `hooks/useObservable.ts` is a
+leftover and nothing enforces it. So:
 
 - After a change, run `npm run build`. `tsc` runs first and the flags are
   strict about the things agents get wrong: `noUnusedLocals`,
   `noUnusedParameters`, and `noFallthroughCasesInSwitch` are all errors, so a
   leftover import or an abandoned variable **fails the build**, not just lints.
-- To check behavior, run the app and drive it — there is nothing to assert
-  against otherwise. Use the `myTome` launch config rather than starting Vite
-  by hand.
-- Don't add a test runner, linter, or formatter unless asked. Match the
-  surrounding formatting by eye (2-space indent, double quotes, trailing
-  commas, semicolons).
+  Note `tsconfig.json` includes all of `src`, so the tests are type-checked by
+  `npm run build` too.
+- **The suite covers `src/services` and `models/db.ts` only.** There is no
+  component, hook, or page test and no jsdom — `test.environment` is `node`.
+  Adding UI tests would mean adding a DOM environment and React Testing
+  Library; don't, unless asked.
+- To check UI behavior, still run the app and drive it. Use the `myTome` launch
+  config rather than starting Vite by hand.
+- Don't add a linter or formatter unless asked. Match the surrounding
+  formatting by eye (2-space indent, double quotes, trailing commas,
+  semicolons).
 
 TypeScript is in bundler mode with `verbatimModuleSyntax` and
 `erasableSyntaxOnly`. Consequences: type-only imports **must** be written
@@ -64,7 +74,7 @@ that.
 ```
 src/
   models/      Data shapes + the two template registries. Only db.ts declares the Dexie schema.
-  services/    store.ts — the single data-access module (~1030 lines).
+  services/    The data layer, split by table behind the store.ts barrel. Tests in __tests__/.
   hooks/       useObservable.ts — Dexie liveQuery → React state.
   context/     App-wide state: tomes, current workspace, confirm dialog, color mode.
   layouts/     WorkspaceLayout.tsx — the /tomes/:tomeId/* shell (nav + header + Outlet).
@@ -76,11 +86,40 @@ src/
 
 ### The one layering rule
 
-**`src/models/db.ts` is imported by exactly one file: `src/services/store.ts`.**
-Pages, components, and contexts never touch `db` directly — they call `store`.
-Keep it that way; it is what makes the schema-migration rules below tractable.
+**`src/models/db.ts` is imported only by files in `src/services/`.** Pages,
+components, and contexts never touch `db` directly — they call `store`. Keep it
+that way; it is what makes the schema-migration rules below tractable. (This
+read "by exactly one file" until `store.ts` was split; the boundary moved from a
+file to a directory, and nothing outside it moved.)
 
-## `services/store.ts` — the data layer
+## `services/` — the data layer
+
+`store.ts` is a **barrel**, not the implementation: it spreads one object per
+domain module into the single `store` the app imports. Every consumer still
+writes `import { store } from "…/services/store"` and calls `store.savePlotItem`
+— the split is invisible outside this directory, and it should stay that way.
+
+```
+services/
+  store.ts         The barrel. Add a new domain module's object to the spread here.
+  internal.ts      uid/now/slugify, the three range queries, detach*, applyOrder.
+  validate.ts      The four validators. Callers invoke these, not the mutations.
+  images.ts        imageUrl / imageFrom — the only members not on `store`.
+  tomes.ts         Tomes + the eight-table delete cascade.
+  templates.ts     applyTomeTemplate, createPlotFromTemplate. Create-time only.
+  elementTypes.ts  Types, field definitions, and the two count* helpers.
+  elements.ts      Elements + relationships.
+  spine.ts         The shared row axis. Owns every sortOrder/plotRowId write.
+  plots.ts         Plots and beats. Defers to spine.ts for ordering.
+  writeItems.ts    Prose rows + the beat↔text link (both sides of writeItemIds).
+  __tests__/       vitest + fake-indexeddb. See below.
+```
+
+**`spine.ts` is the boundary that enforces the spine rule**, and the reason the
+split is not purely by table. Row ranks and `PlotItem.plotRowId` are written
+*only* there, so "never author `sortOrder` from an index" is a module boundary
+rather than a comment someone can miss. `plots.ts` imports `syncPlotSortOrder`
+and `rowForNewPlotItem` from it; `spine.ts` imports nothing back.
 
 Two kinds of exports, and they're used differently:
 
@@ -99,7 +138,7 @@ Validation is deliberately **not** inside the mutations: `validateElement`,
 separately and called by the form before saving, so the thrown message can be
 rendered as the dialog's inline error. Follow that split for new entities.
 
-Shared conventions inside `store.ts`:
+Shared conventions across the modules:
 
 - Ids are `crypto.randomUUID()`. Timestamps are **ISO strings**
   (`new Date().toISOString()`), never `Date` objects — they are stored,
@@ -161,6 +200,33 @@ New beats pick their row in `rowForNewPlotItem`: inserting between two beats ope
 a fresh row above the one displaced, while appending reuses the next row the plot
 leaves empty and only grows the spine when there is none — so writing straight
 down one plot does not strand its beats below everyone else's.
+
+### `services/__tests__/` — how to test this layer
+
+`fake-indexeddb/auto` is installed once, in `setup.ts`. Because `db` is a module
+singleton created at import time, **isolation means wiping the database, not
+re-importing the module**: `beforeEach` does `db.delete()` then `db.open()`,
+which replays v1→v7 and so exercises the real schema on every test.
+
+- **`expectSpineIntact(tomeId)` in `helpers.ts` is the important assertion.**
+  It checks the whole spine contract at once — every beat stands on a live row,
+  a plot holds at most one beat per row, and each plot's `sortOrder` values are
+  exactly the ranks of its rows compacted from 0. Assert it after *every*
+  mutation that could touch rows or row assignments; a regression in any of the
+  eight plot mutations trips it. `columnOf(tomeId, plotId)` renders a plot
+  against the spine as `["a1", null, "a2"]`, which is what the grid draws, so
+  alignment expectations should be written in that shape.
+- **Migrations are tested by building an *older* database.** `migrations.test.ts`
+  opens a plain Dexie under its own name with the v4 or v6 schema, seeds it,
+  closes it, and opens `MyTomeDB` over the top — the only way to make Dexie
+  actually replay an `.upgrade()`. `MyTomeDB`'s `name` constructor parameter
+  exists for exactly this.
+- Re-running a backfill (rule 4's remedy below) is tested by calling
+  `backfillPlotRows` directly inside a transaction, since Dexie will never
+  replay an upgrade for a version already applied. That is why the two backfill
+  functions are exported from `models/db.ts`.
+- **Don't test the `observe*` wrappers.** They are four-line `liveQuery` shells;
+  testing them tests Dexie. Test the mutation and read the table.
 
 ### Two vestigial things — don't build on them
 

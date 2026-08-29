@@ -17,7 +17,7 @@ export interface Activity {
  * Gives every plot item the `writeItemIds` array that readers and the
  * `*writeItemIds` multiEntry index both require. Safe to run repeatedly.
  */
-const backfillWriteItemIds = (tx: Transaction) =>
+export const backfillWriteItemIds = (tx: Transaction) =>
   tx
     .table<PlotItem>("plotItems")
     .toCollection()
@@ -35,7 +35,7 @@ const backfillWriteItemIds = (tx: Transaction) =>
  * topped up to the depth needed rather than recreated, and a beat that already
  * names a row is left alone.
  */
-const backfillPlotRows = async (tx: Transaction) => {
+export const backfillPlotRows = async (tx: Transaction) => {
   const rowTable = tx.table<PlotRow>("plotRows");
   const itemTable = tx.table<PlotItem>("plotItems");
   const time = new Date().toISOString();
