@@ -168,7 +168,14 @@ export function PlotGrid({
       modifiers={[restrictToVerticalAxis]}
       onDragEnd={handleDragEnd}
     >
-      <Box sx={{ overflowX: "auto", pb: 2 }}>
+      {/*
+        `overflow-x: auto` computes `overflow-y` to `auto` as well, so this box is
+        a scrollport in both directions and clips whatever leaves it. A column
+        header's outlined `TextField` floats its shrunk label 9px above the
+        field's own top edge, which lands outside the box and gets sliced in half
+        without room reserved for it here.
+      */}
+      <Box sx={{ overflowX: "auto", pt: 1.5, pb: 2 }}>
         <Box
           sx={{
             display: "grid",
