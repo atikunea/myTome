@@ -5,20 +5,19 @@ import {
   Box,
   Button,
   Card,
-  Chip,
   Container,
   Divider,
   Stack,
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import CloudQueueIcon from "@mui/icons-material/CloudQueue";
 import DownloadIcon from "@mui/icons-material/Download";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import { backupFileName, parseBackup, store } from "../services/store";
 import type { BackupFile, BackupSummary, RestoreMode } from "../services/store";
 import { useTomes } from "../context/TomesContext";
 import { useConfirm } from "../context/ConfirmContext";
+import { DriveSyncCard } from "../components/DriveSyncCard";
 import { RestoreDialog } from "../components/RestoreDialog";
 
 /**
@@ -240,49 +239,7 @@ export function BackupPage() {
           )}
         </Card>
 
-        <Card variant="outlined" sx={{ p: 2.5 }}>
-          <Typography variant="h2" sx={{ fontSize: "1.35rem", mb: 0.75 }}>
-            Where backups go
-          </Typography>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            myTome has no server of its own, so a backup only leaves this browser
-            when you take it somewhere.
-          </Typography>
-          <Stack divider={<Divider />}>
-            <Stack
-              direction="row"
-              spacing={1.5}
-              sx={{ alignItems: "center", justifyContent: "space-between", py: 1.25 }}
-            >
-              <Box>
-                <Typography sx={{ fontWeight: 600 }}>This device</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Backup files download to your computer, and you restore them by
-                  picking one.
-                </Typography>
-              </Box>
-              <Chip size="small" color="success" label="In use" />
-            </Stack>
-            <Stack
-              direction="row"
-              spacing={1.5}
-              sx={{ alignItems: "center", justifyContent: "space-between", py: 1.25 }}
-            >
-              <Box>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <CloudQueueIcon fontSize="small" sx={{ color: "text.secondary" }} />
-                  <Typography sx={{ fontWeight: 600 }}>Google Drive</Typography>
-                </Stack>
-                <Typography variant="body2" color="text.secondary">
-                  Planned: keep the same backup file in your own Drive so another
-                  browser can pick it up. It would sign in from the browser and
-                  merge exactly as restoring a file does here — still no server.
-                </Typography>
-              </Box>
-              <Chip size="small" label="Not yet" />
-            </Stack>
-          </Stack>
-        </Card>
+        <DriveSyncCard />
       </Stack>
 
       {picked ? (

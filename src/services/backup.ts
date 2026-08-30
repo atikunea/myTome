@@ -285,6 +285,25 @@ export const backupStore = {
   },
 
   /**
+   * Every tome here, with the one number a sync compares — its high-water mark.
+   *
+   * Deliberately cheap and contents-free: this is what `syncPlan.planSync`
+   * weighs against a Drive listing, so a sync that has nothing to do never reads
+   * a manuscript, let alone transfers one.
+   */
+  async tomeMarks(): Promise<{ id: string; title: string; touchedAt: string }[]> {
+    const tomes = await db.tomes.orderBy("title").toArray();
+    const marks = [];
+    for (const tome of tomes)
+      marks.push({
+        id: tome.id,
+        title: tome.title,
+        touchedAt: (await localTouchedAt(tome.id)) ?? tome.updatedAt,
+      });
+    return marks;
+  },
+
+  /**
    * What restoring this file would do, tome by tome. Read before the restore
    * dialog opens: the merge column is the only way the author can see that the
    * file they picked is older than what they already have.

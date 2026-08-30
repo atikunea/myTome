@@ -7,11 +7,21 @@ lays out **Plots** as ordered **PlotItem** beats on a timeline, aligns those
 plots against each other on a shared axis of **PlotRows**, and writes prose as
 **WriteItems** in a Lexical editor.
 
-**There is no backend.** No server, API, auth, or runtime network calls —
+**There is no backend.** No server of ours, no API to build, no accounts —
 everything lives in the browser's IndexedDB via Dexie, shipped as a static
-bundle on GitHub Pages. Don't reach for `fetch`, environment secrets, or a
-data-fetching library; if a feature seems to need a server, say so rather than
-inventing one.
+bundle on GitHub Pages. Don't reach for a data-fetching library or invent a
+service; if a feature seems to need a server, say so rather than building one.
+
+**One exception, and it is the only one: `services/drive.ts`.** Optional Google
+Drive sync means the app now has an auth flow and calls out to
+`accounts.google.com` and `www.googleapis.com` — user-initiated, per click, and
+absent entirely from a build with no `VITE_GOOGLE_CLIENT_ID`. That is a
+deliberate widening of the rule above, not permission to fetch things generally:
+everything else stays local-first and offline-first, and a second remote
+dependency needs the same justification this one had. `fetch` appears in exactly
+one module, and `import.meta.env` carries exactly one variable — a *public*
+OAuth client id, never a secret (this flow has none, and the repo must never
+gain one).
 
 `CLAUDE.md` is just `@AGENTS.md`, so this file is canonical whichever entry
 point an agent loads. `src/components/AGENTS.md` is a deeper, UI-scoped
@@ -140,6 +150,8 @@ services/
   plots.ts         Plots and beats. Defers to spine.ts for ordering.
   writeItems.ts    Prose rows + the beat↔text link (both sides of writeItemIds).
   backup.ts        The backup file format, export, and the restore/merge.
+  syncPlan.ts      Pure: what a sync should move. Tested; no network, no DOM.
+  drive.ts         The only module that calls the network. Optional, gated.
   __tests__/       vitest + fake-indexeddb. See below.
 ```
 
@@ -288,6 +300,51 @@ that arrives without a row and ends with `syncPlotSortOrder` for every tome it
 touched. Treat that as the standing rule: **a restore must leave the spine
 satisfying `expectSpineIntact`, whatever version wrote the file.** The
 `activities` table is deliberately not backed up (see below).
+
+### `drive.ts` — transport, and the app's only network code
+
+Google Drive holds **one backup file per tome** in a `myTome` folder, so a typo
+in one book doesn't rewrite the library and a conflict is scoped to the book it
+happened in. Every byte that moves is a `BackupFile`: `drive.ts` adds no format,
+no shape, no second serializer, and merges through the same
+`restoreBackup(file, "merge")` a hand-picked file goes through. Setup lives in
+`docs/google-drive-sync.md`.
+
+The split that keeps this testable: **`syncPlan.ts` decides, `drive.ts` moves.**
+`planSync(local, remote)` is pure, has its own node test, and encodes the rule
+that a sync compares one number per tome — `touchedAt`, from `backup.ts` — and
+never inspects contents. That is why a plan comes out of a Drive *listing*: the
+mark rides in each file's `appProperties`, so a sync with nothing to do
+transfers nothing. `store.tomeMarks()` is the local half of that comparison.
+
+Load-bearing, in rough order of how badly it goes if ignored:
+
+- **A sync only ever merges.** `"replace"` stays a deliberate act on a file a
+  human picked, behind a confirm. Nothing automatic may wipe a library.
+- **The token lives in a module variable and nowhere else** — no `localStorage`,
+  no IndexedDB, no cookie. It expires in about an hour and there is no refresh
+  token; that short blast radius is the design, not a limitation to fix.
+- **`drive.file` is the only scope.** It grants access to files this OAuth
+  client created, which is both the minimum and — since the grant follows the
+  client, not the browser — the entire mechanism by which two browsers find the
+  same file. Never widen it to `drive` or `drive.readonly`.
+- **Nothing is ever deleted from Drive**, and no upload overwrites a file whose
+  `modifiedTime` moved since the plan was made. The race is narrowed, not
+  closed; a skipped write is reported so the next sync settles it.
+- **Sync has no tombstones.** A tome deleted here comes back on the next sync,
+  because a listing can't distinguish "deleted" from "never seen here". The UI
+  says so out loud. Adding real deletion means adding tombstones to the format —
+  a `formatVersion` bump, not a patch.
+- **Google's script is injected on first connect**, never at page load, so a
+  user who ignores Drive never runs third-party code.
+- **The built page ships a CSP** from `vite.config.ts` (build-only — dev needs
+  `eval` and a websocket). Pages serves no headers we control, so it rides in a
+  `<meta>`. Any new remote host has to be added there or it is silently blocked
+  in production only — verify a production build in the browser, not just `dev`.
+
+Everything above the network line is tested; `drive.ts` itself is not, and can't
+usefully be under `node` — it is deliberately thin for that reason. Verify it by
+driving the built app.
 
 ### Two vestigial things — don't build on them
 

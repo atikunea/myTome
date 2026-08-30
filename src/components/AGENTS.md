@@ -6,7 +6,7 @@ folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
 `EmptyState`, `ColorModeToggle`, `PlotTimeline`, `PlotGrid`, `TimelineCard`,
 `PlotBeatCard`, `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`,
-`WriteItemCard`, `WriteItemTypeIcon`, `RestoreDialog`).
+`WriteItemCard`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
 rather than here — they are not MUI components and only the Write editor
 mounts them. Route-level screens live in `../pages`
@@ -438,6 +438,15 @@ as another transport for the same file — not as a second format.
   `useTomeWorkspace()`.
 - `RestoreDialog.tsx` — the summary + merge/replace choice for a chosen backup
   file; used only by `../pages/BackupPage.tsx`. See above.
+- `DriveSyncCard.tsx` — the "Where backups go" card, including Google Drive
+  connect/sync. **Its first state is "not set up":** without a
+  `VITE_GOOGLE_CLIENT_ID` compiled in, `driveConfigured` is false and the card
+  is prose with nothing to click — no dead buttons, and a fork of this repo
+  never quietly talks to someone else's Google project. Keep that shape for any
+  future integration. Sync is a button, never a background loop (see the root
+  AGENTS.md for why), and connection state is `useState` seeded from
+  `isConnected()` because the token is deliberately memory-only — a reload
+  starts disconnected, and that is correct rather than a bug to paper over.
 - `AppHeader.tsx` — per-tome workspace header (title + back link + edit
   link). Reads `useTomeWorkspace()`.
 - `TomeFormDialog.tsx` — create/edit dialog for a Tome, used by both

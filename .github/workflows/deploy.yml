@@ -22,7 +22,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # A repository *variable*, not a secret: an OAuth client id is public by
+      # design and ships in the bundle. Leave it unset and the build simply has
+      # no Drive sync. See docs/google-drive-sync.md.
       - run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
