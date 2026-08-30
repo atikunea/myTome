@@ -3,6 +3,23 @@ import { db } from "../models/db";
 import type { Tome } from "../models/Tome";
 import { now, uid } from "./internal";
 
+/**
+ * Deletes every row belonging to the tome, across all eight tables. Call inside
+ * a transaction that includes them — `deleteTome` opens one, and `restoreBackup`
+ * calls this inside its own to clear a tome it is about to overwrite, so the
+ * cascade is written once and cannot drift between the two.
+ */
+export const clearTome = async (id: string) => {
+  await db.writeItems.where("tomeId").equals(id).delete();
+  await db.plotItems.where("tomeId").equals(id).delete();
+  await db.plotRows.where("tomeId").equals(id).delete();
+  await db.plots.where("tomeId").equals(id).delete();
+  await db.relationships.where("tomeId").equals(id).delete();
+  await db.elements.where("tomeId").equals(id).delete();
+  await db.elementTypes.where("tomeId").equals(id).delete();
+  await db.tomes.delete(id);
+};
+
 export const tomeStore = {
   observeTomes(callback: (v: Tome[]) => void) {
     return liveQuery(() =>
@@ -52,16 +69,7 @@ export const tomeStore = {
         db.plotItems,
         db.writeItems,
       ],
-      async () => {
-        await db.writeItems.where("tomeId").equals(id).delete();
-        await db.plotItems.where("tomeId").equals(id).delete();
-        await db.plotRows.where("tomeId").equals(id).delete();
-        await db.plots.where("tomeId").equals(id).delete();
-        await db.relationships.where("tomeId").equals(id).delete();
-        await db.elements.where("tomeId").equals(id).delete();
-        await db.elementTypes.where("tomeId").equals(id).delete();
-        await db.tomes.delete(id);
-      },
+      () => clearTome(id),
     );
   },
 };

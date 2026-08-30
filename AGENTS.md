@@ -139,6 +139,7 @@ services/
   spine.ts         The shared row axis. Owns every sortOrder/plotRowId write.
   plots.ts         Plots and beats. Defers to spine.ts for ordering.
   writeItems.ts    Prose rows + the beat↔text link (both sides of writeItemIds).
+  backup.ts        The backup file format, export, and the restore/merge.
   __tests__/       vitest + fake-indexeddb. See below.
 ```
 
@@ -250,6 +251,44 @@ replaying every schema version so each test exercises the real schema.
 - **Don't test the `observe*` wrappers.** They are four-line `liveQuery` shells;
   testing them tests Dexie. Test the mutation and read the table.
 
+### `backup.ts` — the file format is the sync's format
+
+There is no backend, so the only copy of an author's work that survives a
+cleared browser is a file they hold. `backup.ts` owns that file: `exportBackup`
+(the whole library), `exportTomeBackup` (one tome), `summarizeBackup`,
+`restoreBackup`, plus the pure `parseBackup` and `backupFileName`, which sit
+beside the validators as named exports rather than on `store` because they are
+neither reads nor writes. `pages/BackupPage.tsx` is the transport half — the
+download and the file picker are the only parts that need the DOM.
+
+Four rules hold the format together, and each exists so that syncing through a
+Google Drive file later is a new *transport* rather than a second format:
+
+- **A one-tome file and a whole-library file are the same shape.** They differ
+  only in how many entries `tomes` holds, so `restoreBackup` never asks which
+  kind it was given, and a shared single tome merges exactly like a full backup.
+- **Ids are preserved exactly**, which is what makes restoring the same file
+  twice a no-op instead of a way to breed duplicate tomes. That idempotence is
+  the whole basis of "merge" between two browsers.
+- **`touchedAt` — the newest `updatedAt` anywhere in the tome — decides a
+  merge, not `Tome.updatedAt`.** Writing prose, moving a beat, and renaming an
+  element never touch the tome row, so comparing tome rows alone would call a
+  browser full of new writing "older" and silently discard it. Anything new that
+  compares two copies of a tome must use the same high-water mark.
+- **A merge replaces a tome whole, never row by row.** A tome is the smallest
+  unit anyone reasons about, and half-merging one could leave a beat standing on
+  a row the other browser wrote.
+- **Blobs travel as base64.** `ImageSource` of `kind: "local"` holds a `Blob`,
+  which `JSON.stringify` flattens to `{}`; `serializeImage`/`deserializeImage`
+  are the only reason cover art survives a round trip.
+
+A restore bypasses Dexie's upgrades entirely — rows are written straight into
+the current schema — so `restoreBackup` re-runs `backfillPlotRows` for any beat
+that arrives without a row and ends with `syncPlotSortOrder` for every tome it
+touched. Treat that as the standing rule: **a restore must leave the spine
+satisfying `expectSpineIntact`, whatever version wrote the file.** The
+`activities` table is deliberately not backed up (see below).
+
 ### Two vestigial things — don't build on them
 
 - **`Element.deletedAt` is never written.** `observeElements` filters
@@ -315,10 +354,18 @@ pattern: one page component mounted by several routes, taking a boolean prop.
 and `elements/settings/new` work the same way. New create/edit UI gets a route,
 not a local open/closed flag — back, refresh, and deep links must work.
 
-The deliberate exception is `write/:writeItemId`, which has **no `write/new`
+One deliberate exception is `write/:writeItemId`, which has **no `write/new`
 sibling**: a draft row is created at the click site and the editor opens on its
 real id, because a create-on-mount effect fires twice under `StrictMode`. See
 `src/components/AGENTS.md` for the full autosave/discard story.
+
+The other is the **restore dialog** on `/backup`, which is plain `useState`. Its
+state is a file the author picked out of their filesystem, which no URL can name
+— `#/backup?restoring=…` could only ever reopen an empty dialog. That is the
+test for a non-route dialog: not "is it transient?" but "can the URL rebuild
+it?". (`/backup` itself is a route, and a library-level one: the whole-library
+file is the point, and a browser with no tomes still needs somewhere to restore
+one from.)
 
 **Writing happens on an overlay, and both writing routes stay under
 `WorkspaceLayout`.** `write/:writeItemId` (one text) and

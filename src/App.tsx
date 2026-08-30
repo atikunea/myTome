@@ -14,6 +14,7 @@ import { PlotComparePage } from "./pages/PlotComparePage";
 import { WriteListPage } from "./pages/WriteListPage";
 import { WriteEditorPage } from "./pages/WriteEditorPage";
 import { BeatManuscriptPage } from "./pages/BeatManuscriptPage";
+import { BackupPage } from "./pages/BackupPage";
 
 export default function App() {
   return (
@@ -27,6 +28,12 @@ export default function App() {
                 <Route path="/" element={<Navigate to="/tomes" replace />} />
                 <Route path="/tomes" element={<TomeLibraryPage />} />
                 <Route path="/tomes/new" element={<TomeLibraryPage creating />} />
+                {/*
+                  Backup is library-level, not per-tome: a whole-library file is
+                  the point, and a browser with no tomes still needs somewhere to
+                  restore one from.
+                */}
+                <Route path="/backup" element={<BackupPage />} />
                 <Route path="/tomes/:tomeId" element={<WorkspaceLayout />}>
                   <Route index element={<Navigate to="dashboard" replace />} />
                   <Route path="dashboard" element={<TomeDashboardPage />} />

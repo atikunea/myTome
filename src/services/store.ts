@@ -1,3 +1,4 @@
+import { backupStore } from "./backup";
 import { elementStore } from "./elements";
 import { elementTypeStore } from "./elementTypes";
 import { plotStore } from "./plots";
@@ -34,8 +35,21 @@ export const store = {
   ...plotStore,
   ...spineStore,
   ...writeItemStore,
+  ...backupStore,
 };
 
+// `parseBackup` and `backupFileName` sit beside the validators rather than on
+// `store` for the same reason those do: they are pure functions a caller runs
+// before a mutation, not reads or writes of their own.
+export { backupFileName, parseBackup } from "./backup";
+export type {
+  BackupFile,
+  BackupSummary,
+  BackupTomeSummary,
+  MergeAction,
+  RestoreMode,
+  RestoreResult,
+} from "./backup";
 export { imageFrom, imageUrl } from "./images";
 export {
   validateElement,

@@ -14,6 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import type { Tome, TomeStatus } from "../models/Tome";
 import { store } from "../services/store";
 import { useTomes } from "../context/TomesContext";
@@ -63,9 +64,18 @@ export function TomeLibraryPage({ creating = false }: { creating?: boolean }) {
             A quiet place to keep every world together.
           </Typography>
         </Box>
-        <Button startIcon={<AddIcon />} onClick={() => navigate("/tomes/new")}>
-          New tome
-        </Button>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+          <Button
+            variant="text"
+            startIcon={<CloudDoneIcon />}
+            onClick={() => navigate("/backup")}
+          >
+            Backup
+          </Button>
+          <Button startIcon={<AddIcon />} onClick={() => navigate("/tomes/new")}>
+            New tome
+          </Button>
+        </Stack>
       </Stack>
 
       <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", mb: 3.5 }}>

@@ -6,7 +6,7 @@ folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
 `EmptyState`, `ColorModeToggle`, `PlotTimeline`, `PlotGrid`, `TimelineCard`,
 `PlotBeatCard`, `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`,
-`WriteItemCard`, `WriteItemTypeIcon`).
+`WriteItemCard`, `WriteItemTypeIcon`, `RestoreDialog`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
 rather than here — they are not MUI components and only the Write editor
 mounts them. Route-level screens live in `../pages`
@@ -404,10 +404,40 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   cards, and do not fit beside each other at 600px.
 - No hand-written inline `<svg>` icons — use `@mui/icons-material`.
 
+## The restore dialog is the one dialog that is not a route
+
+Every create/edit dialog in this app is mounted by a `<Route>` (see the root
+AGENTS.md). `RestoreDialog.tsx` is the exception, held in plain `useState` by
+`../pages/BackupPage.tsx`, and the reason is the test to apply to any future
+dialog: its state is a `File` the author picked out of their filesystem, and no
+URL can rebuild that. A route would only ever reopen an empty dialog.
+
+Two things about it worth keeping:
+
+- **It shows what a restore would do before doing it** — per tome, whether the
+  file is new here, newer than the copy here, or holds nothing newer — because
+  the author cannot otherwise tell that the file they grabbed is the stale one.
+  That verdict comes from `store.summarizeBackup`; the dialog computes none of
+  it itself.
+- **"Replace everything" still goes through `confirmAction`**, so the app-wide
+  confirm stacks on top of the restore dialog (mounted later, so it paints
+  above — verified in the browser, not assumed). Its button reads "Delete
+  permanently", which is the ConfirmProvider's fixed wording and accurate
+  enough: replacing does delete every tome here. Don't fork the provider to
+  reword it.
+
+`BackupPage` is deliberately the only place that touches the DOM for this: the
+`Blob` + `<a download>` dance and the hidden file input live there, and
+`services/backup.ts` stays a pure data layer that the tests can drive under
+`node`. When Google Drive lands it belongs beside them under "Where backups go"
+as another transport for the same file — not as a second format.
+
 ## Current components
 
 - `SideNav.tsx` — per-tome left nav; lists the tome's ElementTypes. Reads
   `useTomeWorkspace()`.
+- `RestoreDialog.tsx` — the summary + merge/replace choice for a chosen backup
+  file; used only by `../pages/BackupPage.tsx`. See above.
 - `AppHeader.tsx` — per-tome workspace header (title + back link + edit
   link). Reads `useTomeWorkspace()`.
 - `TomeFormDialog.tsx` — create/edit dialog for a Tome, used by both
