@@ -308,7 +308,13 @@ function ManuscriptSection({
       slotProps={{
         input: {
           readOnly: !active,
-          disableUnderline: !active,
+          // A beat's titles never take an underline, active or not. The section
+          // already says it is live — the gutter rule, the coloured kind label,
+          // the title darkening — and a rule under one title part-way down a
+          // continuous manuscript reads as a break in the page. The single-text
+          // surface keeps it: there the title is the document heading, and
+          // nothing else on the page marks it as a field.
+          disableUnderline: sectioned || !active,
           sx: sectioned
             ? {
                 fontSize: "0.8125rem",

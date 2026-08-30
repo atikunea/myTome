@@ -195,7 +195,8 @@ Six things here will bite if you change them:
   the UI face; given its own line at prose size in the prose face it reads as
   text to be read, and the eye stops on it between every part of what is meant
   to be one continuous manuscript. `WriteEditorPage` (`sectioned={false}`) keeps
-  it as the document heading — one text, no flow to interrupt. Either way the
+  it as the document heading — one text, no flow to interrupt, and the only
+  place its underline still marks it as a field. Either way the
   header's height must **not** depend on `active`: it sits above the prose in
   the same section, so a header that grows on click moves the very text the
   caret is being resolved against. Measured 30px in both states.
