@@ -1,5 +1,6 @@
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ColorModeProvider } from "./context/ColorModeContext";
+import { ProseFaceProvider } from "./context/ProseFaceContext";
 import { ConfirmProvider } from "./context/ConfirmContext";
 import { TomesProvider } from "./context/TomesContext";
 import { ColorModeToggle } from "./components/ColorModeToggle";
@@ -12,67 +13,79 @@ import { PlotPage } from "./pages/PlotPage";
 import { PlotComparePage } from "./pages/PlotComparePage";
 import { WriteListPage } from "./pages/WriteListPage";
 import { WriteEditorPage } from "./pages/WriteEditorPage";
+import { BeatManuscriptPage } from "./pages/BeatManuscriptPage";
 
 export default function App() {
   return (
     <ColorModeProvider>
-      <ConfirmProvider>
-        <TomesProvider>
-          <HashRouter>
-            <ColorModeToggle />
-            <Routes>
-              <Route path="/" element={<Navigate to="/tomes" replace />} />
-              <Route path="/tomes" element={<TomeLibraryPage />} />
-              <Route path="/tomes/new" element={<TomeLibraryPage creating />} />
-              <Route path="/tomes/:tomeId" element={<WorkspaceLayout />}>
-                <Route index element={<Navigate to="dashboard" replace />} />
-                <Route path="dashboard" element={<TomeDashboardPage />} />
-                <Route path="edit" element={<TomeDashboardPage editing />} />
-                <Route path="elements/settings" element={<ElementTypesPage />} />
-                <Route path="elements/settings/new" element={<ElementTypesPage creating />} />
-                <Route path="elements/settings/:configId" element={<ElementTypesPage />} />
-                <Route path="plots" element={<PlotPage />} />
-                <Route path="plots/:plotId" element={<PlotPage />} />
-                <Route path="plots/:plotId/items/:itemId" element={<PlotPage />} />
-                <Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
-                {/*
-                  Compare draws any number of plots against the tome's shared row
-                  axis, so `:plotIds` is a comma-joined list rather than a pair.
-                  Its insert route names the plot as well as the row: with several
-                  columns on screen, a row alone does not say which one to add to,
-                  and the row is optional — without it the beat is appended.
-                */}
-                <Route path="plots/compare/:plotIds" element={<PlotComparePage />} />
-                <Route
-                  path="plots/compare/:plotIds/items/:itemId"
-                  element={<PlotComparePage />}
-                />
-                <Route path="plots/compare/:plotIds/rows/:rowId" element={<PlotComparePage />} />
-                <Route
-                  path="plots/compare/:plotIds/insert/:sidePlotId"
-                  element={<PlotComparePage creating />}
-                />
-                <Route
-                  path="plots/compare/:plotIds/insert/:sidePlotId/:rowId"
-                  element={<PlotComparePage creating />}
-                />
-                {/*
-                  There is no `write/new` route: a draft row is created at the
-                  click site and the editor is opened on its real id, so a
-                  refresh or back never lands on a route that would create a
-                  second draft.
-                */}
-                <Route path="write" element={<WriteListPage />} />
-                <Route path="write/:writeItemId" element={<WriteEditorPage />} />
-                <Route path="elements/:typeId" element={<ElementListPage />} />
-                <Route path="elements/:typeId/new" element={<ElementListPage creating />} />
-                <Route path="elements/:typeId/:elementId/edit" element={<ElementListPage />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/tomes" replace />} />
-            </Routes>
-          </HashRouter>
-        </TomesProvider>
-      </ConfirmProvider>
+      <ProseFaceProvider>
+        <ConfirmProvider>
+          <TomesProvider>
+            <HashRouter>
+              <ColorModeToggle />
+              <Routes>
+                <Route path="/" element={<Navigate to="/tomes" replace />} />
+                <Route path="/tomes" element={<TomeLibraryPage />} />
+                <Route path="/tomes/new" element={<TomeLibraryPage creating />} />
+                <Route path="/tomes/:tomeId" element={<WorkspaceLayout />}>
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  <Route path="dashboard" element={<TomeDashboardPage />} />
+                  <Route path="edit" element={<TomeDashboardPage editing />} />
+                  <Route path="elements/settings" element={<ElementTypesPage />} />
+                  <Route path="elements/settings/new" element={<ElementTypesPage creating />} />
+                  <Route path="elements/settings/:configId" element={<ElementTypesPage />} />
+                  <Route path="plots" element={<PlotPage />} />
+                  <Route path="plots/:plotId" element={<PlotPage />} />
+                  <Route path="plots/:plotId/items/:itemId" element={<PlotPage />} />
+                  {/*
+                    A beat's composed text, as one manuscript. There is deliberately
+                    no `plots/compare/...` variant: the compare view links here, so
+                    a beat's writing has a single address whichever view found it.
+                  */}
+                  <Route
+                    path="plots/:plotId/items/:itemId/write"
+                    element={<BeatManuscriptPage />}
+                  />
+                  <Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
+                  {/*
+                    Compare draws any number of plots against the tome's shared row
+                    axis, so `:plotIds` is a comma-joined list rather than a pair.
+                    Its insert route names the plot as well as the row: with several
+                    columns on screen, a row alone does not say which one to add to,
+                    and the row is optional — without it the beat is appended.
+                  */}
+                  <Route path="plots/compare/:plotIds" element={<PlotComparePage />} />
+                  <Route
+                    path="plots/compare/:plotIds/items/:itemId"
+                    element={<PlotComparePage />}
+                  />
+                  <Route path="plots/compare/:plotIds/rows/:rowId" element={<PlotComparePage />} />
+                  <Route
+                    path="plots/compare/:plotIds/insert/:sidePlotId"
+                    element={<PlotComparePage creating />}
+                  />
+                  <Route
+                    path="plots/compare/:plotIds/insert/:sidePlotId/:rowId"
+                    element={<PlotComparePage creating />}
+                  />
+                  {/*
+                    There is no `write/new` route: a draft row is created at the
+                    click site and the editor is opened on its real id, so a
+                    refresh or back never lands on a route that would create a
+                    second draft.
+                  */}
+                  <Route path="write" element={<WriteListPage />} />
+                  <Route path="write/:writeItemId" element={<WriteEditorPage />} />
+                  <Route path="elements/:typeId" element={<ElementListPage />} />
+                  <Route path="elements/:typeId/new" element={<ElementListPage creating />} />
+                  <Route path="elements/:typeId/:elementId/edit" element={<ElementListPage />} />
+                </Route>
+                <Route path="*" element={<Navigate to="/tomes" replace />} />
+              </Routes>
+            </HashRouter>
+          </TomesProvider>
+        </ConfirmProvider>
+      </ProseFaceProvider>
     </ColorModeProvider>
   );
 }

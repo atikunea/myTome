@@ -115,6 +115,7 @@ export function PlotGrid({
   renderColumnHeader,
   onOpenItem,
   onOpenElement,
+  onWrite,
   onAddBeat,
   onInsertRow,
   onRenameRow,
@@ -132,6 +133,8 @@ export function PlotGrid({
   renderColumnHeader: (plot: Plot) => ReactNode;
   onOpenItem: (item: PlotItem) => void;
   onOpenElement: (element: Element) => void;
+  /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
+  onWrite: (item: PlotItem) => void;
   /** Author a new beat in an empty cell. */
   onAddBeat: (plotId: string, rowId: string) => void;
   /** Open a new row at this index of the spine. */
@@ -256,6 +259,7 @@ export function PlotGrid({
                       .filter((element): element is Element => Boolean(element))}
                     onOpen={() => onOpenItem(item)}
                     onOpenElement={onOpenElement}
+                    onWrite={onWrite}
                   />
                 ) : (
                   <EmptyCell
@@ -318,12 +322,15 @@ function BeatCell({
   types,
   onOpen,
   onOpenElement,
+  onWrite,
 }: {
   item: PlotItem;
   attachments: Element[];
   types: ElementType[];
   onOpen: () => void;
   onOpenElement: (element: Element) => void;
+  /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
+  onWrite: (item: PlotItem) => void;
 }) {
   const data: CellData = { plotId: item.plotId, rowId: item.plotRowId };
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -363,6 +370,7 @@ function BeatCell({
           types={types}
           onOpen={onOpen}
           onOpenElement={onOpenElement}
+          onWrite={onWrite}
           // No label column here and no track — the card carries both itself.
           labelMode="always"
           showDot

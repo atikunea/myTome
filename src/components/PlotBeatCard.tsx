@@ -1,6 +1,7 @@
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
-import { Box, Card, Chip, Stack, Tooltip, Typography } from "@mui/material";
+import { Badge, Box, Card, Chip, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import EditNoteIcon from "@mui/icons-material/EditNote";
 import type { PlotDotColor, PlotItem } from "../models/Plot";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
@@ -56,6 +57,7 @@ export function PlotBeatCard({
   types,
   onOpen,
   onOpenElement,
+  onWrite,
   dragHandle,
   labelMode = "always",
   showDot = false,
@@ -65,6 +67,13 @@ export function PlotBeatCard({
   types: ElementType[];
   onOpen: () => void;
   onOpenElement: (element: Element) => void;
+  /**
+   * Opens the beat's manuscript. This is the way in to a beat's writing now
+   * that composition has left `PlotItemDialog`, so unlike the drag handle it is
+   * **always visible** rather than revealed on hover — a hover-only control is
+   * unreachable on touch, and this is not a secondary action.
+   */
+  onWrite: (item: PlotItem) => void;
   /** Handle wiring from the container's `useSortable`. Omit where a beat cannot be dragged. */
   dragHandle?: {
     attributes: DraggableAttributes;
@@ -195,6 +204,32 @@ export function PlotBeatCard({
             </Stack>
           ) : null}
         </Box>
+        <Tooltip
+          title={
+            item.writeItemIds.length
+              ? `Write — ${item.writeItemIds.length} ${item.writeItemIds.length === 1 ? "text" : "texts"}`
+              : "Write"
+          }
+        >
+          <IconButton
+            size="small"
+            aria-label={`Write ${item.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onWrite(item);
+            }}
+            sx={{ mt: -0.5, mr: -0.5, color: "text.secondary", flexShrink: 0 }}
+          >
+            <Badge
+              badgeContent={item.writeItemIds.length}
+              color="primary"
+              overlap="circular"
+              slotProps={{ badge: { sx: { fontSize: 10, height: 15, minWidth: 15 } } }}
+            >
+              <EditNoteIcon fontSize="small" />
+            </Badge>
+          </IconButton>
+        </Tooltip>
       </Stack>
     </Card>
   );

@@ -13,7 +13,6 @@ import AddIcon from "@mui/icons-material/Add";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem } from "../models/Plot";
-import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
@@ -40,8 +39,6 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
     ) ?? [];
   const elements =
     useObservable<Element[]>((cb) => store.observeTomeElements(tome!.id, cb), [tome?.id]) ?? [];
-  const writeItems =
-    useObservable<WriteItem[]>((cb) => store.observeWriteItems(tome!.id, cb), [tome?.id]) ?? [];
 
   const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
 
@@ -152,6 +149,7 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
         onOpenElement={(element) =>
           navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
         }
+        onWrite={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
       />
 
       <PlotItemDialog
@@ -162,10 +160,7 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
         plotId={plot.id}
         elements={elements}
         types={types}
-        writeItems={writeItems}
-        onOpenWriteItem={(writeItemId) =>
-          navigate(`/tomes/${tome.id}/write/${writeItemId}`)
-        }
+        onOpenManuscript={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
         onClose={closeDialog}
       />
     </Box>

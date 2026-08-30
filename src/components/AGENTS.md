@@ -102,6 +102,22 @@ Deleting a beat never deletes its composed `WriteItem`s — they are tome-level
 content that merely stops being referenced. Deleting a `WriteItem` strips its
 id from every beat via the `*writeItemIds` multiEntry index.
 
+**Composition is edited in the beat's manuscript, not in `PlotItemDialog`.** The
+dialog used to carry the whole ordered list and a `DndContext`, and had to call
+`store.setPlotItemWriteItems` before navigating away so an unsaved reorder was
+not lost — that defensive save is gone along with the navigation that motivated
+it. The dialog now holds only what a beat *is* and how it is drawn, and
+`savePlotItem` falls back to the stored `writeItemIds` when a caller omits them,
+so saving from the dialog cannot disturb the composition. Reordering lives in
+each section's overflow menu as "Move earlier"/"Move later" rather than on drag
+handles: dragging a section of a scrolling manuscript whose rows differ hugely
+in height is far more work than the handful of parts a beat holds justifies, and
+menu items are keyboard-reachable for free.
+
+Both destructive actions are offered in that menu and **named apart** — "Remove
+from this beat" detaches, "Delete text permanently" removes the row from every
+beat composing it. Do not collapse them into one control.
+
 ## State: Context for shared state, local state for page-local UI
 
 This app uses React Context (not Redux/Zustand) for state that's shared
@@ -131,6 +147,136 @@ Context, since only that page needs them.
 `liveQuery`-based `store.observe*` functions (unchanged from before — see
 `services/store.ts`) and React state. Contexts and pages both use it instead
 of duplicating subscribe/unsubscribe `useEffect` boilerplate.
+
+## The focus surface: one live editor, n static sections
+
+Writing happens on `FocusSurface` — a MUI `Dialog` over the workspace with a
+dimmed scrim (full-bleed below `sm`). Two pages mount it: `WriteEditorPage` with
+one text, `BeatManuscriptPage` with a beat's `writeItemIds` drawn as one
+continuous manuscript in reading order. Both hand their rows to
+`ProseManuscript`, which is where the load-bearing part lives.
+
+**Every section is static markup until it is clicked.** `ProseManuscript` mounts
+exactly one `ProseEditor` — the surface's only `LexicalComposer` and its only
+`useAutosave` machine. Everything else is `StaticProse` drawn from
+`lexical/blocks.ts`. This is not primarily a performance decision; it is what
+keeps `useAutosave` one machine writing one row, `SaveStatus` reporting one
+unambiguous state, and the toolbar, mentions and history attached to an editor
+without anything having to decide *which* editor.
+
+Five things here will bite if you change them:
+
+- **`manuscriptStyles.ts` is shared, and that is the premise.** `StaticProse`
+  and the mounted `ContentEditable` both render from `manuscriptSx(face)`. If
+  the two ever disagree — one `line-height` is enough — the prose jumps under
+  the cursor on every click, *and* caret placement breaks, because the click
+  point is resolved against the editor's DOM after the swap and only lands on
+  the right word while the two renders occupy identical space. Verified in the
+  browser: the same paragraph measured `{x:175, y:182, w:569, h:33}` in both
+  states.
+- **`StaticProse` reproduces Lexical's DOM deliberately**, not approximately:
+  `getElementOuterTag`/`getElementInnerTag` (code→`<code>`, highlight→`<mark>`,
+  sub/sup, then bold→`<strong>` else italic→`<em>` else `<span>`), the same
+  `proseTextTheme` classes, the same
+  `calc(N * var(--lexical-indent-base-value, 40px))` for indent, and a `<br>`
+  inside an empty block. Each of those was read out of Lexical's source, not
+  guessed.
+- **`proseTextTheme` carries `bold` and `italic` for a real bug.** Lexical gives
+  a text node one inner tag, bold before italic, so a run that is *both* renders
+  as `<strong>` and its italic survives only as a theme class. The old editor
+  theme defined neither, so bold italic silently lost its slant. Don't drop them.
+- **The unmount flush is handed back through `flushRef`.** A page that sweeps
+  blank drafts on close must `await flushRef.current` first, or a draft the
+  author typed into still looks blank in the database and gets deleted. The
+  editor's flush is therefore *not* deferred a tick; only the page's discard is,
+  for the StrictMode reason below.
+- **A section is redrawn from `edits`, not from the row.** When an editor
+  unmounts, the manuscript already holds the text it last had; re-reading the
+  row would flash the pre-edit text for a frame, because the write and its
+  `liveQuery` echo are not synchronous.
+
+Two smaller notes. Undo does not cross a section boundary — `HistoryPlugin`'s
+stack dies with the editor, which is honest given autosave has already persisted
+the previous section. And the active-section accent is a `::before` in the
+gutter rather than a `border-left`: a real border would move the prose by a
+pixel or two on activation, and at a phone width it clips off screen.
+
+### Focus must never depend on an animation frame
+
+`CaretAtPointPlugin` focuses the newly mounted section **synchronously**, and
+only *refines* the caret position on the next frame. That order is deliberate
+and was got wrong first time round: an earlier version did the whole thing
+inside `requestAnimationFrame`, and where no frame arrives — a backgrounded tab,
+a throttled compositor, the Browser pane during automated testing — the section
+mounted, looked active, and silently swallowed everything the author typed,
+with nothing to retry it.
+
+Placing the caret has three separate traps, and all three produced the *same*
+symptom — the caret sitting at the start of the block:
+
+- **`caretPositionFromPoint` can return an element, not a text node**, and an
+  element's `offset` is a child index. `range.setStart(p, 0)` is the start of
+  the block. Only a text-node resolution is a hit; anything else must be treated
+  as a miss so the retry runs.
+- **Lexical overwrites a caret set only in the DOM.** Focusing the root makes
+  Lexical queue an update, and when that commits a microtask later it reconciles
+  the *editor state's* selection back onto the DOM. The placement has to go into
+  the editor state — `$createRangeSelectionFromDom(domSelection, editor)` inside
+  an `editor.update`, queued after the focus update so it has the last word.
+- **The retry is a `setTimeout`, not an animation frame.** What the first
+  attempt waits on is Lexical's reconciliation, which lands in a microtask, so a
+  macrotask is both sufficient and — unlike a frame — guaranteed to arrive.
+  `void root.getBoundingClientRect()` before each hit test forces the layout
+  pass, since the static markup was removed in the same commit.
+
+Worst case is a sane caret in a focused, typeable editor; none of the three
+failures can cost the author a keystroke.
+
+### Mentions: the typeahead needs a z-index on the focus surface
+
+`LexicalTypeaheadMenuPlugin` appends its anchor to `<body>` with `z-index:
+auto`. That was invisible while the editor was a plain page, and became a bug
+the moment writing moved onto a `Dialog`: the menu was built correctly and
+positioned correctly at the caret, and painted **behind** the surface, so typing
+`@` looked like nothing happened at all. `MentionsPlugin`'s `Paper` therefore
+carries `position: relative` and `zIndex: theme.zIndex.tooltip` — the anchor
+sets no z-index and so creates no stacking context, which is what lets the paper
+lift itself in the root one.
+
+Everything else about mentions already worked across the split and still does:
+`StaticProse` reproduces the `data-mytome-mention` attribute, `manuscriptStyles`
+carries the one rule that colours them in both renders, and `ProseManuscript`
+holds a single delegated click handler that serves the whole manuscript —
+static sections and the mounted editor alike — rather than wiring anything per
+node.
+
+### `ProseToolbarPlugin` — the same toolbar, placed twice
+
+`ToolbarPlugin` grew a `variant` prop. `"bar"` is the old sticky strip; `"bare"`
+drops the chrome so something else can place the controls.
+`ProseToolbarPlugin` picks by input, not width: a `Popper` pill over the
+selection on a pointer device, and a strip docked above the keyboard (tracked
+with `VisualViewport`) when `(pointer: coarse)` — a floating pill there would
+fire on the same gesture as the OS copy-and-paste callout, whose position cannot
+be measured. The docked strip stays visible while a section is mounted rather
+than following editor focus, because blur on touch arrives through pointer
+events that cannot be suppressed the way `mousedown` can.
+
+### `ColorModeToggle` sits in the surface's corner
+
+It is `position: fixed` at `zIndex.modal + 1` so it stays usable over any
+dialog — and its tooltip floats there too. `FocusSurface`'s header therefore
+carries `pr: 6` to move its own overflow button clear; without it the tooltip
+swallows the clicks.
+
+### `ProseFaceContext`
+
+The manuscript typeface (serif by default, from `brandFontFamily`) is the one
+typography setting, kept in `localStorage` following `ColorModeContext` — it is
+a property of this browser, not of a tome. The measure is **not** settable:
+`proseMeasure` is a fixed `66ch`, and because `ch` is font-relative it stays ~66
+*characters* when the face changes. It is a `max-width`, so a phone is bound by
+its own width (~37 characters) and never overflows.
 
 ## The Write editor autosaves — it deliberately has no Save button
 

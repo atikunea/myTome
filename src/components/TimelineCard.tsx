@@ -31,6 +31,7 @@ export function TimelineCard({
   onInsertAbove,
   onInsertBelow,
   onOpenElement,
+  onWrite,
 }: {
   item: PlotItem;
   attachments: Element[];
@@ -39,6 +40,8 @@ export function TimelineCard({
   onInsertAbove: () => void;
   onInsertBelow: () => void;
   onOpenElement: (element: Element) => void;
+  /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
+  onWrite: (item: PlotItem) => void;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -87,6 +90,7 @@ export function TimelineCard({
           types={types}
           onOpen={onOpen}
           onOpenElement={onOpenElement}
+          onWrite={onWrite}
           // The label column beside the track already carries `item.name`, so the
           // card repeats it only at the width where that column is hidden.
           labelMode="compact"

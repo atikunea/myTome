@@ -94,7 +94,25 @@ export function MentionsPlugin({
           ? createPortal(
               <Paper
                 elevation={8}
-                sx={{ mt: 0.5, minWidth: 230, maxHeight: 300, overflowY: "auto" }}
+                sx={{
+                  mt: 0.5,
+                  minWidth: 230,
+                  maxHeight: 300,
+                  overflowY: "auto",
+                  // `LexicalTypeaheadMenuPlugin` appends its anchor to `<body>`
+                  // with `z-index: auto`, which was fine while the editor was a
+                  // plain page. On the focus surface the editor lives in a MUI
+                  // `Dialog` at z-index 1300, and the menu — correctly built and
+                  // correctly positioned at the caret — painted *behind* it, so
+                  // typing `@` looked like nothing happened at all.
+                  //
+                  // The anchor sets no z-index and so creates no stacking
+                  // context; positioning this paper lifts it in the root context,
+                  // above the dialog. `tooltip` is the same level the floating
+                  // toolbar uses, and the two are never open together.
+                  position: "relative",
+                  zIndex: (theme) => theme.zIndex.tooltip,
+                }}
               >
                 <MenuList dense>
                   {options.map((option, index) => (

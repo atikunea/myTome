@@ -59,6 +59,18 @@ export const plotStore = {
       error: console.error,
     });
   },
+  /**
+   * One beat, live. Emits `null` for a missing row rather than `undefined`, so
+   * the beat manuscript can tell "not loaded yet" from "no such beat" and avoid
+   * flashing a not-found message while the first query is still in flight —
+   * the same contract `observeWriteItem` keeps.
+   */
+  observePlotItem(id: string, callback: (v: PlotItem | null) => void) {
+    return liveQuery(async () => {
+      const row = await db.plotItems.get(id);
+      return row ? readPlotItem(row) : null;
+    }).subscribe({ next: callback, error: console.error });
+  },
   observePlotItems(plotId: string, callback: (v: PlotItem[]) => void) {
     return liveQuery(() =>
       plotItemRange(plotId).toArray().then((rows) => rows.map(readPlotItem)),

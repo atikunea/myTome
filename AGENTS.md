@@ -39,11 +39,11 @@ that nothing enforces.
   `noUnusedParameters`, and `noFallthroughCasesInSwitch` are **errors** — a
   leftover import or abandoned variable fails the build. `tsconfig.json`
   includes all of `src`, so the tests are type-checked here too.
-- **The suite covers `src/services`, `models/db.ts`, and `hooks/autosave.ts`.**
-  Still no component or page tests and **no jsdom** — `test.environment` is
-  `node` and `include` is `*.test.ts`, so a `.test.tsx` would not even be
-  collected. UI tests would mean adding a DOM environment and React Testing
-  Library — don't, unless asked.
+- **The suite covers `src/services`, `models/db.ts`, `hooks/autosave.ts`, and
+  `lexical/blocks.ts`.** Still no component or page tests and **no jsdom** —
+  `test.environment` is `node` and `include` is `src/**/*.test.ts`, so a
+  `.test.tsx` would not even be collected. UI tests would mean adding a DOM
+  environment and React Testing Library — don't, unless asked.
 - **That is why `hooks/autosave.ts` holds no React and no DOM.** The Write
   editor's autosave timing was pulled out of the page precisely so its rules
   could be driven under `vi.useFakeTimers()` in the `node` environment instead
@@ -51,6 +51,13 @@ that nothing enforces.
   same split when logic worth testing is trapped in a component: extract the
   part that is only data and timers, and leave the React binding thin enough
   not to need a test.
+- **`lexical/blocks.ts` is the second instance of that split**, and shows it
+  works outside `hooks/`: it turns a stored Lexical document into a plain
+  descriptor tree with no React and no DOM, so the format bitmask, list nesting
+  and check state are all driven from `node`, while `components/StaticProse.tsx`
+  stays a thin renderer. `lexical` itself imports cleanly under `node` — the
+  test decodes formats against the library's own `IS_BOLD`/`IS_ITALIC`/… exports
+  rather than hardcoded bit values.
 - For UI behavior, run the app and drive it. Use the `myTome` launch config,
   not a hand-started Vite.
 - Don't add a linter or formatter unless asked. Match surrounding formatting by
@@ -86,7 +93,9 @@ src/
   layouts/     WorkspaceLayout.tsx — the /tomes/:tomeId/* shell (nav + header + Outlet).
   pages/       Route-level screens, one per <Route> in App.tsx.
   components/  Reusable UI. Has its own AGENTS.md — read it.
-  lexical/     Custom Lexical nodes and plugins (mentions, toolbar).
+  lexical/     Custom Lexical nodes and plugins (mentions, toolbars), plus
+               blocks.ts — the framework-free document reader, tested in
+               __tests__/.
   theme.ts     getTheme(mode) — the warm-paper brand palette, light and dark.
 ```
 
@@ -298,6 +307,22 @@ The deliberate exception is `write/:writeItemId`, which has **no `write/new`
 sibling**: a draft row is created at the click site and the editor opens on its
 real id, because a create-on-mount effect fires twice under `StrictMode`. See
 `src/components/AGENTS.md` for the full autosave/discard story.
+
+**Writing happens on an overlay, and both writing routes stay under
+`WorkspaceLayout`.** `write/:writeItemId` (one text) and
+`plots/:plotId/items/:itemId/write` (a beat's composed text as one manuscript)
+both render a `FocusSurface` — a MUI `Dialog` over the workspace with a dimmed
+scrim. Keeping them inside the layout is what leaves the app visible behind the
+backdrop, and it also keeps `TomeWorkspaceContext` in scope, which the editor
+needs for `types` (the mentions plugin). Below `sm` the same surface goes
+full-bleed, because at that width `SideNav` is already a horizontal strip and
+there is nothing worth dimming.
+
+**A beat's manuscript has exactly one address.** There is no
+`plots/compare/:plotIds/items/:itemId/write` variant — `PlotComparePage` links
+at `plots/:plotId/items/:itemId/write` using the beat's own `plotId`, and the
+back button returns to the comparison. Resist adding a compare-scoped twin; the
+route shape is already three deep.
 
 **Compare takes a comma-joined list of plots**, not a pair:
 `plots/compare/:plotIds` (plus `/items/:itemId`, `/rows/:rowId`, and

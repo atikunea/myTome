@@ -38,6 +38,7 @@ export function PlotTimeline({
   onOpenItem,
   onInsert,
   onOpenElement,
+  onWrite,
 }: {
   plotId: string;
   /** The plot's items in stored order. */
@@ -48,6 +49,8 @@ export function PlotTimeline({
   /** Create an item at this index within the plot. */
   onInsert: (index: number) => void;
   onOpenElement: (element: Element) => void;
+  /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
+  onWrite: (item: PlotItem) => void;
 }) {
   // The live query is the source of truth, but a drag needs an immediate answer, so
   // the rendered order is held locally and re-seeded whenever the stored set changes.
@@ -129,6 +132,7 @@ export function PlotTimeline({
               onInsertAbove={() => onInsert(position)}
               onInsertBelow={() => onInsert(position + 1)}
               onOpenElement={onOpenElement}
+              onWrite={onWrite}
             />
           ))}
         </Timeline>

@@ -220,8 +220,17 @@ const alignChoices: {
  */
 export function ToolbarPlugin({
   items = defaultToolbarItems,
+  variant = "bar",
 }: {
   items?: ToolbarItem[][];
+  /**
+   * `"bar"` is the standalone sticky strip above a document. `"bare"` drops the
+   * border, background and stickiness and stops the controls wrapping, so the
+   * same controls can be placed by something else — the floating pill over a
+   * selection, or the strip docked above a phone keyboard. Only the chrome
+   * differs; every control behaves identically either way.
+   */
+  variant?: "bar" | "bare";
 }) {
   const [editor] = useLexicalComposerContext();
   const [formats, setFormats] = useState<Set<TextFormatType>>(new Set());
@@ -547,17 +556,22 @@ export function ToolbarPlugin({
         spacing={0.5}
         sx={{
           alignItems: "center",
-          flexWrap: "wrap",
           gap: 0.5,
-          py: 1,
-          mb: 1,
-          borderBottom: 1,
-          borderColor: "divider",
-          // Keeps the controls reachable in a long chapter without scrolling back.
-          position: "sticky",
-          top: 0,
-          zIndex: 2,
-          bgcolor: "background.default",
+          ...(variant === "bar"
+            ? {
+                flexWrap: "wrap",
+                py: 1,
+                mb: 1,
+                borderBottom: 1,
+                borderColor: "divider",
+                // Keeps the controls reachable in a long chapter without
+                // scrolling back.
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                bgcolor: "background.default",
+              }
+            : { flexWrap: "nowrap" }),
         }}
       >
         {items

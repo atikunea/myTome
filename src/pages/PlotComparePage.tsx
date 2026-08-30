@@ -21,7 +21,6 @@ import LibraryAddIcon from "@mui/icons-material/LibraryAdd";
 import UnfoldLessIcon from "@mui/icons-material/UnfoldLess";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem, PlotRow } from "../models/Plot";
-import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
@@ -63,8 +62,6 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
     useObservable<PlotItem[]>((cb) => store.observeTomePlotItems(tome!.id, cb), [tome?.id]) ?? [];
   const elements =
     useObservable<Element[]>((cb) => store.observeTomeElements(tome!.id, cb), [tome?.id]) ?? [];
-  const writeItems =
-    useObservable<WriteItem[]>((cb) => store.observeWriteItems(tome!.id, cb), [tome?.id]) ?? [];
 
   const requested = useMemo(() => (plotIds ?? "").split(",").filter(Boolean), [plotIds]);
   const columns = useMemo(() => {
@@ -271,6 +268,10 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
         onOpenElement={(element) =>
           navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
         }
+        // The manuscript has one address regardless of which view found the beat,
+        // so compare links at the beat's own plot rather than at a compare-scoped
+        // variant of the route.
+        onWrite={(item) => navigate(`/tomes/${tome.id}/plots/${item.plotId}/items/${item.id}/write`)}
         onAddBeat={(plotId, targetRow) =>
           navigate(`${comparePath}/insert/${plotId}/${targetRow}`)
         }
@@ -291,8 +292,9 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
         plotId={editingItem?.plotId ?? insertPlot?.id ?? columns[0].id}
         elements={elements}
         types={types}
-        writeItems={writeItems}
-        onOpenWriteItem={(writeItemId) => navigate(`/tomes/${tome.id}/write/${writeItemId}`)}
+        onOpenManuscript={(item) =>
+          navigate(`/tomes/${tome.id}/plots/${item.plotId}/items/${item.id}/write`)
+        }
         onClose={closeDialog}
       />
 
