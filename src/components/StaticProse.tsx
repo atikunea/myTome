@@ -1,7 +1,7 @@
 import { createElement, type CSSProperties, type ReactNode } from "react";
-import type { Align, Block, Inline, InlineFormat, ListEntry } from "../lexical/blocks";
+import type { Align, Block, Inline, ListEntry } from "../lexical/blocks";
+import { innerTagFor, outerTagFor, runClassName } from "../lexical/blocks";
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
-import { proseTextTheme } from "./manuscriptStyles";
 
 /**
  * Draws a parsed Lexical document as read-only markup, for every section of the
@@ -19,40 +19,6 @@ import { proseTextTheme } from "./manuscriptStyles";
  * deliberately thin enough to read in one sitting.
  */
 
-/** Lexical's `getElementOuterTag`: the format that earns a tag of its own. */
-function outerTagFor(formats: Set<InlineFormat>) {
-  if (formats.has("code")) return "code";
-  if (formats.has("highlight")) return "mark";
-  if (formats.has("subscript")) return "sub";
-  if (formats.has("superscript")) return "sup";
-  return null;
-}
-
-/** Lexical's `getElementInnerTag`: bold wins over italic, and both fall back to a span. */
-function innerTagFor(formats: Set<InlineFormat>) {
-  if (formats.has("bold")) return "strong";
-  if (formats.has("italic")) return "em";
-  return "span";
-}
-
-/**
- * Lexical's `setTextThemeClassNames`, including its one special case: underline
- * and strikethrough both write `text-decoration`, so a run carrying both gets a
- * single combined class instead of the two that would overwrite each other.
- */
-function classNameFor(formats: Set<InlineFormat>) {
-  const names: string[] = [];
-  if (formats.has("underline") && formats.has("strikethrough")) {
-    names.push(proseTextTheme.underlineStrikethrough);
-  } else {
-    if (formats.has("underline")) names.push(proseTextTheme.underline);
-    if (formats.has("strikethrough")) names.push(proseTextTheme.strikethrough);
-  }
-  if (formats.has("bold")) names.push(proseTextTheme.bold);
-  if (formats.has("italic")) names.push(proseTextTheme.italic);
-  return names.length ? names.join(" ") : undefined;
-}
-
 function renderRun(
   run: Extract<Inline, { kind: "text" | "mention" }>,
   key: number,
@@ -60,7 +26,7 @@ function renderRun(
   const formats = new Set(run.formats);
   const outerTag = outerTagFor(formats);
   const innerTag = innerTagFor(formats);
-  const className = classNameFor(formats);
+  const className = runClassName(formats);
 
   const outerProps: Record<string, unknown> = { key };
   if (run.kind === "mention") outerProps[MENTION_ATTRIBUTE] = run.elementId;

@@ -57,7 +57,19 @@ that nothing enforces.
   and check state are all driven from `node`, while `components/StaticProse.tsx`
   stays a thin renderer. `lexical` itself imports cleanly under `node` — the
   test decodes formats against the library's own `IS_BOLD`/`IS_ITALIC`/… exports
-  rather than hardcoded bit values.
+  rather than hardcoded bit values. It also holds the **run tag and class rules**
+  (`outerTagFor`, `innerTagFor`, `runClassName`, `proseTextTheme`) for the same
+  reason: they are Lexical's DOM contract rather than MUI styling, and the static
+  and mounted renders drifting apart is the one failure the manuscript cannot
+  absorb.
+- **Know what this suite cannot reach.** Everything that went wrong while the
+  focus surface was built — a menu painting behind a dialog, focus waiting on an
+  animation frame, `caretPositionFromPoint` returning an element, Lexical
+  reconciling its own selection over a caret set in the DOM — is layout, timing
+  and stacking. `node` has none of that and jsdom would not help (no layout, no
+  hit-testing). Those are found by driving the real app, and are written up in
+  `src/components/AGENTS.md` so the next person does not have to rediscover them.
+  Don't let a green suite stand in for having run the thing.
 - For UI behavior, run the app and drive it. Use the `myTome` launch config,
   not a hand-started Vite.
 - Don't add a linter or formatter unless asked. Match surrounding formatting by

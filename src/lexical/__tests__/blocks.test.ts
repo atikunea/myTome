@@ -14,7 +14,11 @@ import {
   blocksText,
   countWords,
   formatsOf,
+  innerTagFor,
   lexicalToBlocks,
+  outerTagFor,
+  proseTextTheme,
+  runClassName,
   type Block,
 } from "../blocks";
 
@@ -113,6 +117,79 @@ describe("the text format bitmask", () => {
     expect(blocks[0]).toMatchObject({
       content: [{ kind: "text", text: "loud", formats: ["bold", "underline"] }],
     });
+  });
+});
+
+/**
+ * The manuscript replaces a static section with a live editor in place, so the
+ * two renders have to produce the same DOM for the same run. `StaticProse`
+ * reimplements Lexical's rules; these pin that reimplementation, because a
+ * divergence shows up as text shifting under the cursor on click rather than as
+ * anything that looks like a bug in a diff.
+ */
+describe("run tags and classes (parity with Lexical's own DOM)", () => {
+  it("gives code, highlight, sub and sup an outer tag, in Lexical's precedence", () => {
+    expect(outerTagFor(["code"])).toBe("code");
+    expect(outerTagFor(["highlight"])).toBe("mark");
+    expect(outerTagFor(["subscript"])).toBe("sub");
+    expect(outerTagFor(["superscript"])).toBe("sup");
+    // Precedence matters: Lexical returns on the first match, so a run that is
+    // both code and highlighted is a `<code>`, not a `<mark>`.
+    expect(outerTagFor(["highlight", "code"])).toBe("code");
+    expect(outerTagFor(["subscript", "highlight"])).toBe("mark");
+  });
+
+  it("gives an ordinary run no outer tag", () => {
+    expect(outerTagFor([])).toBeNull();
+    expect(outerTagFor(["bold", "italic", "underline"])).toBeNull();
+  });
+
+  it("picks the inner tag bold-before-italic, falling back to a span", () => {
+    expect(innerTagFor(["bold"])).toBe("strong");
+    expect(innerTagFor(["italic"])).toBe("em");
+    expect(innerTagFor([])).toBe("span");
+    expect(innerTagFor(["underline"])).toBe("span");
+  });
+
+  it("keeps italic on a bold italic run, which the tag alone cannot carry", () => {
+    // The regression this exists for: Lexical gives the run ONE inner tag and
+    // picks `<strong>`, so italic survives only as a class. An editor theme
+    // without `italic` in it renders bold italic text upright, and a static
+    // render that got it right would then disagree with the editor.
+    expect(innerTagFor(["bold", "italic"])).toBe("strong");
+    expect(runClassName(["bold", "italic"])).toContain(proseTextTheme.italic);
+  });
+
+  it("collapses underline + strikethrough into the one combined class", () => {
+    // Both write `text-decoration`; emitting the two separate classes would let
+    // one overwrite the other and silently drop a decoration.
+    expect(runClassName(["underline", "strikethrough"])).toBe(
+      proseTextTheme.underlineStrikethrough,
+    );
+    expect(runClassName(["underline"])).toBe(proseTextTheme.underline);
+    expect(runClassName(["strikethrough"])).toBe(proseTextTheme.strikethrough);
+  });
+
+  it("gives an unformatted run no class at all", () => {
+    expect(runClassName([])).toBeUndefined();
+    // Formats that earn their own tag need no class to go with it.
+    expect(runClassName(["code"])).toBeUndefined();
+    expect(runClassName(["highlight", "subscript"])).toBeUndefined();
+  });
+
+  it("names every class in the theme handed to the editor", () => {
+    // `initialConfig.theme.text` is this same object, so a class emitted here
+    // that the editor does not know about would style only the static half.
+    const emitted = new Set(
+      [
+        runClassName(["bold"]),
+        runClassName(["italic"]),
+        runClassName(["underline"]),
+        runClassName(["strikethrough"]),
+        runClassName(["underline", "strikethrough"]),
+      ].flatMap((names) => (names ? names.split(" ") : [])),
+    );
+    expect([...emitted].sort()).toEqual([...new Set(Object.values(proseTextTheme))].sort());
   });
 });
 

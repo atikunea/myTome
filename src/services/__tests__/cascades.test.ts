@@ -171,3 +171,90 @@ describe("deletePlot", () => {
     await expectSpineIntact(tome.id);
   });
 });
+
+/**
+ * `PlotItemDialog` no longer sends `writeItemIds` at all — composition moved to
+ * the beat's manuscript, and the dialog now saves only what a beat *is* and how
+ * it is drawn. That makes the fallback below load-bearing in a way it was not
+ * before: "clean up" the `?? existing` and saving a beat's dot colour silently
+ * wipes its manuscript.
+ */
+describe("savePlotItem and a beat's composed text", () => {
+  it("keeps the existing composition when a caller omits writeItemIds", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    const beat = await addBeat(tome.id, plots[0].id, "into the tunnels");
+    const first = await store.createDraftWriteItem(tome.id, "snippet", beat.id);
+    const second = await store.createDraftWriteItem(tome.id, "chapter", beat.id);
+
+    // Exactly the shape the dialog submits: identity and appearance, no text.
+    await store.savePlotItem({
+      id: beat.id,
+      tomeId: tome.id,
+      plotId: plots[0].id,
+      name: "Act II",
+      title: "Into the tunnels",
+      description: "Maren takes the lantern and goes down.",
+      dotColor: "secondary",
+      dotVariant: "outlined",
+    });
+
+    const saved = (await db.plotItems.get(beat.id))!;
+    expect(saved.writeItemIds).toEqual([first.id, second.id]);
+    expect(saved.dotColor).toBe("secondary");
+    expect(saved.title).toBe("Into the tunnels");
+  });
+
+  it("still lets a caller replace the composition outright", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    const beat = await addBeat(tome.id, plots[0].id, "the duel");
+    const first = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+    const second = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+
+    await store.savePlotItem({
+      id: beat.id,
+      tomeId: tome.id,
+      plotId: plots[0].id,
+      name: "",
+      title: "the duel",
+      description: "",
+      writeItemIds: [second.id],
+    });
+
+    expect((await db.plotItems.get(beat.id))!.writeItemIds).toEqual([second.id]);
+    // Dropping a text from a beat never deletes the text itself.
+    expect(await db.writeItems.get(first.id)).toBeDefined();
+  });
+});
+
+/**
+ * The manuscript's "Move earlier" / "Move later" are the only way composition
+ * order is authored now that the dialog's drag list is gone, and they go through
+ * this one write.
+ */
+describe("setPlotItemWriteItems", () => {
+  it("reorders without losing or duplicating a text", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    const beat = await addBeat(tome.id, plots[0].id, "the long dark");
+    const a = await store.createDraftWriteItem(tome.id, "snippet", beat.id);
+    const b = await store.createDraftWriteItem(tome.id, "chapter", beat.id);
+    const c = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+
+    // What "Move later" on the first section sends.
+    await store.setPlotItemWriteItems(beat.id, [b.id, a.id, c.id]);
+    expect((await db.plotItems.get(beat.id))!.writeItemIds).toEqual([b.id, a.id, c.id]);
+
+    // And "Move earlier" on the last.
+    await store.setPlotItemWriteItems(beat.id, [b.id, c.id, a.id]);
+    expect((await db.plotItems.get(beat.id))!.writeItemIds).toEqual([b.id, c.id, a.id]);
+  });
+
+  it("dedupes, so a double add cannot put one text in a beat twice", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    const beat = await addBeat(tome.id, plots[0].id, "the reveal");
+    const a = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+    const b = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+
+    await store.setPlotItemWriteItems(beat.id, [a.id, b.id, a.id]);
+    expect((await db.plotItems.get(beat.id))!.writeItemIds).toEqual([a.id, b.id]);
+  });
+});

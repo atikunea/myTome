@@ -20,23 +20,11 @@ import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
 export type ProseFace = "serif" | "sans";
 
 /**
- * The `theme.text` map handed to the editor, and the same class names
- * `StaticProse` puts on its runs.
- *
- * `bold` and `italic` are here for a reason that is easy to miss: Lexical gives
- * a text node **one** inner tag, chosen bold-before-italic
- * (`getElementInnerTag`), so a run that is both renders as `<strong>` and its
- * italic survives only as a theme class. Without `italic` in this map, bold
- * italic text loses its slant in the editor — and would then disagree with any
- * static render that got it right.
+ * Re-exported so the editor and this stylesheet reach it from one place. It is
+ * defined in `lexical/blocks.ts` alongside the tag rules it belongs with —
+ * Lexical's DOM contract, not MUI styling — where the suite can pin it.
  */
-export const proseTextTheme = {
-  bold: "editor-bold",
-  italic: "editor-italic",
-  underline: "editor-underline",
-  strikethrough: "editor-strikethrough",
-  underlineStrikethrough: "editor-underline-strikethrough",
-} as const;
+export { proseTextTheme } from "../lexical/blocks";
 
 /**
  * The measure, fixed rather than settable. 60–75 characters is the answer for

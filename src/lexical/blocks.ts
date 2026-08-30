@@ -107,6 +107,71 @@ export function formatsOf(format: unknown): InlineFormat[] {
   return formatBits.filter(([, bit]) => (bits & bit) !== 0).map(([name]) => name);
 }
 
+/**
+ * How a run of text becomes DOM — Lexical's rules, restated so a static render
+ * can reproduce them exactly.
+ *
+ * These live here rather than beside the component that uses them because they
+ * are knowledge about *Lexical's* output, not about MUI, and because the whole
+ * premise of the manuscript is that the static and mounted renders are
+ * indistinguishable. That contract is worth pinning in the suite, and this file
+ * is the part of the pipeline the suite can reach.
+ */
+
+/**
+ * The class names handed to the editor as `theme.text`, and put on the same runs
+ * by `StaticProse`.
+ *
+ * `bold` and `italic` are here for a reason that is easy to miss: Lexical gives
+ * a text node **one** inner tag, chosen bold-before-italic, so a run that is
+ * both renders as `<strong>` and its italic survives only as a theme class.
+ * Without `italic` in this map, bold italic text loses its slant in the editor.
+ */
+export const proseTextTheme = {
+  bold: "editor-bold",
+  italic: "editor-italic",
+  underline: "editor-underline",
+  strikethrough: "editor-strikethrough",
+  underlineStrikethrough: "editor-underline-strikethrough",
+} as const;
+
+/** Lexical's `getElementOuterTag`: the formats that earn a tag of their own. */
+export function outerTagFor(formats: Iterable<InlineFormat>) {
+  const set = formats instanceof Set ? formats : new Set(formats);
+  if (set.has("code")) return "code";
+  if (set.has("highlight")) return "mark";
+  if (set.has("subscript")) return "sub";
+  if (set.has("superscript")) return "sup";
+  return null;
+}
+
+/** Lexical's `getElementInnerTag`: bold wins over italic, and both fall back to a span. */
+export function innerTagFor(formats: Iterable<InlineFormat>) {
+  const set = formats instanceof Set ? formats : new Set(formats);
+  if (set.has("bold")) return "strong";
+  if (set.has("italic")) return "em";
+  return "span";
+}
+
+/**
+ * Lexical's `setTextThemeClassNames`, including its one special case: underline
+ * and strikethrough both write `text-decoration`, so a run carrying both gets a
+ * single combined class instead of two that would overwrite each other.
+ */
+export function runClassName(formats: Iterable<InlineFormat>): string | undefined {
+  const set = formats instanceof Set ? formats : new Set(formats);
+  const names: string[] = [];
+  if (set.has("underline") && set.has("strikethrough")) {
+    names.push(proseTextTheme.underlineStrikethrough);
+  } else {
+    if (set.has("underline")) names.push(proseTextTheme.underline);
+    if (set.has("strikethrough")) names.push(proseTextTheme.strikethrough);
+  }
+  if (set.has("bold")) names.push(proseTextTheme.bold);
+  if (set.has("italic")) names.push(proseTextTheme.italic);
+  return names.length ? names.join(" ") : undefined;
+}
+
 function toInlines(nodes: RawNode[]): Inline[] {
   const out: Inline[] = [];
   for (const node of nodes) {
