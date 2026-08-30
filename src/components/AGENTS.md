@@ -164,7 +164,7 @@ keeps `useAutosave` one machine writing one row, `SaveStatus` reporting one
 unambiguous state, and the toolbar, mentions and history attached to an editor
 without anything having to decide *which* editor.
 
-Five things here will bite if you change them:
+Six things here will bite if you change them:
 
 - **`manuscriptStyles.ts` is shared, and that is the premise.** `StaticProse`
   and the mounted `ContentEditable` both render from `manuscriptSx(face)`. If
@@ -190,6 +190,15 @@ Five things here will bite if you change them:
   author typed into still looks blank in the database and gets deleted. The
   editor's flush is therefore *not* deferred a tick; only the page's discard is,
   for the StrictMode reason below.
+- **The section title is a label on the rule, not a heading.** On a beat
+  (`sectioned`) it sits inline with the kind label and the divider, small and in
+  the UI face; given its own line at prose size in the prose face it reads as
+  text to be read, and the eye stops on it between every part of what is meant
+  to be one continuous manuscript. `WriteEditorPage` (`sectioned={false}`) keeps
+  it as the document heading — one text, no flow to interrupt. Either way the
+  header's height must **not** depend on `active`: it sits above the prose in
+  the same section, so a header that grows on click moves the very text the
+  caret is being resolved against. Measured 30px in both states.
 - **A section is redrawn from `edits`, not from the row.** When an editor
   unmounts, the manuscript already holds the text it last had; re-reading the
   row would flash the pre-edit text for a frame, because the write and its

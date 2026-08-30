@@ -76,7 +76,10 @@ export function ProseManuscript({
   elements: Element[];
   types: ElementType[];
   face: ProseFace;
-  /** Marks the mounted section and sizes the titles for a multi-part beat. */
+  /**
+   * A multi-part beat: mark the mounted section, and demote each title to a
+   * label on its section rule instead of a heading over the prose.
+   */
   sectioned: boolean;
   /** Extra overflow items — what "remove" and "delete" mean is the page's business. */
   sectionMenu?: (item: WriteItem, close: () => void) => ReactNode;
@@ -276,6 +279,70 @@ function ManuscriptSection({
     onActivate(item, { x: event.clientX, y: event.clientY });
   };
 
+  /**
+   * The section title is furniture, not prose. Given its own line at prose size
+   * and in the prose face it reads as text to be read — the eye starts on it,
+   * realises it is a label, and stops, which is exactly the break a continuous
+   * manuscript cannot afford between every section. So on a beat it folds into
+   * the section's own rule beside the kind label: small, in the UI face, and
+   * sized to its own text so a short title leaves the rest of the line to the
+   * divider.
+   *
+   * The single-text surface keeps it as the page's heading. There is one
+   * document there and no flow to interrupt, and it is the only place the
+   * text's name appears.
+   *
+   * It stays a live `TextField` in both, rather than becoming static markup
+   * that swaps on click, so the focus contract below still holds.
+   */
+  const titleField = (
+    <TextField
+      variant="standard"
+      placeholder={untitledWriteItem}
+      value={title}
+      // Focus alone enters the section: a readOnly field still takes focus, so
+      // the first keystroke after tabbing or tapping in lands on a live editor
+      // rather than being swallowed.
+      onFocus={() => onActivate(item, null)}
+      onChange={(event) => onChangeTitle(event.target.value)}
+      slotProps={{
+        input: {
+          readOnly: !active,
+          disableUnderline: !active,
+          sx: sectioned
+            ? {
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                lineHeight: 1.6,
+                color: active ? "text.primary" : "text.secondary",
+                py: 0,
+                // A title too long for the room it has left ends in an ellipsis
+                // rather than a hard clip. Browsers drop it while the field has
+                // focus, which is right: the author is reading it by caret then.
+                "& input": { textOverflow: "ellipsis" },
+              }
+            : {
+                fontFamily: proseFontFamily(face),
+                fontSize: "1.9rem",
+                fontWeight: 600,
+                letterSpacing: "-0.015em",
+                lineHeight: 1.25,
+                py: 0.25,
+              },
+        },
+        // Width in characters, which grows as the title is typed. Nothing here
+        // depends on `active`: the header must be the same height and the prose
+        // in the same place before and after a click, or the caret resolves
+        // against text that has moved.
+        htmlInput: sectioned
+          ? { size: Math.max(title.length, untitledWriteItem.length) }
+          : undefined,
+      }}
+      fullWidth={!sectioned}
+      sx={sectioned ? { flex: "0 1 auto", minWidth: 0 } : { mb: 1.5 }}
+    />
+  );
+
   return (
     <Box
       component="section"
@@ -307,14 +374,27 @@ function ManuscriptSection({
           : {}),
       }}
     >
-      <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", mb: 0.75 }}>
+      <Stack
+        direction="row"
+        spacing={1.25}
+        sx={{ alignItems: "center", mb: sectioned ? 1.5 : 0.75 }}
+      >
         <Typography
           variant="overline"
-          sx={{ color: active ? "primary.main" : "text.disabled", lineHeight: 1.6 }}
+          sx={{
+            color: active ? "primary.main" : "text.disabled",
+            lineHeight: 1.6,
+            flexShrink: 0,
+          }}
         >
           {writeItemTypeLabels[type]}
         </Typography>
-        {sectioned ? <Divider sx={{ flex: 1 }} /> : <Box sx={{ flex: 1 }} />}
+        {sectioned ? titleField : null}
+        {sectioned ? (
+          <Divider sx={{ flex: "1 1 auto", minWidth: 16 }} />
+        ) : (
+          <Box sx={{ flex: 1 }} />
+        )}
         <SectionMenu
           item={item}
           type={type}
@@ -323,32 +403,7 @@ function ManuscriptSection({
         />
       </Stack>
 
-      <TextField
-        variant="standard"
-        placeholder={untitledWriteItem}
-        value={title}
-        // Focus alone enters the section: a readOnly field still takes focus, so
-        // the first keystroke after tabbing or tapping in lands on a live editor
-        // rather than being swallowed.
-        onFocus={() => onActivate(item, null)}
-        onChange={(event) => onChangeTitle(event.target.value)}
-        slotProps={{
-          input: {
-            readOnly: !active,
-            disableUnderline: !active,
-            sx: {
-              fontFamily: proseFontFamily(face),
-              fontSize: sectioned ? "1.5rem" : "1.9rem",
-              fontWeight: 600,
-              letterSpacing: "-0.015em",
-              lineHeight: 1.25,
-              py: 0.25,
-            },
-          },
-        }}
-        fullWidth
-        sx={{ mb: 1.5 }}
-      />
+      {sectioned ? null : titleField}
 
       {active ? (
         <ProseEditor
