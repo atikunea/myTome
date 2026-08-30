@@ -29,10 +29,21 @@ export function ProseToolbarPlugin() {
   return coarse ? <DockedToolbar /> : <SelectionToolbar />;
 }
 
-/** Enough to mark up a sentence without becoming a second toolbar. */
+/**
+ * Inline marks plus the block controls — the picker, which is where Quote
+ * lives, then lists and alignment.
+ *
+ * The block ones can only ever act on a selection here, because a selection is
+ * the only thing that brings this pill into existence: to turn a paragraph into
+ * a quote or a bullet, the author selects a word in it first. That is the
+ * deliberate trade for leaving the writing surface empty while they type,
+ * rather than floating a pill at a bare caret.
+ */
 const floatingItems: ToolbarItem[][] = [
+  ["blockType"],
   ["bold", "italic", "underline", "formatMenu"],
-  ["link"],
+  ["link", "listMenu"],
+  ["alignMenu"],
 ];
 
 /**
@@ -43,7 +54,7 @@ const floatingItems: ToolbarItem[][] = [
 const dockedItems: ToolbarItem[][] = [
   ["bold", "italic", "underline"],
   ["blockType"],
-  ["listMenu", "link"],
+  ["listMenu", "alignMenu", "link"],
   ["formatMenu", "clearFormatting"],
 ];
 
@@ -114,7 +125,20 @@ function SelectionToolbar() {
         // nothing. `ToolButton` does the same for each control; this covers the
         // padding between them.
         onMouseDown={(event) => event.preventDefault()}
-        sx={{ px: 0.5, py: 0.25, borderRadius: 2 }}
+        sx={{
+          px: 0.5,
+          py: 0.25,
+          borderRadius: 2,
+          // The block picker is a select rather than an icon, so the pill is
+          // now wide enough to outgrow a narrow window. Popper only shifts it
+          // back into view; capping the width is what keeps the last control
+          // reachable, and it scrolls like the docked strip rather than
+          // wrapping into a second row that would cover the selection.
+          maxWidth: "calc(100vw - 16px)",
+          overflowX: "auto",
+          scrollbarWidth: "none",
+          "&::-webkit-scrollbar": { display: "none" },
+        }}
       >
         <ToolbarPlugin variant="bare" items={floatingItems} />
       </Paper>

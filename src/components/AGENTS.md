@@ -262,6 +262,17 @@ be measured. The docked strip stays visible while a section is mounted rather
 than following editor focus, because blur on touch arrives through pointer
 events that cannot be suppressed the way `mousedown` can.
 
+**The pill carries the block controls too** — the block picker, which is where
+Quote lives, plus lists and alignment. They therefore only ever act on a
+selection, because a selection is the only thing that brings the pill into
+existence: to turn a paragraph into a quote or a bullet the author selects a
+word in it first. That was chosen over anchoring the pill to a collapsed caret,
+which would float a control beside the text on every click and undo the point of
+a surface whose chrome recedes as you write. The pill is consequently wide
+enough to outgrow a narrow window, so its `Paper` caps its width and scrolls
+horizontally the way the docked strip does — wrapping would put a second row
+over the selection.
+
 ### `ColorModeToggle` sits in the surface's corner
 
 It is `position: fixed` at `zIndex.modal + 1` so it stays usable over any
