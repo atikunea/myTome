@@ -15,6 +15,7 @@ import { WriteListPage } from "./pages/WriteListPage";
 import { WriteEditorPage } from "./pages/WriteEditorPage";
 import { BeatManuscriptPage } from "./pages/BeatManuscriptPage";
 import { BackupPage } from "./pages/BackupPage";
+import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 
 export default function App() {
   return (
@@ -34,6 +35,13 @@ export default function App() {
                   restore one from.
                 */}
                 <Route path="/backup" element={<BackupPage />} />
+                {/*
+                  Privacy is library-level for the same reason, and linked from
+                  the library footer: it describes the whole app rather than one
+                  tome, and has to stay reachable from the first screen anyone
+                  lands on.
+                */}
+                <Route path="/privacy" element={<PrivacyPolicyPage />} />
                 <Route path="/tomes/:tomeId" element={<WorkspaceLayout />}>
                   <Route index element={<Navigate to="dashboard" replace />} />
                   <Route path="dashboard" element={<TomeDashboardPage />} />

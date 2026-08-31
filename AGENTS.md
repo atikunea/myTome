@@ -424,6 +424,16 @@ it?". (`/backup` itself is a route, and a library-level one: the whole-library
 file is the point, and a browser with no tomes still needs somewhere to restore
 one from.)
 
+**`/privacy` is the other library-level route, and it is a claim about this
+file.** `pages/PrivacyPolicyPage.tsx` is static prose, linked from the footer of
+the library page because that is the first screen anyone lands on. It has no
+state and no store calls, but it is not inert: it says what is stored (the
+`models/db.ts` tables, plus the `colorMode` and prose-face keys in `context/`
+and drive's last-sync mark), what can leave the browser, and what Drive sync
+sends. **The network list is the CSP in `vite.config.ts`, in prose.** Widen that
+policy — a new host, a new scope, a second remote dependency — and this page is
+wrong until it is edited too, along with the "Last updated" line.
+
 **Writing happens on an overlay, and both writing routes stay under
 `WorkspaceLayout`.** `write/:writeItemId` (one text) and
 `plots/:plotId/items/:itemId/write` (a beat's composed text as one manuscript)

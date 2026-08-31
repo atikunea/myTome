@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import {
   Box,
   Button,
@@ -7,7 +7,9 @@ import {
   CardActions,
   Chip,
   Container,
+  Divider,
   Grid,
+  Link,
   MenuItem,
   Stack,
   TextField,
@@ -125,6 +127,25 @@ export function TomeLibraryPage({ creating = false }: { creating?: boolean }) {
       ) : (
         <EmptyState title="No tomes found" body="Create a tome to start shaping a new story." />
       )}
+
+      {/*
+        The library is where everyone lands, so it is where the privacy policy
+        has to be reachable from — quietly, under the shelf rather than beside
+        "New tome".
+      */}
+      <Divider sx={{ mt: 6 }} />
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ alignItems: "center", justifyContent: "center", py: 2.5 }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          Your writing never leaves this browser.
+        </Typography>
+        <Link component={RouterLink} to="/privacy" variant="body2" color="text.secondary">
+          Privacy
+        </Link>
+      </Stack>
 
       <TomeFormDialog open={creating} />
     </Container>
