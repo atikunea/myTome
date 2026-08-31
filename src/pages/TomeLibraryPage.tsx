@@ -129,22 +129,27 @@ export function TomeLibraryPage({ creating = false }: { creating?: boolean }) {
       )}
 
       {/*
-        The library is where everyone lands, so it is where the privacy policy
-        has to be reachable from — quietly, under the shelf rather than beside
+        The library is where everyone lands, so it is where the policy pages have
+        to be reachable from — quietly, under the shelf rather than beside
         "New tome".
       */}
       <Divider sx={{ mt: 6 }} />
       <Stack
-        direction="row"
-        spacing={2}
+        direction={{ xs: "column", sm: "row" }}
+        spacing={{ xs: 1, sm: 2 }}
         sx={{ alignItems: "center", justifyContent: "center", py: 2.5 }}
       >
         <Typography variant="body2" color="text.secondary">
           Your writing never leaves this browser.
         </Typography>
-        <Link component={RouterLink} to="/privacy" variant="body2" color="text.secondary">
-          Privacy
-        </Link>
+        <Stack direction="row" spacing={2}>
+          <Link component={RouterLink} to="/privacy" variant="body2" color="text.secondary">
+            Privacy
+          </Link>
+          <Link component={RouterLink} to="/terms" variant="body2" color="text.secondary">
+            Terms of use
+          </Link>
+        </Stack>
       </Stack>
 
       <TomeFormDialog open={creating} />

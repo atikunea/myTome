@@ -6,7 +6,8 @@ folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
 `EmptyState`, `ColorModeToggle`, `PlotTimeline`, `PlotGrid`, `TimelineCard`,
 `PlotBeatCard`, `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`,
-`WriteItemCard`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`).
+`WriteItemCard`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`,
+`PolicyProse`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
 rather than here — they are not MUI components and only the Write editor
 mounts them. Route-level screens live in `../pages`
@@ -432,12 +433,32 @@ Two things about it worth keeping:
 `node`. When Google Drive lands it belongs beside them under "Where backups go"
 as another transport for the same file — not as a second format.
 
+## `PolicyProse` is shared so the two policy pages cannot drift
+
+`PolicyProse.tsx` holds the chrome (`PolicyPage`) and the prose primitives
+(`PolicySection`, `PolicyParagraph`, `PolicyBullets`) that the two policy pages
+in `../pages` — `PrivacyPolicyPage.tsx` and `TermsOfUsePage.tsx` — render
+through.
+
+It exists for one reason, and it is not deduplication: **the two pages are read
+as a pair**, each links to the other, and a reader who finds them styled
+differently reasonably concludes one of them is stale. Sharing the chrome makes
+that impossible.
+
+It is also the whole extent of the idea. Every other screen in this app is a
+view of the database; these two are a document, and `PolicyPage` hardcodes what
+a document needs — back to the library, a title, a lede, a "Last updated" line,
+a sibling link. Don't grow it into a general page scaffold for pages that have
+none of those.
+
 ## Current components
 
 - `SideNav.tsx` — per-tome left nav; lists the tome's ElementTypes. Reads
   `useTomeWorkspace()`.
 - `RestoreDialog.tsx` — the summary + merge/replace choice for a chosen backup
   file; used only by `../pages/BackupPage.tsx`. See above.
+- `PolicyProse.tsx` — chrome and prose primitives for the privacy and terms
+  pages. See above.
 - `DriveSyncCard.tsx` — the "Where backups go" card, including Google Drive
   connect/sync. **Its first state is "not set up":** without a
   `VITE_GOOGLE_CLIENT_ID` compiled in, `driveConfigured` is false and the card

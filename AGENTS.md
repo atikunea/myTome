@@ -152,6 +152,7 @@ services/
   backup.ts        The backup file format, export, and the restore/merge.
   syncPlan.ts      Pure: what a sync should move. Tested; no network, no DOM.
   drive.ts         The only module that calls the network. Optional, gated.
+  storage.ts       navigator.storage.persist(). Touches no table; not on `store`.
   __tests__/       vitest + fake-indexeddb. See below.
 ```
 
@@ -262,6 +263,26 @@ replaying every schema version so each test exercises the real schema.
   `models/db.ts`.
 - **Don't test the `observe*` wrappers.** They are four-line `liveQuery` shells;
   testing them tests Dexie. Test the mutation and read the table.
+
+### `storage.ts` — the database is evictable unless you ask
+
+IndexedDB defaults to a **best-effort** tier the browser may discard when space
+runs short. For an app whose only copy of a manuscript is that database, that is
+the wrong default, so `requestPersistentStorage()` asks for the durable tier via
+`navigator.storage.persist()`. Three things about it are deliberate:
+
+- **`TomesProvider` asks only once the library holds a tome**, not on mount.
+  Chrome decides silently from engagement; **Firefox raises a permission
+  prompt**, and putting that in front of someone who has not written a word yet
+  is both rude and likelier to be refused.
+- **The public entry point memoises its promise**, so `StrictMode`'s double
+  mount and every re-render cost one ask per page load. `persistStorage` is
+  exported unmemoised for the test, the way `db.ts` exports its backfills.
+- **A refusal is not an error.** Chrome denies a fresh origin outright — a
+  direct `persist()` call from the console returns `false` too — and nothing an
+  author could do would change that, so it is swallowed. Durability is an
+  upgrade, never a precondition: this does not reduce how much the backup file
+  below matters, and the terms page says so out loud.
 
 ### `backup.ts` — the file format is the sync's format
 
@@ -424,15 +445,28 @@ it?". (`/backup` itself is a route, and a library-level one: the whole-library
 file is the point, and a browser with no tomes still needs somewhere to restore
 one from.)
 
-**`/privacy` is the other library-level route, and it is a claim about this
-file.** `pages/PrivacyPolicyPage.tsx` is static prose, linked from the footer of
-the library page because that is the first screen anyone lands on. It has no
-state and no store calls, but it is not inert: it says what is stored (the
-`models/db.ts` tables, plus the `colorMode` and prose-face keys in `context/`
-and drive's last-sync mark), what can leave the browser, and what Drive sync
-sends. **The network list is the CSP in `vite.config.ts`, in prose.** Widen that
-policy — a new host, a new scope, a second remote dependency — and this page is
-wrong until it is edited too, along with the "Last updated" line.
+**`/privacy` and `/terms` are the other library-level routes, and they are
+claims about this repo.** `pages/PrivacyPolicyPage.tsx` and
+`pages/TermsOfUsePage.tsx` are static prose, both linked from the footer of the
+library page because that is the first screen anyone lands on, and each links to
+the other. They have no state and no store calls, but they are not inert:
+
+- Privacy says what is stored (the `models/db.ts` tables, plus the `colorMode`
+  and prose-face keys in `context/` and drive's last-sync mark), what can leave
+  the browser, and what Drive sync sends. **Its network list is the CSP in
+  `vite.config.ts`, in prose.** Widen that policy — a new host, a new scope, a
+  second remote dependency — and the page is wrong until it is edited too.
+- Terms is "terms of *use*", not "of service", and the distinction is the point:
+  with no server, no accounts and nothing operated on anyone's behalf, there is
+  no service to suspend and no account to terminate, so the page is warranty,
+  liability, and the data-loss warning rather than the usual ToS machinery.
+  **Its clause 8 asserts the repo carries no licence.** Adding a `LICENSE` means
+  editing that clause in the same commit.
+
+Both carry a "Last updated" line that has to move when their text does. They
+render through `components/PolicyProse.tsx` — shared so the pair cannot drift
+apart visually, since two policy pages that look different read as one of them
+being stale.
 
 **Writing happens on an overlay, and both writing routes stay under
 `WorkspaceLayout`.** `write/:writeItemId` (one text) and
