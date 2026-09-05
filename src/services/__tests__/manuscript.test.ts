@@ -70,7 +70,7 @@ const beat = (
   tomeId: "t",
   plotId: "p",
   name: `Beat ${id}`,
-  title: "",
+  title: `Title ${id}`,
   description: "",
   attachedElementIds: [],
   plotRowId: `row-${sortOrder}`,
@@ -226,17 +226,26 @@ describe("buildManuscript", () => {
     });
   });
 
-  it("carries the beat label as a heading only when asked", () => {
+  it("carries the beat title as a heading only when asked", () => {
     const beats = [beat("b1", 0, ["w1"])];
     const items = [text("w1", "Scene", "passage", ["a"])];
 
-    expect(build(beats, items, { beatHeadings: true }).beats[0].heading).toBe("Beat b1");
+    expect(build(beats, items, { beatHeadings: true }).beats[0].heading).toBe("Title b1");
     expect(build(beats, items, { beatHeadings: false }).beats[0].heading).toBeUndefined();
+  });
+
+  it("falls back to the beat label when a beat reached the export untitled", () => {
+    const manuscript = build(
+      [beat("b1", 0, ["w1"], { title: "  " })],
+      [text("w1", "Scene", "passage", ["a"])],
+    );
+
+    expect(manuscript.beats[0].heading).toBe("Beat b1");
   });
 
   it("names an unnamed beat rather than heading a page with nothing", () => {
     const manuscript = build(
-      [beat("b1", 0, ["w1"], { name: "   " })],
+      [beat("b1", 0, ["w1"], { title: "  ", name: "   " })],
       [text("w1", "Scene", "passage", ["a"])],
     );
 

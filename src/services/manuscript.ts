@@ -27,7 +27,7 @@ import { slugify } from "./slug";
 export type ManuscriptOptions = {
   /** Which kinds of prose belong in the manuscript. Empty means nothing does. */
   types: WriteItemType[];
-  /** Whether each beat opens with its label as a heading. */
+  /** Whether each beat opens with its title as a heading. */
   beatHeadings: boolean;
 };
 
@@ -54,7 +54,7 @@ export type ManuscriptSection = {
  */
 export type ManuscriptBeat = {
   beatId: string;
-  /** `PlotItem.name` — the beat label. Present only when `beatHeadings` is on. */
+  /** `PlotItem.title` — the beat's title. Present only when `beatHeadings` is on. */
   heading?: string;
   sections: ManuscriptSection[];
   words: number;
@@ -93,10 +93,19 @@ export type Manuscript = {
   skipped: ManuscriptSkip[];
 };
 
-/** The beat label to show when the author never named the beat. */
+/** What to show when the author never named the beat. */
 const untitledBeat = "Untitled beat";
 
 const beatName = (beat: PlotItem) => beat.name.trim() || untitledBeat;
+/**
+ * What a beat's heading says. `title` is the beat's required name and so is
+ * what belongs at the head of a page; `name` — the short label beside the
+ * track, "Chapter 1" — stands in only for a beat that somehow reached the
+ * export without a title, which beats printing "Untitled beat" over a page the
+ * author did label.
+ */
+const beatTitle = (beat: PlotItem) =>
+  beat.title.trim() || beat.name.trim() || untitledBeat;
 const itemTitle = (item: WriteItem) => item.title.trim() || untitledWriteItem;
 
 /**
@@ -185,7 +194,7 @@ export function buildManuscript({
 
     built.push({
       beatId: beat.id,
-      ...(options.beatHeadings ? { heading: name } : {}),
+      ...(options.beatHeadings ? { heading: beatTitle(beat) } : {}),
       sections,
       words: sections.reduce((total, section) => total + section.words, 0),
     });

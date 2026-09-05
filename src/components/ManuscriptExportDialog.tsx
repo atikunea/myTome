@@ -173,7 +173,7 @@ export function ManuscriptExportDialog({
                   }
                 />
               }
-              label="Open each beat with its label as a heading"
+              label="Open each beat with its title as a heading"
             />
 
             <Box>
