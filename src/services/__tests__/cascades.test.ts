@@ -151,6 +151,37 @@ describe("write item removal", () => {
     ]);
     expect(await store.composingPlotItems(first.id)).toHaveLength(1);
   });
+
+  it("places a draft at the position the gutter insert names", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    const beat = await addBeat(tome.id, plots[0].id, "the duel");
+    const first = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+    const last = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+
+    // The `+` above the second section: the new text reads between the two.
+    const middle = await store.createDraftWriteItem(tome.id, "snippet", beat.id, 1);
+    // And above the first: a beat can be opened with something new.
+    const opening = await store.createDraftWriteItem(tome.id, "snippet", beat.id, 0);
+
+    expect((await db.plotItems.get(beat.id))!.writeItemIds).toEqual([
+      opening.id,
+      first.id,
+      middle.id,
+      last.id,
+    ]);
+  });
+
+  it("appends when the named position is past the end", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    const beat = await addBeat(tome.id, plots[0].id, "the reveal");
+    const first = await store.createDraftWriteItem(tome.id, "passage", beat.id);
+    const second = await store.createDraftWriteItem(tome.id, "passage", beat.id, 9);
+
+    expect((await db.plotItems.get(beat.id))!.writeItemIds).toEqual([
+      first.id,
+      second.id,
+    ]);
+  });
 });
 
 describe("deletePlot", () => {

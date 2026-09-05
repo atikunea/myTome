@@ -119,6 +119,51 @@ Both destructive actions are offered in that menu and **named apart** — "Remov
 from this beat" detaches, "Delete text permanently" removes the row from every
 beat composing it. Do not collapse them into one control.
 
+**Text is added to a beat from one menu, opened from two places.** Its rows are
+the four kinds — which start a new section — then "Existing text…", which opens
+`WriteItemPicker` to compose in something already written. The two openers:
+
+- The "Add text to this beat" button under the manuscript. It appends.
+- A `+` in the gutter above each section, revealed on hover or focus — the same
+  trick `TimelineConnectorInsert` plays between two beats. It adds *there*,
+  which is the only way to put text part-way up a beat without walking it there
+  through "Move earlier".
+
+`BeatManuscriptPage` therefore holds the menu's anchor and its position
+together (`{ anchor, at }`, `at` undefined meaning the end), and
+`ProseManuscript`'s `onInsertAt` hands back the index *and* the button to hang
+the menu on rather than acting itself — what can be added is the page's
+business, the same way `sectionMenu` is. Keep the two openers offering the same
+rows: a `+` that could only do half of what the button does is a worse control
+than no `+` at all.
+
+A position is a place in the beat's **reading order**, and both actions carry it
+the same way: `createDraftWriteItem`'s `at` splices the new row in inside the
+create's own transaction (never create-then-reorder, which would show the new
+section at the bottom for a frame), and the picker's route carries the index so
+a refresh reopens it in place. The index counts *resolved sections*, since that
+is what the author clicked between, so the page maps it back through the anchor
+section's id — a stored id that resolves to nothing must not silently shift
+where the text lands.
+
+The strip that draws that `+` is **zero height**, and has to stay that way. Its
+band is painted inside the margin the next section already carries (`mt: 5`),
+below the previous section's static block — whose padding overhangs its own
+bottom edge by 12px to widen the click-to-edit target, hence the `top: 12`
+offset. The first section has no such margin, so `ProseManuscript` adds `pt` to
+its container when (and only when) insert points are offered; that padding is
+unconditional within a beat, so it never moves prose in response to a click.
+Laying the strip out for real would break the premise the whole surface rests
+on: the caret lands on the right word only while the static and mounted renders
+occupy identical space.
+
+The picker itself keeps two rules. It **shows texts already used elsewhere**,
+with an "in 2 beats" hint, because composing one `WriteItem` into several beats
+is the model working as designed — only the beat's own text is excluded, since
+`setPlotItemWriteItems` dedupes and offering it would be a control that does
+nothing. And picks land **in the order they were picked**, so pulling three
+snippets in reading order does not then need three trips through "Move earlier".
+
 ## State: Context for shared state, local state for page-local UI
 
 This app uses React Context (not Redux/Zustand) for state that's shared

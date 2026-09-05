@@ -13,13 +13,18 @@ import AddIcon from "@mui/icons-material/Add";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import LibraryAddOutlinedIcon from "@mui/icons-material/LibraryAddOutlined";
 import LinkOffIcon from "@mui/icons-material/LinkOff";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem } from "../models/Plot";
 import type { WriteItem, WriteItemType } from "../models/WriteItem";
-import { writeItemTypeLabels, writeItemTypes } from "../models/WriteItem";
+import {
+  untitledWriteItem,
+  writeItemTypeLabels,
+  writeItemTypes,
+} from "../models/WriteItem";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useConfirm } from "../context/ConfirmContext";
@@ -29,6 +34,7 @@ import type { SaveState } from "../hooks/autosave";
 import { FocusSurface } from "../components/FocusSurface";
 import { ProseManuscript } from "../components/ProseManuscript";
 import { SaveStatus } from "../components/SaveStatus";
+import { WriteItemPicker } from "../components/WriteItemPicker";
 import { WriteItemTypeIcon } from "../components/WriteItemTypeIcon";
 
 /**
@@ -45,8 +51,12 @@ import { WriteItemTypeIcon } from "../components/WriteItemTypeIcon";
  * `plots/compare/...`. The compare view links to the same place and the back
  * button returns there, so a beat's manuscript has one address.
  */
-export function BeatManuscriptPage() {
-  const { plotId, itemId } = useParams<{ plotId: string; itemId: string }>();
+export function BeatManuscriptPage({ adding = false }: { adding?: boolean }) {
+  const { plotId, itemId, index } = useParams<{
+    plotId: string;
+    itemId: string;
+    index: string;
+  }>();
   const { tome } = useTomeWorkspace();
 
   const beat = useObservable<PlotItem | null>(
@@ -62,17 +72,31 @@ export function BeatManuscriptPage() {
       </Typography>
     );
 
-  return <BeatFocus beat={beat} tomeId={tome.id} plotId={plotId ?? beat.plotId} />;
+  return (
+    <BeatFocus
+      beat={beat}
+      tomeId={tome.id}
+      plotId={plotId ?? beat.plotId}
+      adding={adding}
+      // Without a row in the URL the picker appends, exactly as the compare
+      // view's insert route treats a missing row.
+      insertAt={adding && index !== undefined ? Number(index) : undefined}
+    />
+  );
 }
 
 function BeatFocus({
   beat,
   tomeId,
   plotId,
+  adding,
+  insertAt,
 }: {
   beat: PlotItem;
   tomeId: string;
   plotId: string;
+  adding: boolean;
+  insertAt?: number;
 }) {
   const navigate = useNavigate();
   const confirmAction = useConfirm();
@@ -83,7 +107,16 @@ function BeatFocus({
     retry: () => {},
   });
   const [words, setWords] = useState(0);
-  const [addMenu, setAddMenu] = useState<HTMLElement | null>(null);
+  /**
+   * The add menu, and where what it adds should land: `at` is a position among
+   * the sections on screen, or `undefined` for the end of the beat. One menu
+   * serves the button under the manuscript and every gutter insert point, so
+   * "start a section" and "compose one already written" are the same two
+   * choices wherever the author asks for text.
+   */
+  const [addMenu, setAddMenu] = useState<{ anchor: HTMLElement; at?: number } | null>(
+    null,
+  );
   // A text just added to the beat opens in the editor; everything else on the
   // surface stays prose to be read until it is clicked.
   const [justAdded, setJustAdded] = useState<string | null>(null);
@@ -139,10 +172,41 @@ function BeatFocus({
   };
 
   const addText = async (type: WriteItemType) => {
+    const at = storedPosition(addMenu?.at);
     setAddMenu(null);
-    const draft = await store.createDraftWriteItem(tomeId, type, beat.id);
+    const draft = await store.createDraftWriteItem(tomeId, type, beat.id, at);
     created.current = [...created.current, draft.id];
     setJustAdded(draft.id);
+  };
+
+  const writePath = `/tomes/${tomeId}/plots/${plotId}/items/${beat.id}/write`;
+
+  /**
+   * An insert position counts the *resolved* sections — what the author clicked
+   * between — while the stored order may hold ids that resolve to nothing. The
+   * anchor section's own id is therefore what locates the position; a section
+   * that has gone missing under us falls back to the end rather than guessing.
+   */
+  const storedPosition = (index?: number) => {
+    if (index === undefined) return undefined;
+    const anchorId = items[index]?.id;
+    const at = anchorId ? beat.writeItemIds.indexOf(anchorId) : -1;
+    return at < 0 ? undefined : at;
+  };
+
+  /** Opens the picker on its own route, so back and refresh both behave. */
+  const openPicker = (at?: number) => {
+    setAddMenu(null);
+    navigate(at === undefined ? `${writePath}/add` : `${writePath}/add/${at}`);
+  };
+
+  const closePicker = () => navigate(writePath, { replace: true });
+
+  const addExisting = async (ids: string[]) => {
+    const order = [...beat.writeItemIds];
+    order.splice(storedPosition(insertAt) ?? order.length, 0, ...ids);
+    await store.setPlotItemWriteItems(beat.id, order);
+    closePicker();
   };
 
   /**
@@ -213,6 +277,7 @@ function BeatFocus({
           sectioned
           autoActivate={justAdded}
           flushRef={flushRef}
+          onInsertAt={(at, anchor) => setAddMenu({ anchor, at })}
           onSaveState={handleSaveState}
           onWordCount={setWords}
           onOpenMention={(elementId) => {
@@ -288,11 +353,15 @@ function BeatFocus({
           variant={items.length ? "outlined" : "contained"}
           startIcon={<AddIcon />}
           endIcon={<ArrowDropDownIcon />}
-          onClick={(event) => setAddMenu(event.currentTarget)}
+          onClick={(event) => setAddMenu({ anchor: event.currentTarget })}
         >
           Add text to this beat
         </Button>
-        <Menu anchorEl={addMenu} open={Boolean(addMenu)} onClose={() => setAddMenu(null)}>
+        <Menu
+          anchorEl={addMenu?.anchor ?? null}
+          open={Boolean(addMenu)}
+          onClose={() => setAddMenu(null)}
+        >
           {writeItemTypes.map((type) => (
             <MenuItem key={type} onClick={() => void addText(type)}>
               <WriteItemTypeIcon
@@ -303,8 +372,36 @@ function BeatFocus({
               {writeItemTypeLabels[type]}
             </MenuItem>
           ))}
+          <Divider />
+          {/*
+            Composing text already written is one more row in a menu that was
+            opening anyway, rather than a second button beside the first: the
+            surface is meant to read as prose, and every control on it is rent.
+          */}
+          <MenuItem onClick={() => openPicker(addMenu?.at)}>
+            <LibraryAddOutlinedIcon
+              fontSize="small"
+              sx={{ mr: 1.25, color: "text.secondary" }}
+            />
+            Existing text…
+          </MenuItem>
         </Menu>
       </Stack>
+
+      {adding ? (
+        <WriteItemPicker
+          tomeId={tomeId}
+          items={writeItems}
+          exclude={beat.writeItemIds}
+          where={
+            insertAt !== undefined && items[insertAt]
+              ? `Before “${items[insertAt].title.trim() || untitledWriteItem}”`
+              : "At the end of this beat"
+          }
+          onAdd={addExisting}
+          onClose={closePicker}
+        />
+      ) : null}
     </FocusSurface>
   );
 }

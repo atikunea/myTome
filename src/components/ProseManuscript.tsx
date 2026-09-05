@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -18,8 +19,10 @@ import {
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import CheckIcon from "@mui/icons-material/Check";
@@ -68,6 +71,7 @@ export function ProseManuscript({
   sectionMenu,
   autoActivate,
   flushRef,
+  onInsertAt,
   onSaveState,
   onWordCount,
   onOpenMention,
@@ -96,6 +100,13 @@ export function ProseManuscript({
    * would still look blank in the database and be deleted.
    */
   flushRef?: MutableRefObject<Promise<unknown> | null>;
+  /**
+   * Offers an insert point in the gutter above each section: the index the new
+   * text would take, and the button to hang a menu on. What can be added is the
+   * page's business, the same way `sectionMenu` is. Absent on a single-text
+   * surface, which has no position to choose between.
+   */
+  onInsertAt?: (index: number, anchor: HTMLElement) => void;
   onSaveState: (state: SaveState, retry: () => void) => void;
   onWordCount: (words: number) => void;
   onOpenMention: (elementId: string) => void;
@@ -199,29 +210,131 @@ export function ProseManuscript({
   };
 
   return (
-    <Box onClick={handleClick}>
+    // The first section's insert point needs room above it that the surface
+    // does not otherwise give; the padding is unconditional within a beat, so
+    // nothing moves when a section is entered.
+    <Box onClick={handleClick} sx={onInsertAt && items.length ? { pt: 3.5 } : undefined}>
       {items.map((item, index) => (
-        <ManuscriptSection
-          key={item.id}
-          item={item}
-          content={edits[item.id]?.content ?? item.content}
-          face={face}
-          elements={elements}
-          types={types}
-          sectioned={sectioned}
-          first={index === 0}
-          active={item.id === activeId}
-          draft={item.id === activeId ? draft : null}
-          caretPoint={item.id === activeId ? caretPoint : null}
-          extraMenu={sectionMenu}
-          flushRef={flushRef}
-          onActivate={activate}
-          onChangeType={changeType}
-          onChangeTitle={(title) => setDraft((current) => (current ? { ...current, title } : null))}
-          onEdit={handleEdit}
-          onSaveState={onSaveState}
-        />
+        <Fragment key={item.id}>
+          {onInsertAt ? (
+            <SectionInsert index={index} first={index === 0} onInsert={onInsertAt} />
+          ) : null}
+          <ManuscriptSection
+            item={item}
+            content={edits[item.id]?.content ?? item.content}
+            face={face}
+            elements={elements}
+            types={types}
+            sectioned={sectioned}
+            first={index === 0}
+            active={item.id === activeId}
+            draft={item.id === activeId ? draft : null}
+            caretPoint={item.id === activeId ? caretPoint : null}
+            extraMenu={sectionMenu}
+            flushRef={flushRef}
+            onActivate={activate}
+            onChangeType={changeType}
+            onChangeTitle={(title) =>
+              setDraft((current) => (current ? { ...current, title } : null))
+            }
+            onEdit={handleEdit}
+            onSaveState={onSaveState}
+          />
+        </Fragment>
       ))}
+    </Box>
+  );
+}
+
+/**
+ * An insert point in the gap above a section, revealed on hover or focus — the
+ * same trick `TimelineConnectorInsert` plays between two beats on the timeline,
+ * and for the same reason: adding a text *here* is worth a control, but not a
+ * permanent one on a page whose whole job is to be prose. It opens the page's
+ * add menu rather than doing anything itself, so a section can be started or
+ * composed in at this point exactly as it can at the end of the beat.
+ *
+ * The strip itself is **zero height**. Its band is drawn in the margin the next
+ * section already carries (`mt: 5`), clear of the previous section's static
+ * block, whose padding overhangs its own bottom edge by 12px to widen the
+ * click-to-edit target. Laying it out for real would move the prose, and the
+ * caret lands on the right word only while the static and mounted renders
+ * occupy identical space.
+ */
+function SectionInsert({
+  index,
+  first,
+  onInsert,
+}: {
+  index: number;
+  first: boolean;
+  onInsert: (index: number, anchor: HTMLElement) => void;
+}) {
+  return (
+    <Box
+      sx={{
+        height: 0,
+        position: "relative",
+        zIndex: 1,
+        "&:hover .insert-affordance, & .insert-affordance:focus-visible": {
+          opacity: 1,
+          transform: "scale(1)",
+        },
+        "&:hover .insert-rule": { opacity: 1 },
+      }}
+    >
+      <Box
+        sx={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: first ? -28 : 12,
+          height: 26,
+        }}
+      >
+        <Box
+          className="insert-rule"
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: 0,
+            right: 0,
+            borderTop: 1,
+            borderTopStyle: "dashed",
+            borderColor: "divider",
+            opacity: 0,
+            transition: "opacity 120ms ease",
+            pointerEvents: "none",
+          }}
+        />
+        <Tooltip title="Add text here" placement="right">
+          <IconButton
+            className="insert-affordance"
+            aria-label="Add text here"
+            size="small"
+            onClick={(event) => {
+              event.stopPropagation();
+              onInsert(index, event.currentTarget);
+            }}
+            sx={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              translate: "-50% -50%",
+              opacity: 0,
+              transform: "scale(0.6)",
+              transition: "opacity 120ms ease, transform 120ms ease",
+              bgcolor: "background.paper",
+              border: 1,
+              borderColor: "divider",
+              p: 0.25,
+              "&:hover": { bgcolor: "background.paper", borderColor: "primary.main" },
+            }}
+          >
+            <AddIcon sx={{ fontSize: "1rem" }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
     </Box>
   );
 }

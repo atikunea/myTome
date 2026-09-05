@@ -63,6 +63,20 @@ export default function App() {
                     path="plots/:plotId/items/:itemId/write"
                     element={<BeatManuscriptPage />}
                   />
+                  {/*
+                    Composing text already written into the beat. The index is a
+                    position among the beat's sections and is optional: without
+                    one the picked texts are appended, the same way the compare
+                    view's insert route appends when it names no row.
+                  */}
+                  <Route
+                    path="plots/:plotId/items/:itemId/write/add"
+                    element={<BeatManuscriptPage adding />}
+                  />
+                  <Route
+                    path="plots/:plotId/items/:itemId/write/add/:index"
+                    element={<BeatManuscriptPage adding />}
+                  />
                   <Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
                   {/*
                     Compare draws any number of plots against the tome's shared row

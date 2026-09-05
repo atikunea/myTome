@@ -58,12 +58,17 @@ export const writeItemStore = {
    * Creates the row behind a freshly opened editor. The row exists immediately
    * so autosave has somewhere to write and the URL names something real; an
    * untouched draft is cleaned up again by `discardWriteItemIfBlank`.
-   * When `plotItemId` is given the new item is appended to that beat's text.
+   *
+   * When `plotItemId` is given the new item joins that beat's text: at `at` in
+   * its reading order, or appended when that is omitted or out of range. The
+   * position is applied inside the same transaction as the create, so a section
+   * added part-way up a beat never appears at the bottom for a frame first.
    */
   async createDraftWriteItem(
     tomeId: string,
     type: WriteItemType,
     plotItemId?: string,
+    at?: number,
   ) {
     const time = now();
     const item: WriteItem = {
@@ -81,10 +86,9 @@ export const writeItemStore = {
       if (!plotItemId) return;
       const beat = await db.plotItems.get(plotItemId);
       if (!beat) return;
-      await db.plotItems.update(plotItemId, {
-        writeItemIds: [...(beat.writeItemIds ?? []), item.id],
-        updatedAt: time,
-      });
+      const ids = [...(beat.writeItemIds ?? [])];
+      ids.splice(at === undefined ? ids.length : Math.min(Math.max(at, 0), ids.length), 0, item.id);
+      await db.plotItems.update(plotItemId, { writeItemIds: ids, updatedAt: time });
     });
     return item;
   },

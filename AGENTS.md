@@ -437,6 +437,23 @@ sibling**: a draft row is created at the click site and the editor opens on its
 real id, because a create-on-mount effect fires twice under `StrictMode`. See
 `src/components/AGENTS.md` for the full autosave/discard story.
 
+Composing *existing* text into a beat follows the rule rather than the
+exception: `plots/:plotId/items/:itemId/write/add` and `…/write/add/:index` both
+mount `BeatManuscriptPage` with `adding`, and the picker is a dialog on top of
+the writing surface. The index is a position among the beat's **sections** and
+is optional — without one the picked texts are appended, the same way the
+compare view's insert route appends when it names no row. Nothing is created
+until the author picks something, so unlike `write/new` there is no draft row
+for a double-mounted effect to duplicate. Starting a *new* section at that same
+position stays route-less for exactly the `write/new` reason — it creates a
+draft row — and passes its position to `createDraftWriteItem` instead. Both routes are siblings of
+`…/write` rather than children of it, and React Router therefore keeps the same
+`BeatManuscriptPage` instance mounted across the change: the surface behind the
+picker holds its active section, its editor, and its unmount sweep. Verified by
+opening the picker with a section live and cancelling back onto it — if that
+ever remounts, an untouched draft would be swept while the author is looking at
+it.
+
 The other is the **restore dialog** on `/backup`, which is plain `useState`. Its
 state is a file the author picked out of their filesystem, which no URL can name
 — `#/backup?restoring=…` could only ever reopen an empty dialog. That is the
