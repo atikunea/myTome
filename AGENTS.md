@@ -139,7 +139,9 @@ split is invisible outside this directory and should stay that way.
 ```
 services/
   store.ts         The barrel. Add a new domain module's object to the spread here.
-  internal.ts      uid/now/slugify, the three range queries, detach*, applyOrder.
+  internal.ts      uid/now/slugify, observe, sameSet, byRank, the three range
+                   queries, detach*, applyOrder.
+  slug.ts          The one slug rule. Pure and table-free — see below.
   validate.ts      The four validators. Callers invoke these, not the mutations.
   images.ts        imageUrl / imageFrom — the only members not on `store`.
   tomes.ts         Tomes + the eight-table delete cascade.
@@ -155,8 +157,29 @@ services/
   storage.ts       navigator.storage.persist(). Touches no table; not on `store`.
   manuscript.ts    Pure: what a plot line's manuscript contains. Reads no table.
   manuscriptDocx.ts  That manuscript as OOXML. Lazy-loaded; not on `store`.
+  storyOrder.ts    Pure: how the Write list orders prose. Reads no table.
   __tests__/       vitest + fake-indexeddb. See below.
 ```
+
+**Four shared primitives in `internal.ts` exist so a rule has one home rather
+than several copies**, and each is worth reaching for rather than re-spelling:
+
+- **`observe(query, callback)`** is the shape of every `store.observe*` member.
+  It also owns the decision that a live query's error goes to the console and
+  nowhere else — a database that cannot be read is not something a page-level
+  retry can help with.
+- **`sameSet(stored, orderedIds)`** is the stale-drag guard all three reorder
+  mutations run: another tab inserting or deleting mid-drag leaves the order
+  describing a set that no longer exists, and the write is dropped rather than
+  applied.
+- **`byRank(rank)`** orders row ids by spine rank, sinking a beat whose row went
+  missing to the end rather than letting it claim the top of its plot.
+- **`slugify`** is `slug.ts` with the element type's `"type"` fallback baked in.
+  **`slug.ts` itself is deliberately separate and imports nothing**, because
+  `manuscript.ts` needs it and must keep reading no table; putting the rule in
+  `internal.ts` alone would drag `db` into a module whose whole point is that it
+  can be driven from `node` without one. Its three callers — a type's `slug`, a
+  backup's filename, a manuscript's filename — differ only in the fallback.
 
 **`spine.ts` is why the split is not purely by table.** Row ranks and
 `PlotItem.plotRowId` are written *only* there, making "never author `sortOrder`
@@ -263,8 +286,15 @@ replaying every schema version so each test exercises the real schema.
   directly inside a transaction, since Dexie never replays an upgrade for an
   applied version — which is why the two backfill functions are exported from
   `models/db.ts`.
-- **Don't test the `observe*` wrappers.** They are four-line `liveQuery` shells;
+- **Don't test the `observe*` wrappers.** They are one-line `observe` calls now;
   testing them tests Dexie. Test the mutation and read the table.
+- **Never assert an order that `updatedAt` alone decides.** Timestamps are ISO
+  strings at millisecond resolution and two writes in one tick share one, so
+  "newest first" is undefined between them and the assertion passes or fails on
+  how fast the machine ran. Stage the recency explicitly — write the rows, then
+  set their `updatedAt` to dates you chose — as
+  `elements.test.ts > suggestRelationshipLabels` does. This cost a flake that
+  appeared in roughly one run in six.
 
 ### `storage.ts` — the database is evictable unless you ask
 
@@ -385,7 +415,7 @@ reading order, so interleaving several plots into one document means either
 guessing (plot `sortOrder` as a tiebreak — a global constant that cannot vary
 per row) or growing a second ordering axis on the spine. One column of the grid,
 read top to bottom, is already a total order with no ties, and that is what a
-manuscript is. Note that `storyKeys` in `pages/WriteListPage.tsx` does **not**
+manuscript is. Note that `storyKeys` in `services/storyOrder.ts` does **not**
 solve this either: it sorts `[plotOrder, beat.sortOrder, index]`, so tome-wide
 "story order" is plot-major concatenation — right for grouping a thread in a
 list, not a book. **If a whole tome needs exporting, the book is a plot**; the
@@ -413,6 +443,22 @@ Four rules the export keeps:
 
 `manuscript.ts` reads no table — it takes rows the page already observes — so it
 is on neither `store` nor the barrel, like `validate.ts` and `parseBackup`.
+
+### `storyOrder.ts` — the Write list's sort, pulled out of the page
+
+`storyKeys` and `sortWriteItems` were `WriteListPage` locals, and moved for the
+reason `hooks/autosave.ts` and `lexical/blocks.ts` did: they are only data and
+comparisons, so under `node` they get real assertions while the page keeps a
+`useMemo` and a `<select>`. Like `manuscript.ts` they read no table and sit on
+neither `store` nor the barrel. **Reach for this split whenever a page grows a
+sort, a filter or a key function worth being sure about** — it is cheaper than
+adding a DOM environment, and it is why "no component tests" has not meant "no
+tests for what components decide".
+
+Two things the tests pin that the old inline version left implicit: story order
+is **plot-major** (all of plot A precedes any of plot B, however deep the beat),
+and a text composed into several beats takes the **earliest**, so a passage
+reused later still sorts where it is first read.
 
 ### There is no PDF library, and there should not be one
 

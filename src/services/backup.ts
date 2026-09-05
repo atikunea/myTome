@@ -5,6 +5,7 @@ import type { Plot, PlotItem, PlotRow } from "../models/Plot";
 import type { Relationship } from "../models/Relationship";
 import type { ImageSource, Tome } from "../models/Tome";
 import type { WriteItem } from "../models/WriteItem";
+import { slugify } from "./slug";
 import { syncPlotSortOrder } from "./spine";
 import { clearTome } from "./tomes";
 
@@ -438,13 +439,9 @@ export const parseBackup = (text: string): BackupFile => {
  */
 export const backupFileName = (file: BackupFile) => {
   const day = (file.exportedAt || new Date().toISOString()).slice(0, 10);
-  const slug =
+  const name =
     file.tomes.length === 1
-      ? file.tomes[0].tome.title
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/(^-|-$)/g, "") || "tome"
+      ? slugify(file.tomes[0].tome.title, "tome")
       : "backup";
-  return `myTome-${slug}-${day}.json`;
+  return `myTome-${name}-${day}.json`;
 };

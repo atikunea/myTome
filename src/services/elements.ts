@@ -1,8 +1,7 @@
-import { liveQuery } from "dexie";
 import { db } from "../models/db";
 import type { Element } from "../models/Element";
 import type { Relationship } from "../models/Relationship";
-import { detachElements, now, uid } from "./internal";
+import { detachElements, now, observe, uid } from "./internal";
 import { validateElement, validateRelationship } from "./validate";
 
 /**
@@ -16,36 +15,42 @@ export const elementStore = {
     typeId: string,
     callback: (v: Element[]) => void,
   ) {
-    return liveQuery(() =>
-      db.elements
-        .where("[tomeId+elementTypeId]")
-        .equals([tomeId, typeId])
-        .filter((x) => !x.deletedAt)
-        .toArray(),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(
+      () =>
+        db.elements
+          .where("[tomeId+elementTypeId]")
+          .equals([tomeId, typeId])
+          .filter((x) => !x.deletedAt)
+          .toArray(),
+      callback,
+    );
   },
   observeTomeElements(tomeId: string, callback: (v: Element[]) => void) {
-    return liveQuery(() =>
-      db.elements
-        .where("tomeId")
-        .equals(tomeId)
-        .filter((x) => !x.deletedAt)
-        .toArray(),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(
+      () =>
+        db.elements
+          .where("tomeId")
+          .equals(tomeId)
+          .filter((x) => !x.deletedAt)
+          .toArray(),
+      callback,
+    );
   },
   observeElementRelationships(
     tomeId: string,
     elementId: string,
     callback: (v: Relationship[]) => void,
   ) {
-    return liveQuery(() =>
-      db.relationships
-        .where("tomeId")
-        .equals(tomeId)
-        .filter((r) => r.fromElementId === elementId || r.toElementId === elementId)
-        .reverse()
-        .sortBy("updatedAt"),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(
+      () =>
+        db.relationships
+          .where("tomeId")
+          .equals(tomeId)
+          .filter((r) => r.fromElementId === elementId || r.toElementId === elementId)
+          .reverse()
+          .sortBy("updatedAt"),
+      callback,
+    );
   },
   /** Labels this author has already used between these two types, most recent first. */
   async suggestRelationshipLabels(

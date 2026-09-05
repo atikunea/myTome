@@ -1,13 +1,15 @@
-import { liveQuery } from "dexie";
 import { db } from "../models/db";
 import type { Plot, PlotItem } from "../models/Plot";
 import {
   applyOrder,
+  byRank,
   now,
+  observe,
   plotItemRange,
   plotRange,
   plotRowRange,
   readPlotItem,
+  sameSet,
   uid,
 } from "./internal";
 import { rowForNewPlotItem, syncPlotSortOrder } from "./spine";
@@ -48,16 +50,10 @@ export const savePlot = async (
 
 export const plotStore = {
   observePlots(tomeId: string, callback: (v: Plot[]) => void) {
-    return liveQuery(() => plotRange(tomeId).toArray()).subscribe({
-      next: callback,
-      error: console.error,
-    });
+    return observe(() => plotRange(tomeId).toArray(), callback);
   },
   observePlot(id: string, callback: (v: Plot | undefined) => void) {
-    return liveQuery(() => db.plots.get(id)).subscribe({
-      next: callback,
-      error: console.error,
-    });
+    return observe(() => db.plots.get(id), callback);
   },
   /**
    * One beat, live. Emits `null` for a missing row rather than `undefined`, so
@@ -66,28 +62,31 @@ export const plotStore = {
    * the same contract `observeWriteItem` keeps.
    */
   observePlotItem(id: string, callback: (v: PlotItem | null) => void) {
-    return liveQuery(async () => {
+    return observe(async () => {
       const row = await db.plotItems.get(id);
       return row ? readPlotItem(row) : null;
-    }).subscribe({ next: callback, error: console.error });
+    }, callback);
   },
   observePlotItems(plotId: string, callback: (v: PlotItem[]) => void) {
-    return liveQuery(() =>
-      plotItemRange(plotId).toArray().then((rows) => rows.map(readPlotItem)),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(
+      () => plotItemRange(plotId).toArray().then((rows) => rows.map(readPlotItem)),
+      callback,
+    );
   },
   /**
    * Every beat in the tome, across all its plots — the Write list needs them in
    * one pass to resolve story order, rather than one query per write item.
    */
   observeTomePlotItems(tomeId: string, callback: (v: PlotItem[]) => void) {
-    return liveQuery(() =>
-      db.plotItems
-        .where("tomeId")
-        .equals(tomeId)
-        .toArray()
-        .then((rows) => rows.map(readPlotItem)),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(
+      () =>
+        db.plotItems
+          .where("tomeId")
+          .equals(tomeId)
+          .toArray()
+          .then((rows) => rows.map(readPlotItem)),
+      callback,
+    );
   },
   async ensureDefaultPlot(tomeId: string) {
     const existing = await plotRange(tomeId).first();
@@ -98,13 +97,8 @@ export const plotStore = {
   async reorderPlots(tomeId: string, orderedIds: string[]) {
     await db.transaction("rw", db.plots, async () => {
       const stored = await plotRange(tomeId).primaryKeys();
-      // A mismatch means another tab added or deleted a plot while this drag was
-      // in flight — drop the reorder rather than write a stale order.
-      if (
-        stored.length !== orderedIds.length ||
-        !stored.every((id) => orderedIds.includes(id))
-      )
-        return;
+      // Another tab added or deleted a plot while this drag was in flight.
+      if (!sameSet(stored, orderedIds)) return;
       await applyOrder(db.plots, orderedIds);
     });
   },
@@ -180,23 +174,12 @@ export const plotStore = {
   async reorderPlotItems(plotId: string, orderedIds: string[]) {
     await db.transaction("rw", db.plotRows, db.plotItems, async () => {
       const stored = await plotItemRange(plotId).toArray();
-      // A mismatch means another tab inserted or deleted an item while this drag
-      // was in flight — drop the reorder rather than write a stale order.
-      if (
-        stored.length !== orderedIds.length ||
-        !stored.every((item) => orderedIds.includes(item.id))
-      )
-        return;
+      // Another tab inserted or deleted an item while this drag was in flight.
+      if (!sameSet(stored.map((item) => item.id), orderedIds)) return;
       if (!stored.length) return;
       const rows = await plotRowRange(stored[0].tomeId).toArray();
       const rank = new Map(rows.map((row, index) => [row.id, index]));
-      const held = stored
-        .map((item) => item.plotRowId)
-        .sort(
-          (a, b) =>
-            (rank.get(a) ?? Number.MAX_SAFE_INTEGER) -
-            (rank.get(b) ?? Number.MAX_SAFE_INTEGER),
-        );
+      const held = stored.map((item) => item.plotRowId).sort(byRank(rank));
       // `held` is already in row-rank order, so the index this writes and the
       // rank of the row it writes alongside it agree by construction — this is
       // not `sortOrder` authored from a list position.

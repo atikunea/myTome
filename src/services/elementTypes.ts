@@ -1,7 +1,7 @@
-import Dexie, { liveQuery } from "dexie";
+import Dexie from "dexie";
 import { db } from "../models/db";
 import type { ElementType } from "../models/ElementType";
-import { detachElements, now, slugify, uid } from "./internal";
+import { detachElements, now, observe, slugify, uid } from "./internal";
 import { validateFields } from "./validate";
 
 /**
@@ -10,12 +10,14 @@ import { validateFields } from "./validate";
  */
 export const elementTypeStore = {
   observeTypes(tomeId: string, callback: (v: ElementType[]) => void) {
-    return liveQuery(() =>
-      db.elementTypes
-        .where("[tomeId+sortOrder]")
-        .between([tomeId, Dexie.minKey], [tomeId, Dexie.maxKey])
-        .toArray(),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(
+      () =>
+        db.elementTypes
+          .where("[tomeId+sortOrder]")
+          .between([tomeId, Dexie.minKey], [tomeId, Dexie.maxKey])
+          .toArray(),
+      callback,
+    );
   },
   async saveType(
     input: Partial<ElementType> &

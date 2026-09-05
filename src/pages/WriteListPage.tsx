@@ -20,6 +20,7 @@ import {
   writeItemTypes,
 } from "../models/WriteItem";
 import { store } from "../services/store";
+import { sortWriteItems, storyKeys, type WriteSort } from "../services/storyOrder";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useObservable } from "../hooks/useObservable";
@@ -27,43 +28,12 @@ import { EmptyState } from "../components/EmptyState";
 import { WriteItemCard } from "../components/WriteItemCard";
 import { WriteItemTypeIcon } from "../components/WriteItemTypeIcon";
 
-type SortMode = "recent" | "story" | "alpha";
-
-/** Sorts before every real story key, parking uncomposed items at the end. */
-const UNCOMPOSED: StoryKey = [Infinity, Infinity, Infinity];
-type StoryKey = [number, number, number];
-
-const compareKeys = (a: StoryKey, b: StoryKey) =>
-  a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-
-/**
- * Where each write item sits in the manuscript: its earliest composing beat,
- * as (plot position, beat position, position within that beat). An item
- * composed into several beats takes its first one.
- */
-function storyKeys(plots: Plot[], beats: PlotItem[]) {
-  const plotOrder = new Map(plots.map((plot) => [plot.id, plot.sortOrder]));
-  const keys = new Map<string, StoryKey>();
-  for (const beat of beats) {
-    beat.writeItemIds.forEach((id, index) => {
-      const key: StoryKey = [
-        plotOrder.get(beat.plotId) ?? Infinity,
-        beat.sortOrder,
-        index,
-      ];
-      const current = keys.get(id);
-      if (!current || compareKeys(key, current) < 0) keys.set(id, key);
-    });
-  }
-  return keys;
-}
-
 export function WriteListPage() {
   const { tome } = useTomeWorkspace();
   const navigate = useNavigate();
   const confirmAction = useConfirm();
   const [typeFilter, setTypeFilter] = useState<WriteItemType | "all">("all");
-  const [sort, setSort] = useState<SortMode>("recent");
+  const [sort, setSort] = useState<WriteSort>("recent");
   const [newMenu, setNewMenu] = useState<HTMLElement | null>(null);
 
   const items =
@@ -81,27 +51,10 @@ export function WriteListPage() {
 
   const keys = useMemo(() => storyKeys(plots, beats), [plots, beats]);
 
-  const visible = useMemo(() => {
-    const filtered = items.filter(
-      (item) => typeFilter === "all" || item.type === typeFilter,
-    );
-    return filtered.sort((a, b) => {
-      if (sort === "alpha")
-        return (a.title || untitledWriteItem).localeCompare(
-          b.title || untitledWriteItem,
-        );
-      if (sort === "story") {
-        const byStory = compareKeys(
-          keys.get(a.id) ?? UNCOMPOSED,
-          keys.get(b.id) ?? UNCOMPOSED,
-        );
-        // Uncomposed items all share the sentinel key, so they fall back to
-        // recency among themselves rather than to insertion order.
-        if (byStory) return byStory;
-      }
-      return b.updatedAt.localeCompare(a.updatedAt);
-    });
-  }, [items, typeFilter, sort, keys]);
+  const visible = useMemo(
+    () => sortWriteItems({ items, typeFilter, sort, keys }),
+    [items, typeFilter, sort, keys],
+  );
 
   if (!tome) return null;
 
@@ -176,7 +129,7 @@ export function WriteListPage() {
           select
           label="Sort"
           value={sort}
-          onChange={(event) => setSort(event.target.value as SortMode)}
+          onChange={(event) => setSort(event.target.value as WriteSort)}
           size="small"
           sx={{ minWidth: 190 }}
         >

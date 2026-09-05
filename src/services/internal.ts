@@ -1,6 +1,7 @@
-import Dexie from "dexie";
+import Dexie, { liveQuery, type Subscription } from "dexie";
 import { db } from "../models/db";
 import type { PlotItem } from "../models/Plot";
+import { slugify as slugValue } from "./slug";
 
 /**
  * Shared primitives for the modules that make up `store`. Nothing here is part
@@ -10,12 +11,41 @@ import type { PlotItem } from "../models/Plot";
 
 export const uid = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
-export const slugify = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "") || "type";
+/** An element type's URL slug. Shares its rule with the file namers — see `slug.ts`. */
+export const slugify = (s: string) => slugValue(s, "type");
+
+/**
+ * The one shape every `store.observe*` member takes: a Dexie `liveQuery` handed
+ * to a callback, returning the `Subscription` `useObservable` unsubscribes.
+ *
+ * Errors go to the console and nowhere else, deliberately: a live query that
+ * throws means the database is unreadable, which no page-level retry could help
+ * with. Keeping that decision here is what stops it drifting between the
+ * fourteen observers that used to spell it out one at a time.
+ */
+export const observe = <T>(
+  query: () => T | Promise<T>,
+  callback: (value: T) => void,
+): Subscription =>
+  liveQuery(query).subscribe({ next: callback, error: console.error });
+
+/**
+ * Whether a drag's id list still describes what is actually stored. Another tab
+ * inserting or deleting mid-drag leaves the reorder talking about a set that no
+ * longer exists, and writing it would scramble what is really there — so all
+ * three reorder mutations drop the write rather than apply a stale order.
+ */
+export const sameSet = (stored: readonly string[], orderedIds: readonly string[]) =>
+  stored.length === orderedIds.length && stored.every((id) => orderedIds.includes(id));
+
+/**
+ * Orders row ids by their rank on the spine. A beat whose row somehow went
+ * missing sinks to the end rather than silently claiming the top of its plot.
+ */
+export const byRank =
+  (rank: Map<string, number>) =>
+  (a: string, b: string) =>
+    (rank.get(a) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b) ?? Number.MAX_SAFE_INTEGER);
 
 /**
  * Guarantees the array fields a `PlotItem` reader can iterate. A schema

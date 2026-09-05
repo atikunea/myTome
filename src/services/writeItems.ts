@@ -1,4 +1,3 @@
-import { liveQuery } from "dexie";
 import { db } from "../models/db";
 import type { WriteItem, WriteItemType } from "../models/WriteItem";
 import {
@@ -7,7 +6,7 @@ import {
   previewLength,
   untitledWriteItem,
 } from "../models/WriteItem";
-import { detachWriteItem, now, readPlotItem, uid } from "./internal";
+import { detachWriteItem, now, observe, readPlotItem, uid } from "./internal";
 
 /**
  * Prose rows, and the link between a beat and the text composed into it. That
@@ -16,9 +15,10 @@ import { detachWriteItem, now, readPlotItem, uid } from "./internal";
  */
 export const writeItemStore = {
   observeWriteItems(tomeId: string, callback: (v: WriteItem[]) => void) {
-    return liveQuery(() =>
-      db.writeItems.where("tomeId").equals(tomeId).toArray(),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(
+      () => db.writeItems.where("tomeId").equals(tomeId).toArray(),
+      callback,
+    );
   },
   /**
    * Emits `null` for a missing row rather than `undefined`, so the editor can
@@ -26,9 +26,7 @@ export const writeItemStore = {
    * a not-found message while the first query is still in flight.
    */
   observeWriteItem(id: string, callback: (v: WriteItem | null) => void) {
-    return liveQuery(async () => (await db.writeItems.get(id)) ?? null).subscribe(
-      { next: callback, error: console.error },
-    );
+    return observe(async () => (await db.writeItems.get(id)) ?? null, callback);
   },
   /**
    * Every plot item composing the given write item, via the `*writeItemIds`

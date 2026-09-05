@@ -1,11 +1,13 @@
-import { liveQuery } from "dexie";
 import { db } from "../models/db";
 import type { PlotItem, PlotRow } from "../models/Plot";
 import {
   applyOrder,
+  byRank,
   now,
+  observe,
   plotItemRange,
   plotRowRange,
+  sameSet,
   uid,
 } from "./internal";
 
@@ -107,14 +109,9 @@ export const syncPlotSortOrder = async (tomeId: string) => {
   for (const item of await db.plotItems.where("tomeId").equals(tomeId).toArray())
     byPlot.set(item.plotId, [...(byPlot.get(item.plotId) ?? []), item]);
   const writes: Promise<number>[] = [];
+  const order = byRank(rank);
   for (const list of byPlot.values()) {
-    // A beat whose row somehow went missing sinks to the end rather than
-    // silently claiming the top of its plot.
-    list.sort(
-      (a, b) =>
-        (rank.get(a.plotRowId) ?? Number.MAX_SAFE_INTEGER) -
-        (rank.get(b.plotRowId) ?? Number.MAX_SAFE_INTEGER),
-    );
+    list.sort((a, b) => order(a.plotRowId, b.plotRowId));
     list.forEach((item, index) => {
       if (item.sortOrder !== index)
         writes.push(db.plotItems.update(item.id, { sortOrder: index }));
@@ -126,10 +123,7 @@ export const syncPlotSortOrder = async (tomeId: string) => {
 export const spineStore = {
   /** The tome's shared spine, in order — the row axis every plot is drawn against. */
   observePlotRows(tomeId: string, callback: (v: PlotRow[]) => void) {
-    return liveQuery(() => plotRowRange(tomeId).toArray()).subscribe({
-      next: callback,
-      error: console.error,
-    });
+    return observe(() => plotRowRange(tomeId).toArray(), callback);
   },
   /**
    * Opens an empty row at `index`, pushing the rest of the spine down. Every beat
@@ -174,13 +168,9 @@ export const spineStore = {
   async reorderPlotRows(tomeId: string, orderedIds: string[]) {
     await db.transaction("rw", db.plotRows, db.plotItems, async () => {
       const stored = await plotRowRange(tomeId).primaryKeys();
-      // The same stale-drag guard `reorderPlotItems` uses: another tab changed the
-      // spine mid-drag, so this order is about a set that no longer exists.
-      if (
-        stored.length !== orderedIds.length ||
-        !stored.every((id) => orderedIds.includes(id))
-      )
-        return;
+      // Another tab changed the spine mid-drag, so this order is about a set
+      // that no longer exists.
+      if (!sameSet(stored, orderedIds)) return;
       await applyOrder(db.plotRows, orderedIds);
       await syncPlotSortOrder(tomeId);
     });

@@ -1,7 +1,6 @@
-import { liveQuery } from "dexie";
 import { db } from "../models/db";
 import type { Tome } from "../models/Tome";
-import { now, uid } from "./internal";
+import { now, observe, uid } from "./internal";
 
 /**
  * Deletes every row belonging to the tome, across all eight tables. Call inside
@@ -22,15 +21,10 @@ export const clearTome = async (id: string) => {
 
 export const tomeStore = {
   observeTomes(callback: (v: Tome[]) => void) {
-    return liveQuery(() =>
-      db.tomes.orderBy("updatedAt").reverse().toArray(),
-    ).subscribe({ next: callback, error: console.error });
+    return observe(() => db.tomes.orderBy("updatedAt").reverse().toArray(), callback);
   },
   observeTome(id: string, callback: (v: Tome | undefined) => void) {
-    return liveQuery(() => db.tomes.get(id)).subscribe({
-      next: callback,
-      error: console.error,
-    });
+    return observe(() => db.tomes.get(id), callback);
   },
   async saveTome(
     input: Partial<Tome> & Pick<Tome, "title" | "description" | "status">,

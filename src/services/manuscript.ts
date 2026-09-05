@@ -3,6 +3,8 @@ import type { WriteItem, WriteItemType } from "../models/WriteItem";
 import { untitledWriteItem } from "../models/WriteItem";
 import type { Block } from "../lexical/blocks";
 import { blocksText, countWords, lexicalToBlocks } from "../lexical/blocks";
+// `slug.ts` is pure and table-free, so this module still reads no table.
+import { slugify } from "./slug";
 
 /**
  * What a plot line's manuscript *is*, decided here and rendered elsewhere.
@@ -213,13 +215,6 @@ export function summarizeSkips(skipped: ManuscriptSkip[]) {
   };
 }
 
-const slug = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-
 /**
  * `myTome-the-long-road-main-plot-2026-09-05.docx` — the name the download
  * lands under, shaped like `backupFileName` so the two files sort together in a
@@ -230,7 +225,10 @@ export function manuscriptFileName(
   extension: string,
   today = new Date(),
 ) {
-  const parts = [slug(manuscript.tomeTitle), slug(manuscript.plotName)].filter(Boolean);
+  const parts = [
+    slugify(manuscript.tomeTitle),
+    slugify(manuscript.plotName),
+  ].filter(Boolean);
   return `myTome-${parts.join("-") || "manuscript"}-${today
     .toISOString()
     .slice(0, 10)}.${extension}`;
