@@ -504,6 +504,27 @@ none of those.
   file; used only by `../pages/BackupPage.tsx`. See above.
 - `PolicyProse.tsx` — chrome and prose primitives for the privacy and terms
   pages. See above.
+- `ManuscriptExportDialog.tsx` — turns one plot line into a `.docx` or a PDF,
+  mounted by `plots/:plotId/export`. It owns only the two choices (which
+  `WriteItemType`s, and whether beats open with their label) and the two
+  transports; `services/manuscript.ts` decides what the document *contains* and
+  is recomputed on every toggle, so the counts under the switches are the counts
+  of the file about to be written. Everything left out — filtered texts, beats
+  with nothing in them — is reported there rather than dropped quietly, and a
+  text composed into several beats is **named** under "Appears more than once"
+  with each beat it lands in. That list is not an omission: the text is printed
+  in every one of them. Don't turn it back into a count — the name is the whole
+  point, because it is what lets the author go and check whether the repeat was
+  deliberate.
+- `ManuscriptPrint.tsx` — the same manuscript as paper, and the entire PDF
+  path: there is no PDF library in this app. It renders through `StaticProse`
+  and `manuscriptSx`, portals to `<body>`, and a `@media print` block blanks
+  every other body child. **`inkSx` restates every theme colour in black**
+  because `manuscriptSx` is written in tokens and would otherwise print
+  near-white text when the app is in dark mode — verified by printing in dark
+  mode, not assumed. Mounted only while printing, via `flushSync` before
+  `window.print()` (an effect would fire twice under `StrictMode`) and removed
+  on `afterprint`. See the root AGENTS.md for the rest.
 - `DriveSyncCard.tsx` — the "Where backups go" card, including Google Drive
   connect/sync. **Its first state is "not set up":** without a
   `VITE_GOOGLE_CLIENT_ID` compiled in, `driveConfigured` is false and the card

@@ -153,6 +153,8 @@ services/
   syncPlan.ts      Pure: what a sync should move. Tested; no network, no DOM.
   drive.ts         The only module that calls the network. Optional, gated.
   storage.ts       navigator.storage.persist(). Touches no table; not on `store`.
+  manuscript.ts    Pure: what a plot line's manuscript contains. Reads no table.
+  manuscriptDocx.ts  That manuscript as OOXML. Lazy-loaded; not on `store`.
   __tests__/       vitest + fake-indexeddb. See below.
 ```
 
@@ -367,6 +369,86 @@ Everything above the network line is tested; `drive.ts` itself is not, and can't
 usefully be under `node` — it is deliberately thin for that reason. Verify it by
 driving the built app.
 
+### `manuscript.ts` — a manuscript is **one plot line**, and that is the design
+
+`buildManuscript` flattens a plot into the document it prints as: its beats in
+`sortOrder`, each beat's `writeItemIds` in the author's reading order, each
+text's content through `lexicalToBlocks`. **Every beat starts a new page; the
+sections inside one flow continuously.** The same split as `syncPlan`/`drive`
+applies — `manuscript.ts` decides, `manuscriptDocx.ts` and
+`components/ManuscriptPrint.tsx` move — so the whole decision is driven from
+`node` and neither writer holds an opinion about content.
+
+**The one-plot limit is not a first cut, it is the honest answer.** Two beats on
+the same spine row are *contemporaneous*, which is precisely the absence of a
+reading order, so interleaving several plots into one document means either
+guessing (plot `sortOrder` as a tiebreak — a global constant that cannot vary
+per row) or growing a second ordering axis on the spine. One column of the grid,
+read top to bottom, is already a total order with no ties, and that is what a
+manuscript is. Note that `storyKeys` in `pages/WriteListPage.tsx` does **not**
+solve this either: it sorts `[plotOrder, beat.sortOrder, index]`, so tome-wide
+"story order" is plot-major concatenation — right for grouping a thread in a
+list, not a book. **If a whole tome needs exporting, the book is a plot**; the
+authoring answer is a "move this beat to another plot" gesture (`PlotGrid`
+already spans every column with one `DndContext` and blocks cross-column drops
+at `handleDragEnd`), not a cleverer exporter.
+
+Four rules the export keeps:
+
+- **Nothing is dropped silently.** Beats with no included text, texts excluded
+  by the type filter, and ids with no row behind them are all returned in
+  `skipped` and counted in the dialog before the download. A manuscript is the
+  last place for a quiet decision.
+- **A text composed into several beats is printed in every one of them**, and
+  its words counted every time. The composition is what the author authored, and
+  thinning it would make the export disagree with the beat manuscripts they
+  wrote it on. Such texts are named — with every beat they land in — in
+  `repeated`, which is a **note, not a skip**: only the author can tell a
+  deliberate refrain from an accidental double-compose, so the dialog shows them
+  where to look instead of deciding.
+- **A beat contributing nothing is skipped, not printed blank.** That includes a
+  beat whose every text the type filter removed.
+- **The default filter is `passage` + `chapter`.** Lore is background and a
+  snippet is scratch; both are toggleable, neither is the book.
+
+`manuscript.ts` reads no table — it takes rows the page already observes — so it
+is on neither `store` nor the barrel, like `validate.ts` and `parseBackup`.
+
+### There is no PDF library, and there should not be one
+
+DOCX is the `docx` package; **PDF is the browser's own print dialog.**
+`ManuscriptPrint` renders the manuscript through the same `StaticProse` and
+`manuscriptStyles` the editor uses, portals it to `<body>`, and a `@media print`
+block blanks every other body child. The browser already has a typesetter and a
+PDF writer, and the export is typographically the surface the author wrote on;
+`pdfmake` would cost ~2 MB on a static Pages bundle to reproduce it less well
+(and its blob worker would trip the CSP in production only).
+
+Three things about that arrangement are load-bearing:
+
+- **Paper is white in both colour modes.** `manuscriptSx` is written in theme
+  tokens, so printing from dark mode would put near-white text and a pale tan
+  link colour on a white page. `inkSx` restates every colour token in ink.
+  Verified by printing with the app in dark mode — if you add a colour to
+  `manuscriptSx`, add its ink override too.
+- **The print DOM is mounted only while printing**, via `flushSync` before
+  `window.print()` (an effect would fire twice under `StrictMode`) and taken
+  down on `afterprint`. A whole plot line is a lot of DOM to keep laid out for a
+  dialog nobody has printed from.
+- **`docx` is `import()`ed at the click**, not at page load — it is ~350 kB of
+  the bundle and splits cleanly into its own chunk. Keep it that way.
+
+Two things Word simply cannot express, handled in `manuscriptDocx.ts` rather
+than hidden: a check-list item becomes a `☐`/`☑` glyph on an indented paragraph,
+and **every ordered list gets its own numbering definition** so its `start`
+survives and two consecutive lists do not continue each other's count.
+
+**`docx` ships `@types/node` as a direct dependency**, which is why
+`hooks/autosave.ts` types its timers as `ReturnType<typeof setTimeout>`: with
+node types installed, `setTimeout` returns a `Timeout` rather than a `number`
+and the old annotation failed `tsc`. Annotate timer handles that way anywhere
+else they appear.
+
 ### Two vestigial things — don't build on them
 
 - **`Element.deletedAt` is never written.** `observeElements` filters
@@ -511,6 +593,12 @@ names the plot *and* the row because with several columns neither alone
 identifies a cell; omitting the row appends. The old
 `plots/:plotId/compare/:otherPlotId` routes were removed outright, not
 redirected.
+
+**`plots/:plotId/export` mounts `PlotPage` with `exporting`**, following the
+rule rather than the backup page's exception: the dialog's whole state is two
+toggles and a plot id, all of which a URL can rebuild. It is a sibling of the
+plot's own route and deliberately has no compare-scoped twin — a manuscript is
+one plot line, for the reason set out under `services/manuscript.ts`.
 
 `StrictMode` is on in `main.tsx`. Assume every effect mounts, cleans up, and
 mounts again in dev, and write effects that survive it.

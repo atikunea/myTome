@@ -11,16 +11,25 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
+import IosShareIcon from "@mui/icons-material/IosShare";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem } from "../models/Plot";
+import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
 import { PlotTimeline } from "../components/PlotTimeline";
 import { PlotItemDialog } from "../components/PlotItemDialog";
 import { PlotPicker } from "../components/PlotPicker";
+import { ManuscriptExportDialog } from "../components/ManuscriptExportDialog";
 
-export function PlotPage({ creating = false }: { creating?: boolean }) {
+export function PlotPage({
+  creating = false,
+  exporting = false,
+}: {
+  creating?: boolean;
+  exporting?: boolean;
+}) {
   const { plotId, itemId, index } = useParams<{
     plotId?: string;
     itemId?: string;
@@ -39,6 +48,13 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
     ) ?? [];
   const elements =
     useObservable<Element[]>((cb) => store.observeTomeElements(tome!.id, cb), [tome?.id]) ?? [];
+  // The export needs the texts themselves: a beat holds only their ids, and the
+  // rows are tome-level rather than the plot's.
+  const writeItems =
+    useObservable<WriteItem[]>(
+      (cb) => store.observeWriteItems(tome!.id, cb),
+      [tome?.id],
+    ) ?? [];
 
   const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
 
@@ -124,6 +140,23 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
               </MenuItem>
             ))}
           </Menu>
+          <Tooltip
+            title={
+              items.length
+                ? "Turn this plot line into a Word or PDF manuscript"
+                : "Add a beat before exporting a manuscript"
+            }
+          >
+            <span>
+              <Button
+                startIcon={<IosShareIcon />}
+                disabled={!items.length}
+                onClick={() => navigate(`${plotPath}/export`)}
+              >
+                Export
+              </Button>
+            </span>
+          </Tooltip>
           <Button startIcon={<AddIcon />} onClick={() => setNewPlotOpen(true)}>
             New plot
           </Button>
@@ -163,6 +196,16 @@ export function PlotPage({ creating = false }: { creating?: boolean }) {
         onOpenManuscript={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
         onClose={closeDialog}
       />
+
+      {exporting && (
+        <ManuscriptExportDialog
+          tomeTitle={tome.title}
+          plot={plot}
+          beats={items}
+          writeItems={writeItems}
+          onClose={closeDialog}
+        />
+      )}
     </Box>
   );
 }

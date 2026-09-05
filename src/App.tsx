@@ -55,6 +55,14 @@ export default function App() {
                   <Route path="plots/:plotId" element={<PlotPage />} />
                   <Route path="plots/:plotId/items/:itemId" element={<PlotPage />} />
                   {/*
+                    The manuscript export. A route rather than a `useState` flag
+                    like every other dialog here — and deliberately scoped to one
+                    plot: beats on the same spine row are contemporaneous, which
+                    is the absence of a reading order, so there is no honest
+                    address for "the manuscript of several plots at once".
+                  */}
+                  <Route path="plots/:plotId/export" element={<PlotPage exporting />} />
+                  {/*
                     A beat's composed text, as one manuscript. There is deliberately
                     no `plots/compare/...` variant: the compare view links here, so
                     a beat's writing has a single address whichever view found it.

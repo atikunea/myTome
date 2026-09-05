@@ -58,10 +58,15 @@ export function createAutosave({
   /** Called on every transition. Never called for a state it is already in. */
   onState: (state: SaveState) => void;
 }): AutosaveController {
-  let saveTimer: number | undefined;
+  // `ReturnType<typeof setTimeout>` rather than `number` because this file is
+  // typed against whichever `setTimeout` is in scope: the DOM's returns a
+  // number, Node's a `Timeout`, and `@types/node` arrives here as a transitive
+  // dependency of whatever happens to be installed. The handle is only ever
+  // passed back to `clearTimeout`, so its shape is nobody's business.
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
   // Runs the floor and the hold. Kept apart from `saveTimer` because it is
   // purely cosmetic: clearing it can never lose a write.
-  let statusTimer: number | undefined;
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
   let dirty = false;
   // Bumped by anything that takes over from a write already in flight. A save
   // resolving with a stale ticket reports nothing: clearing `statusTimer` only

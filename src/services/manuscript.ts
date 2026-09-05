@@ -1,0 +1,237 @@
+import type { Plot, PlotItem } from "../models/Plot";
+import type { WriteItem, WriteItemType } from "../models/WriteItem";
+import { untitledWriteItem } from "../models/WriteItem";
+import type { Block } from "../lexical/blocks";
+import { blocksText, countWords, lexicalToBlocks } from "../lexical/blocks";
+
+/**
+ * What a plot line's manuscript *is*, decided here and rendered elsewhere.
+ *
+ * This module is the export's `syncPlan.ts`: it decides, and `manuscriptDocx.ts`
+ * and `ManuscriptPrint.tsx` move. It holds no React, no DOM and no format —
+ * only ordering, filtering and the reasons things were left out — so the whole
+ * of the decision is driven from the suite's `node` environment, the same split
+ * `hooks/autosave.ts` and `lexical/blocks.ts` already make.
+ *
+ * **A manuscript is one plot line, and that is a deliberate limit.** A tome's
+ * beats stand on a shared spine where two beats on the same row are
+ * *contemporaneous* — which is precisely the absence of a reading order — so
+ * there is no honest way to interleave several plots into one document without
+ * either guessing or inventing a second ordering axis. One column of the grid,
+ * read top to bottom, is already a total order with no ties, and that is what a
+ * manuscript is. If a tome's whole book needs exporting, the book is a plot.
+ */
+
+export type ManuscriptOptions = {
+  /** Which kinds of prose belong in the manuscript. Empty means nothing does. */
+  types: WriteItemType[];
+  /** Whether each beat opens with its label as a heading. */
+  beatHeadings: boolean;
+};
+
+export const defaultManuscriptOptions: ManuscriptOptions = {
+  // Lore is background material and a snippet is scratch; neither is the book.
+  types: ["passage", "chapter"],
+  beatHeadings: true,
+};
+
+export type ManuscriptSection = {
+  writeItemId: string;
+  title: string;
+  type: WriteItemType;
+  blocks: Block[];
+  words: number;
+};
+
+/**
+ * One beat's contribution. Each begins on a fresh page — that is the whole
+ * reason the manuscript is grouped by beat rather than flattened to sections —
+ * but the sections *within* a beat flow continuously, because their order is
+ * the order the prose is read in and nothing separates them but the author's
+ * paragraphing.
+ */
+export type ManuscriptBeat = {
+  beatId: string;
+  /** `PlotItem.name` — the beat label. Present only when `beatHeadings` is on. */
+  heading?: string;
+  sections: ManuscriptSection[];
+  words: number;
+};
+
+/**
+ * Why something an author might expect to see is not in the document. Nothing
+ * is dropped silently: a manuscript is the last place to guess quietly, so
+ * every omission is reported and the dialog counts them before the download.
+ */
+export type ManuscriptSkip =
+  | { reason: "empty"; beatId: string; beatName: string }
+  | { reason: "type"; writeItemId: string; title: string; type: WriteItemType }
+  | { reason: "missing"; writeItemId: string; beatName: string };
+
+/**
+ * A text composed into more than one beat of this plot, and therefore printed
+ * once per beat. **This is not a skip** — nothing was left out, and the word
+ * count includes every appearance. It is reported by name because composing the
+ * same passage twice is as often a mistake as an intention, and only the author
+ * can tell which; naming the beats is what lets them go and look.
+ */
+export type ManuscriptRepeat = {
+  writeItemId: string;
+  title: string;
+  /** The beats it appears in, in reading order. Always two or more. */
+  beatNames: string[];
+};
+
+export type Manuscript = {
+  tomeTitle: string;
+  plotName: string;
+  beats: ManuscriptBeat[];
+  words: number;
+  repeated: ManuscriptRepeat[];
+  skipped: ManuscriptSkip[];
+};
+
+/** The beat label to show when the author never named the beat. */
+const untitledBeat = "Untitled beat";
+
+const beatName = (beat: PlotItem) => beat.name.trim() || untitledBeat;
+const itemTitle = (item: WriteItem) => item.title.trim() || untitledWriteItem;
+
+/**
+ * Flattens a plot line into the document it would print as.
+ *
+ * Beats come in `sortOrder` — which the spine keeps as a cache of row rank — and
+ * each beat's `writeItemIds` in its authored reading order. The sort is redone
+ * here rather than trusted from the caller so the function is total: it is the
+ * one description of what the export contains, and a test should not have to
+ * reproduce a range query to drive it.
+ *
+ * A text composed into several beats is printed **in every one of them**, and
+ * its words counted every time. The composition is what the author authored, and
+ * silently thinning it would make the exported manuscript disagree with the beat
+ * manuscripts they wrote it on. The repeats are named in `repeated` instead, so
+ * an accidental double-compose is visible without being decided for them.
+ */
+export function buildManuscript({
+  tomeTitle,
+  plot,
+  beats,
+  writeItems,
+  options,
+}: {
+  tomeTitle: string;
+  plot: Pick<Plot, "id" | "name">;
+  beats: PlotItem[];
+  writeItems: WriteItem[];
+  options: ManuscriptOptions;
+}): Manuscript {
+  const byId = new Map(writeItems.map((item) => [item.id, item]));
+  const wanted = new Set(options.types);
+  const skipped: ManuscriptSkip[] = [];
+  // Where each included text ended up, so the ones landing in several beats can
+  // be named afterwards. Insertion order is reading order, which is the order
+  // the author will want to go looking in.
+  const appearances = new Map<string, { title: string; beatNames: string[] }>();
+
+  const ordered = beats
+    .filter((beat) => beat.plotId === plot.id)
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const built: ManuscriptBeat[] = [];
+
+  for (const beat of ordered) {
+    const name = beatName(beat);
+    const sections: ManuscriptSection[] = [];
+
+    for (const id of beat.writeItemIds ?? []) {
+      const item = byId.get(id);
+      // `detachWriteItem` keeps these arrays clean, so a dangling id means a
+      // database that missed something. Say so rather than rendering a hole.
+      if (!item) {
+        skipped.push({ reason: "missing", writeItemId: id, beatName: name });
+        continue;
+      }
+      if (!wanted.has(item.type)) {
+        skipped.push({
+          reason: "type",
+          writeItemId: id,
+          title: itemTitle(item),
+          type: item.type,
+        });
+        continue;
+      }
+      const seen = appearances.get(id);
+      if (seen) seen.beatNames.push(name);
+      else appearances.set(id, { title: itemTitle(item), beatNames: [name] });
+
+      const blocks = lexicalToBlocks(item.content);
+      sections.push({
+        writeItemId: id,
+        title: itemTitle(item),
+        type: item.type,
+        blocks,
+        words: countWords(blocksText(blocks)),
+      });
+    }
+
+    // A beat contributing nothing would otherwise print as a blank page.
+    if (!sections.length) {
+      skipped.push({ reason: "empty", beatId: beat.id, beatName: name });
+      continue;
+    }
+
+    built.push({
+      beatId: beat.id,
+      ...(options.beatHeadings ? { heading: name } : {}),
+      sections,
+      words: sections.reduce((total, section) => total + section.words, 0),
+    });
+  }
+
+  const repeated: ManuscriptRepeat[] = [];
+  for (const [writeItemId, seen] of appearances)
+    if (seen.beatNames.length > 1)
+      repeated.push({ writeItemId, title: seen.title, beatNames: seen.beatNames });
+
+  return {
+    tomeTitle,
+    plotName: plot.name,
+    beats: built,
+    words: built.reduce((total, beat) => total + beat.words, 0),
+    repeated,
+    skipped,
+  };
+}
+
+/** Counts of each kind of omission, which is all the dialog needs to report. */
+export function summarizeSkips(skipped: ManuscriptSkip[]) {
+  return {
+    empty: skipped.filter((skip) => skip.reason === "empty").length,
+    type: skipped.filter((skip) => skip.reason === "type").length,
+    missing: skipped.filter((skip) => skip.reason === "missing").length,
+  };
+}
+
+const slug = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+/**
+ * `myTome-the-long-road-main-plot-2026-09-05.docx` — the name the download
+ * lands under, shaped like `backupFileName` so the two files sort together in a
+ * folder full of an author's exports.
+ */
+export function manuscriptFileName(
+  manuscript: Pick<Manuscript, "tomeTitle" | "plotName">,
+  extension: string,
+  today = new Date(),
+) {
+  const parts = [slug(manuscript.tomeTitle), slug(manuscript.plotName)].filter(Boolean);
+  return `myTome-${parts.join("-") || "manuscript"}-${today
+    .toISOString()
+    .slice(0, 10)}.${extension}`;
+}
