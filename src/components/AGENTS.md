@@ -600,7 +600,19 @@ none of those.
   custom field definitions (`FieldDefinition[]`); used by
   `../pages/ElementTypesPage.tsx`.
 - `CoverThumbnail.tsx` — shared cover image / fallback-letter-avatar,
-  used by Tome and Element cards.
+  used by Tome and Element cards and the tome dashboard. **It is the only
+  component allowed to render a stored `ImageSource`**, because it owns that
+  image's object-URL lifetime: `imageUrl` from `services/store` mints a *fresh*
+  `URL.createObjectURL` on every call for a `kind: "local"` cover and hands the
+  caller the revoke, so calling it in a render body leaks one URL per render and
+  pins the Blob for the life of the document. Here the blob case lives in a
+  `useLayoutEffect` keyed on the Blob that revokes on unmount and on change; the
+  `kind: "url"` case allocates nothing and is read straight through. It is a
+  *layout* effect on purpose — with `useEffect` the first frame paints the
+  fallback monogram and the real cover flashes in behind it. Its no-image
+  fallback is also why nothing in the app needs a placeholder image asset: reach
+  for this component rather than an `<img>` with a `/images/…` default, which
+  would 404 anyway under `base: "/myTome/"`.
 - `ImagePicker.tsx` — clickable image-or-placeholder tile used in the Tome
   and Element edit forms; opens a dialog to paste an image URL or upload a
   file (via `imageFrom`/`imageUrl` from `services/store.ts`, which already
