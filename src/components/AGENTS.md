@@ -6,7 +6,7 @@ folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
 `EmptyState`, `ColorModeToggle`, `PlotTimeline`, `PlotGrid`, `TimelineCard`,
 `PlotBeatCard`, `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`,
-`WriteItemCard`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`,
+`WriteItemRow`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`,
 `PolicyProse`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
 rather than here — they are not MUI components and only the Write editor
@@ -345,6 +345,33 @@ a property of this browser, not of a tome. The measure is **not** settable:
 *characters* when the face changes. It is a `max-width`, so a phone is bound by
 its own width (~37 characters) and never overflows.
 
+## The Write list is a table, and it is the app's only one
+
+`WriteListPage` was a grid of cards and is now an MUI `Table` — the first and
+so far only table in the repo, so what it settled is the pattern for the next
+one:
+
+- **The row opens the item, and the title is a real button as well.** A `<tr>`
+  with an `onClick` is unreachable from the keyboard, and giving the row a
+  button role would cost the table its semantics; so the mouse gets the whole
+  row and the keyboard gets the title, which is also the accessible name. The
+  title's handler calls `stopPropagation` — without it a click there runs both
+  and navigates twice.
+- **Every header sorts, so there is no sort control.** The old
+  "Recently updated / Story order / Alphabetical" `<select>` is gone: those are
+  three of the five columns, and `services/storyOrder.ts` owns which way each
+  one opens. Note that "Used in" *is* story order — see the root AGENTS.md.
+- **"Used in" and "Words" fold away below `sm`; "Updated" does not.** At that
+  width `SideNav` is already a horizontal strip and five columns cannot fit, but
+  which text was touched last is the question a phone gets asked. The cells lose
+  ~6px of MUI's 16px padding there too, without which the table grows a
+  horizontal scrollbar of its own inside a body that fits.
+- **The delete button is revealed on hover — except below `sm`, where it
+  stays.** A column of delete buttons is an invitation on a desktop; a phone has
+  no hover to reveal one with, and an action reachable only by hovering is no
+  action at all. It is `opacity`, not `display`, so `:focus-visible` can bring
+  it back for the keyboard.
+
 ## The Write editor autosaves — it deliberately has no Save button
 
 `../pages/WriteEditorPage.tsx` is the one screen that does **not** follow the
@@ -631,11 +658,14 @@ none of those.
 - `PlotTemplatePicker.tsx` — the story-structure select shared by
   `TomeFormDialog` and `PlotPicker`, with a preview of the beat count and beat
   labels the chosen structure will write. Controlled: the parent owns the id.
-- `WriteItemCard.tsx` — the small, title-only card in the Write grid. It owns
-  its own 250ms hover timer and `Popover` sample rather than letting the page
-  track which of n cards is hovered. The `Popover` is
-  `pointerEvents: "none"` so it never becomes the mouse target and bounces
-  `mouseleave` off the card beneath it.
+- `WriteItemRow.tsx` — one row of the Write table. It owns its own 250ms hover
+  timer and `Popover` sample rather than letting the page track which of n rows
+  is hovered. The `Popover` is `pointerEvents: "none"` so it never becomes the
+  mouse target and bounces `mouseleave` off the row beneath it. Also holds the
+  two display rules the table needs and nothing else does: a date read as
+  "Today" / "3 days ago" for a week and as a plain date after that, and
+  "Main plot · Departure" collapsing to "3 beats" (with the full list in a
+  tooltip) once naming them all would not fit.
 - `WriteItemTypeIcon.tsx` — glyph for a `WriteItemType`. Unlike
   `ElementTypeIcon` there is no registry or fallback: the four types are a
   closed union, so the mapping is total.

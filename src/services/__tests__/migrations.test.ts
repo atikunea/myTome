@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import Dexie, { type Transaction } from "dexie";
-import { backfillPlotRows, MyTomeDB } from "../../models/db";
+import { backfillPlotRows, backfillWordCounts, MyTomeDB } from "../../models/db";
 import type { PlotItem, PlotRow } from "../../models/Plot";
 
 /**
@@ -30,6 +30,35 @@ const v6Stores = {
   writeItems: "id, tomeId, [tomeId+type], [tomeId+updatedAt], title",
 };
 
+const v7Stores = {
+  ...v6Stores,
+  plotRows: "id, tomeId, [tomeId+sortOrder]",
+  plotItems:
+    "id, tomeId, plotId, [plotId+sortOrder], plotRowId, *attachedElementIds, *writeItemIds",
+};
+
+/** A pre-v8 prose row: a stored document, and no count derived from it yet. */
+const legacyText = (id: string, ...words: string[]) => ({
+  id,
+  tomeId: "t1",
+  title: id,
+  type: "passage",
+  content: JSON.stringify({
+    root: {
+      children: words.map((line) => ({
+        type: "paragraph",
+        version: 1,
+        children: [{ type: "text", text: line, format: 0, version: 1 }],
+      })),
+      type: "root",
+      version: 1,
+    },
+  }),
+  preview: words.join(" "),
+  createdAt: "2024-01-01T00:00:00.000Z",
+  updatedAt: "2024-01-01T00:00:00.000Z",
+});
+
 /** A pre-spine beat: no `plotRowId`, order carried by `sortOrder` alone. */
 const legacyBeat = (
   tomeId: string,
@@ -56,13 +85,14 @@ const names: string[] = [];
 
 /** Opens a database stamped at an old version, seeds it, and closes it again. */
 const seedLegacy = async (
-  version: 4 | 6,
+  version: 4 | 6 | 7,
   seed: (write: (table: string, rows: unknown[]) => Promise<unknown>) => Promise<void>,
 ) => {
   const name = `myTomeDB-test-${crypto.randomUUID()}`;
   names.push(name);
   const old = new Dexie(name);
-  old.version(version).stores(version === 4 ? v4Stores : v6Stores);
+  const stores = { 4: v4Stores, 6: v6Stores, 7: v7Stores }[version];
+  old.version(version).stores(stores);
   await old.open();
   await seed((table, rows) => old.table(table).bulkAdd(rows));
   old.close();
@@ -73,7 +103,7 @@ const seedLegacy = async (
 const upgrade = async (name: string) => {
   const db = new MyTomeDB(name);
   await db.open();
-  expect(db.verno).toBe(7);
+  expect(db.verno).toBe(8);
   const items = await db.plotItems.toArray();
   const rows = await db.plotRows.toArray();
   db.close();
@@ -233,5 +263,66 @@ describe("v5/v6 — backfillWriteItemIds", () => {
     expect(items[0].writeItemIds).toEqual([]);
     // The v7 upgrade ran over the same rows in the same open.
     expect(items[0].plotRowId).toBeTruthy();
+  });
+});
+
+describe("v8 — backfillWordCounts", () => {
+  /** Opens the seeded database as the current schema and reads its prose rows. */
+  const upgradeTexts = async (name: string) => {
+    const db = new MyTomeDB(name);
+    await db.open();
+    const items = await db.writeItems.toArray();
+    db.close();
+    return items;
+  };
+
+  it("counts the words already in a v7-era document", async () => {
+    const name = await seedLegacy(7, async (write) => {
+      await write("writeItems", [
+        legacyText("one", "the salt road", "ran east"),
+        legacyText("empty"),
+      ]);
+    });
+
+    const items = await upgradeTexts(name);
+
+    // The count has to be *derived* here, not defaulted: a library upgraded
+    // into v8 would otherwise read as a tome of zero-word chapters.
+    expect(items.find((item) => item.id === "one")!.wordCount).toBe(5);
+    expect(items.find((item) => item.id === "empty")!.wordCount).toBe(0);
+  });
+
+  it("leaves a count that is already there alone on a re-run", async () => {
+    const name = await seedLegacy(7, async (write) => {
+      await write("writeItems", [legacyText("one", "two words here")]);
+    });
+    await upgradeTexts(name);
+
+    // Rule 4's remedy is a fresh version carrying the same backfill again, so
+    // it is called by hand over a database that has already run it.
+    const db = new MyTomeDB(name);
+    await db.open();
+    await db.writeItems.update("one", { wordCount: 99 });
+    await db.transaction("rw", db.writeItems, () =>
+      backfillWordCounts(Dexie.currentTransaction as Transaction),
+    );
+    const after = await db.writeItems.get("one");
+    db.close();
+
+    // Not 3: a row holding a number is skipped rather than re-parsed, which is
+    // what makes re-running the backfill cheap.
+    expect(after!.wordCount).toBe(99);
+  });
+
+  it("gives an unreadable document a count of zero rather than throwing", async () => {
+    const name = await seedLegacy(7, async (write) => {
+      await write("writeItems", [{ ...legacyText("bad"), content: "not json" }]);
+    });
+
+    const items = await upgradeTexts(name);
+
+    // An upgrade that throws leaves the database unopenable, so the one row a
+    // hand-edited backup damaged must not take the whole library with it.
+    expect(items[0].wordCount).toBe(0);
   });
 });

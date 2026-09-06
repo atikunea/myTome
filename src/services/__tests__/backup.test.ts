@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { db } from "../../models/db";
 import type { PlotItem } from "../../models/Plot";
+import type { WriteItem } from "../../models/WriteItem";
 import { backupFileName, parseBackup, store } from "../store";
 import type { BackupFile } from "../store";
 import { addBeat, beatsOf, expectSpineIntact, makeTome } from "./helpers";
@@ -334,6 +335,56 @@ describe("files from other versions", () => {
       "and then",
     ]);
     expect((await beatsOf(plots[0].id)).map((b) => b.writeItemIds)).toEqual([[], []]);
+  });
+
+  it("counts the words of prose from a pre-v8 file", async () => {
+    const { tome } = await fullTome("The Long Road");
+    const item = await store.createDraftWriteItem(tome.id, "chapter");
+    await store.saveWriteItem({
+      id: item.id,
+      title: "The salt road",
+      type: "chapter",
+      content: JSON.stringify({
+        root: {
+          type: "root",
+          version: 1,
+          children: [
+            {
+              type: "paragraph",
+              version: 1,
+              children: [
+                { type: "text", text: "Nine miles to the ferry.", format: 0, version: 1 },
+              ],
+            },
+          ],
+        },
+      }),
+      preview: "Nine miles to the ferry.",
+    });
+    const file = throughJson(await store.exportTomeBackup(tome.id));
+
+    // What a v7 export held: the document, and no count derived from it.
+    const old: BackupFile = {
+      ...file,
+      schemaVersion: 7,
+      tomes: [
+        {
+          ...file.tomes[0],
+          writeItems: file.tomes[0].writeItems.map((row) => {
+            const { wordCount: _drop, ...rest } = row;
+            return rest as WriteItem;
+          }),
+        },
+      ],
+    };
+
+    await store.restoreBackup(old, "replace");
+
+    // A restore bypasses Dexie's upgrades, so the field the v8 upgrade would
+    // have filled has to be derived here instead — otherwise a library restored
+    // from an older file reads as a shelf of zero-word chapters.
+    const stored = await db.writeItems.get(item.id);
+    expect(stored!.wordCount).toBe(5);
   });
 
   it("refuses a file from a newer version of the app", () => {

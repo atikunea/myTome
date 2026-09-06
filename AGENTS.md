@@ -157,7 +157,7 @@ services/
   storage.ts       navigator.storage.persist(). Touches no table; not on `store`.
   manuscript.ts    Pure: what a plot line's manuscript contains. Reads no table.
   manuscriptDocx.ts  That manuscript as OOXML. Lazy-loaded; not on `store`.
-  storyOrder.ts    Pure: how the Write list orders prose. Reads no table.
+  storyOrder.ts    Pure: what the Write list shows and how it orders it. Reads no table.
   __tests__/       vitest + fake-indexeddb. See below.
 ```
 
@@ -444,12 +444,12 @@ Four rules the export keeps:
 `manuscript.ts` reads no table — it takes rows the page already observes — so it
 is on neither `store` nor the barrel, like `validate.ts` and `parseBackup`.
 
-### `storyOrder.ts` — the Write list's sort, pulled out of the page
+### `storyOrder.ts` — what the Write list shows, pulled out of the page
 
 `storyKeys` and `sortWriteItems` were `WriteListPage` locals, and moved for the
 reason `hooks/autosave.ts` and `lexical/blocks.ts` did: they are only data and
 comparisons, so under `node` they get real assertions while the page keeps a
-`useMemo` and a `<select>`. Like `manuscript.ts` they read no table and sit on
+`useMemo` and a table header. Like `manuscript.ts` they read no table and sit on
 neither `store` nor the barrel. **Reach for this split whenever a page grows a
 sort, a filter or a key function worth being sure about** — it is cheaper than
 adding a DOM environment, and it is why "no component tests" has not meant "no
@@ -459,6 +459,26 @@ Two things the tests pin that the old inline version left implicit: story order
 is **plot-major** (all of plot A precedes any of plot B, however deep the beat),
 and a text composed into several beats takes the **earliest**, so a passage
 reused later still sorts where it is first read.
+
+The list is a table, and each of its five columns sorts, so `WriteSort` names a
+**column** rather than one of three modes. Three rules hold that together:
+
+- **"Used in" *is* story order.** A text's place in the book is its earliest
+  composing beat, which is exactly what `storyKeys` ranks by — so the column
+  naming the beat and the sort putting the list in reading order are the same
+  thing, and the page has no sort control beyond its headers.
+- **Comparators are ascending by definition and `direction` flips them**, with
+  `defaultDirection` deciding which way a column opens on its first click.
+  Dates and word counts open at their largest; names at their first letter.
+- **The recency tiebreak never flips.** Reversing the column the author clicked
+  is the request; reversing which of two identically titled drafts comes first
+  is noise, so the tiebreak sits outside the sign.
+
+`writeItemUses` is the other half — every beat composing each text, in reading
+order, for the "Used in" cell. A text composed into several beats gets several
+entries: that reuse is the model working as designed, so it is reported rather
+than thinned, and only a beat whose *plot* has gone is dropped (there would be
+nothing to name it after).
 
 ### There is no PDF library, and there should not be one
 
@@ -507,7 +527,7 @@ else they appear.
 
 ## Dexie schema changes — read before editing `models/db.ts`
 
-The database is `myTomeDB`, at **version 7**, running in users' browsers.
+The database is `myTomeDB`, at **version 8**, running in users' browsers.
 
 1. **Never edit a shipped `.version(n).stores({…})` block.** Add
    `.version(n+1)`. Dexie replays versions in order to upgrade an existing
@@ -532,6 +552,17 @@ The database is `myTomeDB`, at **version 7**, running in users' browsers.
    old side-by-side compare view drew, the only alignment pre-v7 data can
    justify. It is resumable as well as idempotent: rows are topped up rather than
    recreated, and a beat that already names a row is skipped.
+6. **v8 added `wordCount` to `writeItems`** — rule 2's second half again, and
+   the one backfill that has to **parse** rather than default: the count is
+   derived from the stored Lexical document via `countDocumentWords`. It skips
+   a row that already holds a number, so re-running it is nearly free. The field
+   is a cache of `content` in exactly the way `preview` is, and
+   `services/writeItems.ts` is its only writer — it counts the untruncated text
+   the editor hands over, so the save path never parses at all. **A restore
+   derives it too**, in `writeTome`, since a pre-v8 backup file carries no
+   count and a restore bypasses Dexie's upgrades. No index came with the bump:
+   the Write list sorts one tome's rows in memory, and an index Dexie would
+   maintain on every autosave keystroke would buy nothing.
 
 ## Naming — these are load-bearing
 

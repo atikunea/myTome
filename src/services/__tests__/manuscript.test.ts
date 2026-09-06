@@ -56,6 +56,7 @@ const text = (
   type,
   content: lexical(...paragraphs),
   preview: "",
+  wordCount: 0,
   createdAt: TIME,
   updatedAt: TIME,
 });

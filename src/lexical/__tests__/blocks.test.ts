@@ -12,6 +12,7 @@ import {
 import { emptyWriteItemContent } from "../../models/WriteItem";
 import {
   blocksText,
+  countDocumentWords,
   countWords,
   formatsOf,
   innerTagFor,
@@ -465,5 +466,36 @@ describe("blocksText and countWords", () => {
     expect(countWords("   \n  ")).toBe(0);
     expect(countWords("one")).toBe(1);
     expect(countWords("  one   two\nthree ")).toBe(3);
+  });
+});
+
+describe("countDocumentWords", () => {
+  it("counts a stored document without anyone having to walk it first", () => {
+    const content = doc(
+      paragraph(text("The rain had not stopped.")),
+      paragraph(text("Nine miles to go.")),
+    );
+
+    // The path the v8 backfill and a restored backup row take: JSON in, the
+    // number `WriteItem.wordCount` caches out.
+    expect(countDocumentWords(content)).toBe(9);
+  });
+
+  it("agrees with the editor, which counts the same text without parsing", () => {
+    const content = doc(paragraph(text("She kept the salt tin dry.")));
+
+    // `saveWriteItem` counts Lexical's own plain text instead of parsing, so
+    // the two paths have to land on the same number or a row's count would
+    // change the first time it was saved after an upgrade.
+    expect(countDocumentWords(content)).toBe(countWords("She kept the salt tin dry."));
+  });
+
+  it("reads an unparseable document as no words rather than throwing", () => {
+    expect(countDocumentWords("not json")).toBe(0);
+    expect(countDocumentWords("")).toBe(0);
+  });
+
+  it("counts a freshly created draft as empty", () => {
+    expect(countDocumentWords(emptyWriteItemContent)).toBe(0);
   });
 });

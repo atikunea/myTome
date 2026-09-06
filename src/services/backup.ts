@@ -1,3 +1,4 @@
+import { countDocumentWords } from "../lexical/blocks";
 import { backfillPlotRows, db } from "../models/db";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
@@ -267,7 +268,16 @@ const writeTome = async (entry: TomeBackup) => {
       plotRowId: rowIds.has(item.plotRowId) ? item.plotRowId : "",
     })),
   );
-  await db.writeItems.bulkPut(entry.writeItems);
+  await db.writeItems.bulkPut(
+    entry.writeItems.map((item) => ({
+      ...item,
+      // A file written before v8 carries no count. It is the one field a
+      // restore has to *derive* rather than default, and it is per-row — no
+      // cross-row knowledge, unlike the spine above — so it is done here beside
+      // the beat's own defaults instead of in a backfill pass afterwards.
+      wordCount: item.wordCount ?? countDocumentWords(item.content ?? ""),
+    })),
+  );
 };
 
 export const backupStore = {

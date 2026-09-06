@@ -6,6 +6,7 @@ import {
   previewLength,
   untitledWriteItem,
 } from "../models/WriteItem";
+import { countWords } from "../lexical/blocks";
 import { detachWriteItem, now, observe, readPlotItem, uid } from "./internal";
 
 /**
@@ -76,6 +77,7 @@ export const writeItemStore = {
       type,
       content: emptyWriteItemContent,
       preview: "",
+      wordCount: 0,
       createdAt: time,
       updatedAt: time,
     };
@@ -103,6 +105,10 @@ export const writeItemStore = {
       type: input.type,
       content: input.content,
       preview: input.preview.slice(0, previewLength),
+      // Counted from the *untruncated* text the editor sent, before `preview`
+      // is cut to its 240 characters: the caller hands over the whole document
+      // as plain text already, so the count costs a split rather than a parse.
+      wordCount: countWords(input.preview),
       updatedAt: now(),
     });
   },

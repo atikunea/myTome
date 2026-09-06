@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { Plot, PlotItem } from "../../models/Plot";
 import type { WriteItem } from "../../models/WriteItem";
-import { sortWriteItems, storyKeys, uncomposed } from "../storyOrder";
+import {
+  defaultDirection,
+  sortWriteItems,
+  storyKeys,
+  uncomposed,
+  writeItemUses,
+} from "../storyOrder";
 
 /**
  * The Write list's ordering, driven as data. These are plain objects rather than
@@ -49,6 +55,7 @@ const text = (
   type: "passage",
   content: "",
   preview: "",
+  wordCount: 0,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   ...over,
@@ -156,7 +163,7 @@ describe("sortWriteItems", () => {
       keys: new Map(),
     });
 
-    // "" would sort first; "Untitled" is what the card actually shows, so that
+    // "" would sort first; "Untitled" is what the row actually shows, so that
     // is what the list has to sort by or the order looks wrong on screen.
     expect(visible.map((item) => item.id)).toEqual(["blank", "z"]);
   });
@@ -191,5 +198,181 @@ describe("uncomposed", () => {
     const keys = storyKeys([plot("a", 0)], [beat("a", 0, ["real"])]);
 
     expect(keys.get("real")![0]).toBeLessThan(uncomposed[0]);
+  });
+});
+
+describe("sortWriteItems — columns and direction", () => {
+  it("orders types by the union's own order, not by their alphabet", () => {
+    const visible = sortWriteItems({
+      items: [
+        text("c", { type: "chapter" }),
+        text("s", { type: "snippet" }),
+        text("p", { type: "passage" }),
+        text("l", { type: "lore" }),
+      ],
+      typeFilter: "all",
+      sort: "type",
+      keys: new Map(),
+    });
+
+    // Alphabetically this would be chapter, lore, passage, snippet — which says
+    // nothing. The authored order runs from scratch to finished prose.
+    expect(visible.map((item) => item.id)).toEqual(["s", "l", "p", "c"]);
+  });
+
+  it("orders by word count, longest first by default", () => {
+    const visible = sortWriteItems({
+      items: [
+        text("short", { wordCount: 12 }),
+        text("long", { wordCount: 4200 }),
+        text("empty", { wordCount: 0 }),
+      ],
+      typeFilter: "all",
+      sort: "words",
+      keys: new Map(),
+    });
+
+    expect(visible.map((item) => item.id)).toEqual(["long", "short", "empty"]);
+  });
+
+  it("reverses the column when the direction is flipped", () => {
+    const items = [text("b", { wordCount: 2 }), text("a", { wordCount: 1 })];
+
+    expect(
+      sortWriteItems({
+        items,
+        typeFilter: "all",
+        sort: "words",
+        direction: "asc",
+        keys: new Map(),
+      }).map((item) => item.id),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("keeps the recency tiebreak pointing the same way in both directions", () => {
+    // Two rows the sorted column cannot separate, one clearly newer.
+    const items = [
+      text("stale", { wordCount: 10, updatedAt: "2026-01-01T00:00:00.000Z" }),
+      text("fresh", { wordCount: 10, updatedAt: "2026-06-01T00:00:00.000Z" }),
+    ];
+    const ids = (direction: "asc" | "desc") =>
+      sortWriteItems({
+        items,
+        typeFilter: "all",
+        sort: "words",
+        direction,
+        keys: new Map(),
+      }).map((item) => item.id);
+
+    // Reversing the column the author clicked is the point; reversing which of
+    // two indistinguishable rows comes first is only noise.
+    expect(ids("desc")).toEqual(["fresh", "stale"]);
+    expect(ids("asc")).toEqual(["fresh", "stale"]);
+  });
+
+  it("opens dates and word counts at their largest, names at their first letter", () => {
+    // The one-click reading of each column, asserted where it is decided.
+    expect(defaultDirection.recent).toBe("desc");
+    expect(defaultDirection.words).toBe("desc");
+    expect(defaultDirection.alpha).toBe("asc");
+    expect(defaultDirection.story).toBe("asc");
+    expect(defaultDirection.type).toBe("asc");
+  });
+});
+
+describe("sortWriteItems — search", () => {
+  const items = [
+    text("titled", { title: "The salt road", preview: "" }),
+    text("bodied", { title: "Untitled", preview: "They took the salt road east." }),
+    text("other", { title: "Ferry", preview: "The crossing." }),
+  ];
+
+  it("matches the title and the stored preview, ignoring case", () => {
+    const visible = sortWriteItems({
+      items,
+      typeFilter: "all",
+      query: "SALT",
+      sort: "alpha",
+      keys: new Map(),
+    });
+
+    // The preview is only the first 240 characters of the document, so this
+    // finds openings rather than everything — which is what the box promises.
+    expect(visible.map((item) => item.id).sort()).toEqual(["bodied", "titled"]);
+  });
+
+  it("ignores a query that is only whitespace", () => {
+    const visible = sortWriteItems({
+      items,
+      typeFilter: "all",
+      query: "   ",
+      sort: "alpha",
+      keys: new Map(),
+    });
+
+    expect(visible).toHaveLength(3);
+  });
+
+  it("narrows within the type filter rather than around it", () => {
+    const visible = sortWriteItems({
+      items: [
+        text("a", { type: "lore", title: "salt" }),
+        text("b", { type: "chapter", title: "salt" }),
+      ],
+      typeFilter: "chapter",
+      query: "salt",
+      sort: "alpha",
+      keys: new Map(),
+    });
+
+    expect(visible.map((item) => item.id)).toEqual(["b"]);
+  });
+});
+
+describe("writeItemUses", () => {
+  it("names every beat composing a text, in reading order", () => {
+    const uses = writeItemUses(
+      [plot("a", 0), plot("b", 1)],
+      [beat("b", 0, ["shared"]), beat("a", 3, ["shared"])],
+    );
+
+    // Reuse across beats is the model working as designed, so both appear —
+    // and plot-major order puts the later beat of plot A ahead of plot B's.
+    expect(uses.get("shared")!.map((use) => use.beatTitle)).toEqual([
+      "beat 3",
+      "beat 0",
+    ]);
+    expect(uses.get("shared")!.map((use) => use.plotName)).toEqual(["a", "b"]);
+  });
+
+  it("has no entry at all for a text no beat composes", () => {
+    const uses = writeItemUses([plot("a", 0)], [beat("a", 0, ["used"])]);
+
+    // The row renders "Not used" from the absence; an empty array would mean
+    // the same thing twice.
+    expect(uses.has("loose")).toBe(false);
+  });
+
+  it("drops a beat whose plot has gone rather than naming a missing plot", () => {
+    const uses = writeItemUses([plot("a", 0)], [beat("gone", 0, ["orphan"])]);
+
+    expect(uses.has("orphan")).toBe(false);
+  });
+
+  it("falls back to the beat label, then to Untitled beat", () => {
+    const labelled = { ...beat("a", 0, ["x"]), title: "", name: "Act I" };
+    const nameless = { ...beat("a", 1, ["y"]), title: "", name: "  " };
+
+    const uses = writeItemUses([plot("a", 0)], [labelled, nameless]);
+
+    // The same rule the manuscript export prints its beat headings by.
+    expect(uses.get("x")![0].beatTitle).toBe("Act I");
+    expect(uses.get("y")![0].beatTitle).toBe("Untitled beat");
+  });
+
+  it("tolerates a beat that arrived without its writeItemIds array", () => {
+    const legacy = { ...beat("a", 0, []), writeItemIds: undefined } as unknown as PlotItem;
+
+    expect(() => writeItemUses([plot("a", 0)], [legacy])).not.toThrow();
   });
 });

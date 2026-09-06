@@ -354,3 +354,14 @@ export function countWords(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
+
+/**
+ * Words in a *stored* document — the parsing path, for the two callers that
+ * hold JSON rather than plain text: the v8 backfill and a restored backup row.
+ * The editor never needs it, since it already has the text the count comes
+ * from, and `WriteItem.wordCount` exists so the Write list never needs it
+ * either.
+ */
+export function countDocumentWords(content: string): number {
+  return countWords(blocksText(lexicalToBlocks(content)));
+}

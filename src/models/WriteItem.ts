@@ -27,6 +27,14 @@ export interface WriteItem {
    * string check rather than a document walk.
    */
   preview: string;
+  /**
+   * Words in `content`, recomputed on every save beside `preview` and for the
+   * same reason: the Write list shows one per row, and parsing every text's
+   * Lexical JSON on each live-query tick to get it would be paid on every
+   * keystroke anywhere in the tome. Like `preview` it is a cache of the
+   * document, never authored — `services/writeItems.ts` is its only writer.
+   */
+  wordCount: number;
   createdAt: string;
   updatedAt: string;
 }

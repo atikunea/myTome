@@ -5,6 +5,7 @@ import type { ElementType } from "./ElementType";
 import type { Relationship } from "./Relationship";
 import type { Plot, PlotItem, PlotRow } from "./Plot";
 import type { WriteItem } from "./WriteItem";
+import { countDocumentWords } from "../lexical/blocks";
 export interface Activity {
   id: string;
   tomeId: string;
@@ -69,6 +70,24 @@ export const backfillPlotRows = async (tx: Transaction) => {
         if (!item.plotRowId) await itemTable.update(item.id, { plotRowId: rows[i].id });
   }
 };
+/**
+ * Gives every prose row the `wordCount` the Write list reads straight off it.
+ * Unlike the two backfills above, this one has to *parse* to find its value —
+ * the count is derived from the stored Lexical document — which is the whole
+ * reason the row carries it: doing this per row per render is the cost being
+ * avoided.
+ *
+ * Safe to run repeatedly, and cheap on a second pass: a row that already holds
+ * a number is skipped rather than re-parsed.
+ */
+export const backfillWordCounts = (tx: Transaction) =>
+  tx
+    .table<WriteItem>("writeItems")
+    .toCollection()
+    .modify((item) => {
+      if (typeof item.wordCount !== "number")
+        item.wordCount = countDocumentWords(item.content ?? "");
+    });
 export class MyTomeDB extends Dexie {
   tomes!: EntityTable<Tome, "id">;
   elements!: EntityTable<Element, "id">;
@@ -148,6 +167,15 @@ export class MyTomeDB extends Dexie {
           "id, tomeId, plotId, [plotId+sortOrder], plotRowId, *attachedElementIds, *writeItemIds",
       })
       .upgrade(backfillPlotRows);
+    // v8 adds `wordCount` to `writeItems` — a new field on an existing table,
+    // so it needs its upgrade (rule 2). No index comes with it: the Write list
+    // sorts one tome's rows in memory, and an index Dexie would have to
+    // maintain on every autosave keystroke would buy nothing.
+    this.version(8)
+      .stores({
+        writeItems: "id, tomeId, [tomeId+type], [tomeId+updatedAt], title",
+      })
+      .upgrade(backfillWordCounts);
   }
 }
 export const db = new MyTomeDB();

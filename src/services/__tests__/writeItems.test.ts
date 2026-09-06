@@ -23,6 +23,7 @@ describe("createDraftWriteItem", () => {
     expect(item.type).toBe("chapter");
     expect(item.title).toBe(untitledWriteItem);
     expect(item.preview).toBe("");
+    expect(item.wordCount).toBe(0);
   });
 
   it("parses as an empty Lexical document rather than as nothing", async () => {
@@ -85,6 +86,24 @@ describe("saveWriteItem", () => {
     // Validating here would throw while the author is still clearing the field;
     // the list falls back to "Untitled" for display instead.
     expect((await db.writeItems.get(item.id))!.title).toBe("   ");
+  });
+
+  it("counts the words of the whole document, not of the kept preview", async () => {
+    const { item } = await seed();
+    const words = 400;
+
+    await store.saveWriteItem({
+      id: item.id,
+      title: "Long",
+      type: "passage",
+      content: "{}",
+      preview: Array.from({ length: words }, (_, i) => "w" + i).join(" "),
+    });
+
+    // The caller hands over the untruncated text, and the count is taken from
+    // it before `preview` is cut — counting the stored excerpt instead would
+    // report a few hundred words for every chapter in the tome.
+    expect((await db.writeItems.get(item.id))!.wordCount).toBe(words);
   });
 
   it("truncates the preview to what the hover card can show", async () => {
