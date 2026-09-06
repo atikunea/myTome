@@ -587,10 +587,17 @@ The database is `myTomeDB`, at **version 8**, running in users' browsers.
 
 Dialogs and edit forms are **URL-addressable**, not `useState` booleans. The
 pattern: one page component mounted by several routes, taking a boolean prop.
-`/tomes` and `/tomes/new` both render `<TomeLibraryPage>`, the second with
-`creating`; `elements/:typeId/:elementId/edit`, `plots/:plotId/items/:itemId`,
-and `elements/settings/new` work the same way. New create/edit UI gets a route,
-not a local open/closed flag — back, refresh, and deep links must work.
+`/tomes`, `/tomes/new` and `/tomes/guide` all render `<TomeLibraryPage>`, the
+second with `creating` and the third with `guide`;
+`elements/:typeId/:elementId/edit`, `plots/:plotId/items/:itemId`, and
+`elements/settings/new` work the same way. New create/edit UI gets a route, not
+a local open/closed flag — back, refresh, and deep links must work.
+
+**`/tomes/guide` is a route for a reason beyond the pattern.** The library page
+shows the guide in full while the shelf is empty and shrinks it to a dismissible
+strip afterwards, so without an address of its own the guide would be a page an
+author could destroy with one ✕. It is also the kind of thing someone sends to
+someone else. See `components/AGENTS.md` for the trio that renders it.
 
 One deliberate exception is `write/:writeItemId`, which has **no `write/new`
 sibling**: a draft row is created at the click site and the editor opens on its
@@ -628,11 +635,16 @@ claims about this repo.** `pages/PrivacyPolicyPage.tsx` and
 library page because that is the first screen anyone lands on, and each links to
 the other. They have no state and no store calls, but they are not inert:
 
-- Privacy says what is stored (the `models/db.ts` tables, plus the `colorMode`
-  and prose-face keys in `context/` and drive's last-sync mark), what can leave
-  the browser, and what Drive sync sends. **Its network list is the CSP in
-  `vite.config.ts`, in prose.** Widen that policy — a new host, a new scope, a
-  second remote dependency — and the page is wrong until it is edited too.
+- Privacy says what is stored (the `models/db.ts` tables, plus every
+  `localStorage` key: the `colorMode` and prose-face keys in `context/`, the
+  guide dismissal in `components/GuideStrip.tsx`, and drive's last-sync mark),
+  what can leave the browser, and what Drive sync sends. **Its network list is
+  the CSP in `vite.config.ts`, in prose.** Widen that policy — a new host, a new
+  scope, a second remote dependency — and the page is wrong until it is edited
+  too. **A new `localStorage` key is the same kind of edit**, and cheaper to
+  forget: the storage list enumerates them, so adding one anywhere in `src/`
+  makes this page wrong until it is counted there and the "Last updated" line
+  moves.
 - Terms is "terms of *use*", not "of service", and the distinction is the point:
   with no server, no accounts and nothing operated on anyone's behalf, there is
   no service to suspend and no account to terminate, so the page is warranty,

@@ -585,6 +585,40 @@ a document needs — back to the library, a title, a lede, a "Last updated" line
 a sibling link. Don't grow it into a general page scaffold for pages that have
 none of those.
 
+## The library page teaches once, then steps aside
+
+The front page carries the app's only documentation, and four components in
+here render it: `LibraryGuide` (the whole guide), `SpineDiagram` (its one
+picture), `GuideStrip` (the line it shrinks to), and `FeatureHighlights` (the
+band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
+
+- **An empty shelf is the only screen with nothing to lose**, so it is given
+  over entirely to `LibraryGuide`. Once there are tomes the shelf comes first
+  and the guide is one dismissible strip — a returning author should not scroll
+  past a pitch to reach their books.
+- **The branch is on an empty *library*, not an empty *result*.** A search
+  matching nothing still gets `EmptyState`: those tomes exist and the author
+  simply cannot see them, so replacing the shelf with a beginner's walkthrough
+  would be a lie about their library.
+- **Dismissal is not deletion.** `GuideStrip`'s ✕ writes
+  `mytome:guide-dismissed` to `localStorage` and the guide keeps its address at
+  `/tomes/guide`, linked from the library footer. Any UI that hides something
+  permanently owes the author a way back to it. That key is also a claim the
+  privacy page makes — see the root AGENTS.md.
+- **`LibraryGuide` is numbered and `FeatureHighlights` is not**, and that is
+  content rather than styling: the five steps are the order the app actually
+  requires (a tome before elements, elements before the beats that attach them,
+  beats before the prose that sits on them), while the three highlights are
+  unordered capabilities. Don't number a list that isn't a sequence.
+- **`SpineDiagram` teaches the row axis by drawing it**, because "beats on the
+  same row are contemporaneous" means nothing to a reader who has not yet seen
+  a gap. It is an illustration with sample beats — it reads no table, and it
+  tracks `PlotGrid` by hand, which is the right trade for a picture that has to
+  survive being a third of the size.
+- **The guide says what an author gets, never what the code holds.** No
+  "element type", no "plot row", no "spine" — a reader who has not opened a tome
+  has no referent for any of them. The app teaches its own vocabulary in place.
+
 ## Current components
 
 - `SideNav.tsx` — per-tome left nav; lists the tome's ElementTypes. Reads
@@ -594,6 +628,15 @@ none of those.
   file; used only by `../pages/BackupPage.tsx`. See above.
 - `PolicyProse.tsx` — chrome and prose primitives for the privacy and terms
   pages. See above.
+- `LibraryGuide.tsx` — the five-step guide: the whole of the library page when
+  the shelf is empty, and the whole of `/tomes/guide` after. Takes `firstTome`
+  only so its button can say "Make your first tome" honestly. See above.
+- `SpineDiagram.tsx` — the drawing of three plots against one row axis, inside
+  `LibraryGuide`. Sample beats, no table read. See above.
+- `GuideStrip.tsx` — the one line the guide shrinks to once tomes exist. Owns
+  its own visibility and its `localStorage` dismissal. See above.
+- `FeatureHighlights.tsx` — the three-up band under a full shelf: compare,
+  backup, export. Deliberately unordered and unnumbered. See above.
 - `ManuscriptExportDialog.tsx` — turns one plot line into a `.docx` or a PDF,
   mounted by `plots/:plotId/export`. It owns only the two choices (which
   `WriteItemType`s, and whether beats open with their label) and the two

@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import type { Tome, TomeStatus } from "../models/Tome";
 import { store } from "../services/store";
@@ -23,6 +24,9 @@ import { useTomes } from "../context/TomesContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { CoverThumbnail } from "../components/CoverThumbnail";
 import { EmptyState } from "../components/EmptyState";
+import { FeatureHighlights } from "../components/FeatureHighlights";
+import { GuideStrip } from "../components/GuideStrip";
+import { LibraryGuide } from "../components/LibraryGuide";
 import { TomeFormDialog } from "../components/TomeFormDialog";
 
 const statusChipColor: Record<TomeStatus, "warning" | "success" | "default"> = {
@@ -31,7 +35,27 @@ const statusChipColor: Record<TomeStatus, "warning" | "success" | "default"> = {
   Archived: "default",
 };
 
-export function TomeLibraryPage({ creating = false }: { creating?: boolean }) {
+/**
+ * The library, and the front page of the app.
+ *
+ * It teaches once and then steps aside. An empty shelf is the only screen with
+ * nothing to lose, so it is given over entirely to `LibraryGuide`; once there
+ * are tomes the shelf comes first and the guide shrinks to `GuideStrip`, which
+ * an author can dismiss for good. The guide keeps a permanent address at
+ * `/tomes/guide` (this same page, `guide`), linked from the footer, so nothing
+ * is lost by dismissing it — and so "read the guide" is a link someone can send.
+ *
+ * The distinction the branching turns on is **an empty library, not an empty
+ * result**: a search matching nothing still gets `EmptyState`, because the
+ * author has books and simply cannot see them.
+ */
+export function TomeLibraryPage({
+  creating = false,
+  guide = false,
+}: {
+  creating?: boolean;
+  guide?: boolean;
+}) {
   const tomes = useTomes();
   const navigate = useNavigate();
   const confirmAction = useConfirm();
@@ -44,96 +68,151 @@ export function TomeLibraryPage({ creating = false }: { creating?: boolean }) {
       `${tome.title} ${tome.subtitle ?? ""}`.toLowerCase().includes(query.toLowerCase()),
   );
 
+  const shelfEmpty = tomes.length === 0;
+
   return (
     <Container maxWidth="lg" sx={{ py: { xs: 3.5, sm: 6 } }}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        sx={{
-          alignItems: { xs: "flex-start", sm: "center" },
-          justifyContent: "space-between",
-          mb: 4.5,
-        }}
-      >
-        <Box>
-          <Typography variant="overline" color="primary" sx={{ fontWeight: 800, letterSpacing: "0.12em" }}>
-            MY TOME
-          </Typography>
-          <Typography variant="h1" sx={{ fontSize: { xs: "2rem", sm: "3.4rem" }, letterSpacing: "-0.05em" }}>
-            Your story library
-          </Typography>
-          <Typography color="text.secondary" sx={{ mt: 1.25 }}>
-            A quiet place to keep every world together.
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+      {guide ? (
+        <>
           <Button
-            variant="text"
-            startIcon={<CloudDoneIcon />}
-            onClick={() => navigate("/backup")}
+            component={RouterLink}
+            to="/tomes"
+            size="small"
+            startIcon={<ArrowBackIcon fontSize="small" />}
+            sx={{ color: "text.secondary", fontWeight: 500, px: 0, mb: 2 }}
           >
-            Backup
+            Library
           </Button>
-          <Button startIcon={<AddIcon />} onClick={() => navigate("/tomes/new")}>
-            New tome
-          </Button>
-        </Stack>
-      </Stack>
-
-      <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", mb: 3.5 }}>
-        <TextField
-          aria-label="Search tomes"
-          placeholder="Search by title…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          size="small"
-          sx={{ flex: 1, minWidth: 180 }}
-        />
-        <TextField
-          aria-label="Filter status"
-          select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          size="small"
-          sx={{ minWidth: 160 }}
-        >
-          <MenuItem value="All">All</MenuItem>
-          <MenuItem value="Draft">Draft</MenuItem>
-          <MenuItem value="Completed">Completed</MenuItem>
-          <MenuItem value="Archived">Archived</MenuItem>
-        </TextField>
-      </Stack>
-
-      {filtered.length ? (
-        <Grid container spacing={2.5}>
-          {filtered.map((tome) => (
-            <Grid key={tome.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-              <TomeCard
-                tome={tome}
-                onOpen={() => navigate(`/tomes/${tome.id}/dashboard`)}
-                onEdit={() => navigate(`/tomes/${tome.id}/edit`)}
-                onDelete={() =>
-                  confirmAction(
-                    `Permanently delete "${tome.title}" and everything in it? This cannot be undone.`,
-                    async () => {
-                      await store.deleteTome(tome.id);
-                    },
-                  )
-                }
-              />
-            </Grid>
-          ))}
-        </Grid>
+          <LibraryGuide />
+        </>
+      ) : shelfEmpty ? (
+        <>
+          <Stack
+            direction="row"
+            sx={{ alignItems: "center", justifyContent: "space-between", mb: { xs: 3, sm: 4 } }}
+          >
+            <Typography
+              variant="overline"
+              color="primary"
+              sx={{ fontWeight: 800, letterSpacing: "0.12em" }}
+            >
+              MY TOME
+            </Typography>
+            <Button variant="text" startIcon={<CloudDoneIcon />} onClick={() => navigate("/backup")}>
+              Restore a backup
+            </Button>
+          </Stack>
+          <LibraryGuide firstTome />
+        </>
       ) : (
-        <EmptyState title="No tomes found" body="Create a tome to start shaping a new story." />
+        <>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            sx={{
+              alignItems: { xs: "flex-start", sm: "center" },
+              justifyContent: "space-between",
+              mb: 3.5,
+            }}
+          >
+            <Box>
+              <Typography
+                variant="overline"
+                color="primary"
+                sx={{ fontWeight: 800, letterSpacing: "0.12em" }}
+              >
+                MY TOME
+              </Typography>
+              <Typography
+                variant="h1"
+                sx={{ fontSize: { xs: "2rem", sm: "3.4rem" }, letterSpacing: "-0.05em" }}
+              >
+                Your story library
+              </Typography>
+              <Typography color="text.secondary" sx={{ mt: 1.25 }}>
+                A quiet place to keep every world together.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+              <Button
+                variant="text"
+                startIcon={<CloudDoneIcon />}
+                onClick={() => navigate("/backup")}
+              >
+                Backup
+              </Button>
+              <Button startIcon={<AddIcon />} onClick={() => navigate("/tomes/new")}>
+                New tome
+              </Button>
+            </Stack>
+          </Stack>
+
+          <Box sx={{ mb: 2.5 }}>
+            <GuideStrip />
+          </Box>
+
+          <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", mb: 3.5 }}>
+            <TextField
+              aria-label="Search tomes"
+              placeholder="Search by title…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              size="small"
+              sx={{ flex: 1, minWidth: 180 }}
+            />
+            <TextField
+              aria-label="Filter status"
+              select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              size="small"
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="All">All</MenuItem>
+              <MenuItem value="Draft">Draft</MenuItem>
+              <MenuItem value="Completed">Completed</MenuItem>
+              <MenuItem value="Archived">Archived</MenuItem>
+            </TextField>
+          </Stack>
+
+          {filtered.length ? (
+            <Grid container spacing={2.5}>
+              {filtered.map((tome) => (
+                <Grid key={tome.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+                  <TomeCard
+                    tome={tome}
+                    onOpen={() => navigate(`/tomes/${tome.id}/dashboard`)}
+                    onEdit={() => navigate(`/tomes/${tome.id}/edit`)}
+                    onDelete={() =>
+                      confirmAction(
+                        `Permanently delete "${tome.title}" and everything in it? This cannot be undone.`,
+                        async () => {
+                          await store.deleteTome(tome.id);
+                        },
+                      )
+                    }
+                  />
+                </Grid>
+              ))}
+            </Grid>
+          ) : (
+            <EmptyState title="No tomes found" body="Nothing here matches that search." />
+          )}
+
+          <Divider sx={{ mt: 5.5 }} />
+          <Box sx={{ pt: 3 }}>
+            <FeatureHighlights />
+          </Box>
+        </>
       )}
 
       {/*
         The library is where everyone lands, so it is where the policy pages have
         to be reachable from — quietly, under the shelf rather than beside
-        "New tome".
+        "New tome". The guide sits with them for the same reason: once the strip
+        has been dismissed, this footer is the only way back to it.
       */}
-      <Divider sx={{ mt: 6 }} />
+      <Divider sx={{ mt: guide ? 6 : 4 }} />
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={{ xs: 1, sm: 2 }}
@@ -143,6 +222,12 @@ export function TomeLibraryPage({ creating = false }: { creating?: boolean }) {
           Your writing never leaves this browser.
         </Typography>
         <Stack direction="row" spacing={2}>
+          {/* Not while the guide is already the page — it would link to itself. */}
+          {!guide && !shelfEmpty && (
+            <Link component={RouterLink} to="/tomes/guide" variant="body2" color="text.secondary">
+              How myTome works
+            </Link>
+          )}
           <Link component={RouterLink} to="/privacy" variant="body2" color="text.secondary">
             Privacy
           </Link>

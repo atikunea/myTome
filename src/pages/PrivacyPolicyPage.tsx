@@ -25,7 +25,7 @@ export function PrivacyPolicyPage() {
     <PolicyPage
       title="Privacy"
       lede="myTome has no server, no accounts, and no analytics. Your writing stays in this browser unless you deliberately move it somewhere else."
-      updated="30 August 2026"
+      updated="6 September 2026"
       sibling={{ to: "/terms", label: "Terms of use" }}
     >
       <PolicySection title="The short version">
@@ -48,7 +48,7 @@ export function PrivacyPolicyPage() {
           items={[
             "Your work — tomes, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
             "Cover and element images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
-            "Two small preferences: light or dark mode, and your prose typeface. If you connect Google Drive, the time of your last sync is remembered the same way.",
+            "Three small preferences: light or dark mode, your prose typeface, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
           ]}
         />
         <PolicyParagraph>

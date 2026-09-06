@@ -31,6 +31,15 @@ export default function App() {
                 <Route path="/tomes" element={<TomeLibraryPage />} />
                 <Route path="/tomes/new" element={<TomeLibraryPage creating />} />
                 {/*
+                  The guide. The library page shows it in full while the shelf is
+                  empty, so this route exists for afterwards: it is where the
+                  dismissable strip and the footer link point, which is what makes
+                  dismissing the strip hide a nudge rather than lose a page — and
+                  it makes "how does this work" something an author can send to
+                  someone. Same page, boolean prop, exactly like `/tomes/new`.
+                */}
+                <Route path="/tomes/guide" element={<TomeLibraryPage guide />} />
+                {/*
                   Backup is library-level, not per-tome: a whole-library file is
                   the point, and a browser with no tomes still needs somewhere to
                   restore one from.
