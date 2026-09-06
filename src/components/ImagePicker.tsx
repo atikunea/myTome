@@ -19,6 +19,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import UploadIcon from "@mui/icons-material/UploadFile";
 import type { ImageSource } from "../models/Tome";
 import { imageFrom, imageUrl } from "../services/store";
+import { CoverThumbnail } from "./CoverThumbnail";
 
 export function ImagePicker({
   image,
@@ -34,13 +35,12 @@ export function ImagePicker({
   sx?: SxProps<Theme>;
 }) {
   const [open, setOpen] = useState(false);
-  const url = imageUrl(image);
 
   return (
     <>
       <ButtonBase
         onClick={() => setOpen(true)}
-        aria-label={url ? `Change ${alt}` : `Add ${alt}`}
+        aria-label={image ? `Change ${alt}` : `Add ${alt}`}
         sx={{
           position: "relative",
           display: "block",
@@ -51,30 +51,7 @@ export function ImagePicker({
           ...sx,
         }}
       >
-        {url ? (
-          <Box
-            component="img"
-            src={url}
-            alt={alt}
-            sx={{ display: "block", width: "100%", height: "100%", objectFit: "cover", bgcolor: "#eee" }}
-          />
-        ) : (
-          <Box
-            aria-hidden="true"
-            sx={{
-              width: "100%",
-              height: "100%",
-              display: "grid",
-              placeItems: "center",
-              background: "linear-gradient(135deg, #d7b799, #8e6048)",
-              color: "#fff",
-              fontFamily: "Georgia, serif",
-              fontSize: "3rem",
-            }}
-          >
-            {label.slice(0, 1).toUpperCase()}
-          </Box>
-        )}
+        <CoverThumbnail image={image} label={label} alt={alt} sx={{ width: "100%", height: "100%" }} />
         <Stack
           className="image-picker-overlay"
           direction="row"
@@ -91,7 +68,7 @@ export function ImagePicker({
           }}
         >
           <EditIcon fontSize="small" />
-          <Typography variant="body2">{url ? "Change image" : "Add image"}</Typography>
+          <Typography variant="body2">{image ? "Change image" : "Add image"}</Typography>
         </Stack>
       </ButtonBase>
       <ImagePickerDialog
