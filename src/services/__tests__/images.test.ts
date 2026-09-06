@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { imageFrom, imageUrl } from "../store";
+import { imageFrom, imageHref } from "../store";
 
 /**
  * Cover art and portraits. Small, but `imageFrom` is the app's only URL
@@ -49,23 +49,26 @@ describe("imageFrom", () => {
   });
 });
 
-describe("imageUrl", () => {
+describe("imageHref", () => {
   it("hands back a url image's own address", () => {
-    expect(imageUrl({ kind: "url", url: "https://example.com/a.png" })).toBe(
+    expect(imageHref({ kind: "url", url: "https://example.com/a.png" })).toBe(
       "https://example.com/a.png",
     );
   });
 
-  it("makes an object URL for an uploaded blob", () => {
+  it("has no address for an uploaded blob, and mints none", () => {
+    // A Blob has no address until someone acquires one, and acquiring it here
+    // would leak: the caller of a plain read has no reason to expect it owns a
+    // revoke. hooks/useObjectUrl.ts is the only place that allocation happens.
     const createObjectURL = vi.fn(() => "blob:fake");
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL }));
     const blob = new Blob(["bytes"], { type: "image/png" });
 
-    expect(imageUrl({ kind: "local", blob })).toBe("blob:fake");
-    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    expect(imageHref({ kind: "local", blob })).toBeUndefined();
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it("has nothing to show for an element that carries no image", () => {
-    expect(imageUrl(undefined)).toBeUndefined();
+    expect(imageHref(undefined)).toBeUndefined();
   });
 });

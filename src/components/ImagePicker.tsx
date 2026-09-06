@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   Alert,
   Box,
@@ -18,7 +18,9 @@ import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
 import UploadIcon from "@mui/icons-material/UploadFile";
 import type { ImageSource } from "../models/Tome";
-import { imageFrom, imageUrl } from "../services/store";
+import { imageFrom } from "../services/store";
+import { useImageSrc, useObjectUrl } from "../hooks/useObjectUrl";
+import { CoverThumbnail } from "./CoverThumbnail";
 
 export function ImagePicker({
   image,
@@ -34,13 +36,12 @@ export function ImagePicker({
   sx?: SxProps<Theme>;
 }) {
   const [open, setOpen] = useState(false);
-  const url = imageUrl(image);
 
   return (
     <>
       <ButtonBase
         onClick={() => setOpen(true)}
-        aria-label={url ? `Change ${alt}` : `Add ${alt}`}
+        aria-label={image ? `Change ${alt}` : `Add ${alt}`}
         sx={{
           position: "relative",
           display: "block",
@@ -51,30 +52,7 @@ export function ImagePicker({
           ...sx,
         }}
       >
-        {url ? (
-          <Box
-            component="img"
-            src={url}
-            alt={alt}
-            sx={{ display: "block", width: "100%", height: "100%", objectFit: "cover", bgcolor: "#eee" }}
-          />
-        ) : (
-          <Box
-            aria-hidden="true"
-            sx={{
-              width: "100%",
-              height: "100%",
-              display: "grid",
-              placeItems: "center",
-              background: "linear-gradient(135deg, #d7b799, #8e6048)",
-              color: "#fff",
-              fontFamily: "Georgia, serif",
-              fontSize: "3rem",
-            }}
-          >
-            {label.slice(0, 1).toUpperCase()}
-          </Box>
-        )}
+        <CoverThumbnail image={image} label={label} alt={alt} sx={{ width: "100%", height: "100%" }} />
         <Stack
           className="image-picker-overlay"
           direction="row"
@@ -91,7 +69,7 @@ export function ImagePicker({
           }}
         >
           <EditIcon fontSize="small" />
-          <Typography variant="body2">{url ? "Change image" : "Add image"}</Typography>
+          <Typography variant="body2">{image ? "Change image" : "Add image"}</Typography>
         </Stack>
       </ButtonBase>
       <ImagePickerDialog
@@ -119,38 +97,31 @@ function ImagePickerDialog({
   onChange: (image: ImageSource | undefined) => void;
 }) {
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState<string | undefined>();
-  const objectUrlRef = useRef<string | undefined>(undefined);
+  const [picked, setPicked] = useState<File>();
+  const [typed, setTyped] = useState("");
 
+  // Opening *and* closing start the dialog over. MUI unmounts the content but
+  // not this component, so what the last visit picked would otherwise still be
+  // sitting here — holding its object URL open while nothing is showing it.
   useEffect(() => {
-    if (open) {
-      setError("");
-      setPreview(imageUrl(image));
-    }
-    return () => {
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = undefined;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setError("");
+    setPicked(undefined);
+    setTyped("");
   }, [open]);
 
-  const replacePreview = (next: string | undefined) => {
-    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    objectUrlRef.current = undefined;
-    setPreview(next);
-  };
+  // What Save would use, shown. The precedence is `imageFrom`'s own: a file the
+  // author just browsed for beats a URL left in the box, which beats the image
+  // already on the record. Both hooks run every render; only the pick changes.
+  const pickedUrl = useObjectUrl(picked);
+  const storedUrl = useImageSrc(image);
+  const preview = pickedUrl ?? (typed || storedUrl);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return replacePreview(imageUrl(image));
-    const url = URL.createObjectURL(file);
-    objectUrlRef.current = url;
-    setPreview(url);
+    setPicked(event.target.files?.[0]);
   };
 
   const handleUrlChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const value = event.target.value.trim();
-    replacePreview(value || imageUrl(image));
+    setTyped(event.target.value.trim());
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {

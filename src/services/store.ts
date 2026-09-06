@@ -50,7 +50,7 @@ export type {
   RestoreMode,
   RestoreResult,
 } from "./backup";
-export { imageFrom, imageUrl } from "./images";
+export { imageFrom, imageHref } from "./images";
 // Not a member of `store` for the same reason: it asks the *browser* to keep
 // the database durably and touches no table of ours. See `services/storage.ts`
 // for why the ask is deferred until a library has something in it.

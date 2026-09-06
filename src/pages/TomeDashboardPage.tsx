@@ -1,5 +1,6 @@
 import { Box, Paper, Typography } from "@mui/material";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
+import { CoverThumbnail } from "../components/CoverThumbnail";
 import { TomeFormDialog } from "../components/TomeFormDialog";
 
 export function TomeDashboardPage({ editing = false }: { editing?: boolean }) {
@@ -11,9 +12,25 @@ export function TomeDashboardPage({ editing = false }: { editing?: boolean }) {
       <Typography variant="overline" color="primary" sx={{ fontWeight: 800, letterSpacing: "0.12em" }}>
         TOME OVERVIEW
       </Typography>
+      {/* The cover is shown whole rather than cropped, so it is sized by its
+          own proportions inside a 400px ceiling. The height in `sx` is for the
+          monogram that stands in when there is no cover and so has no
+          proportions of its own. */}
+      <CoverThumbnail
+        image={tome.coverImage}
+        label={tome.title}
+        alt={`${tome.title} cover`}
+        sx={{ height: 220, borderRadius: 1, mt: 1 }}
+        imageSx={{ width: "auto", height: "auto", maxWidth: "100%", maxHeight: 400 }}
+      />
       <Typography variant="h2" sx={{ fontSize: "1.7rem", my: 1.25 }}>
-        {tome.subtitle || "A home for your story"}
+        {tome.title}
       </Typography>
+      {tome.subtitle && (
+        <Typography variant="subtitle1" component="p" sx={{ fontSize: "1.3rem", mb: 1.25 }}>
+          {tome.subtitle}
+        </Typography>
+      )}
       <Typography color="text.secondary" sx={{ lineHeight: 1.6 }}>
         {tome.description || "Add a description to give this tome its north star."}
       </Typography>

@@ -108,9 +108,10 @@ Don't switch router types without solving that.
 src/
   models/      Data shapes + the two template registries. Only db.ts declares the Dexie schema.
   services/    The data layer, split by table behind the store.ts barrel. Tests in __tests__/.
-  hooks/       useObservable.ts (Dexie liveQuery → React state) and the
-               autosave machine: autosave.ts is framework-free and tested,
-               useAutosave.ts binds it to React. Tests in __tests__/.
+  hooks/       useObservable.ts (Dexie liveQuery → React state), the
+               autosave machine (autosave.ts is framework-free and tested,
+               useAutosave.ts binds it to React), and useObjectUrl.ts — the
+               only place render-land calls createObjectURL. Tests in __tests__/.
   context/     App-wide state: tomes, current workspace, confirm dialog, color mode.
   layouts/     WorkspaceLayout.tsx — the /tomes/:tomeId/* shell (nav + header + Outlet).
   pages/       Route-level screens, one per <Route> in App.tsx.
@@ -143,7 +144,7 @@ services/
                    queries, detach*, applyOrder.
   slug.ts          The one slug rule. Pure and table-free — see below.
   validate.ts      The four validators. Callers invoke these, not the mutations.
-  images.ts        imageUrl / imageFrom — the only members not on `store`.
+  images.ts        imageHref / imageFrom. Neither allocates — see hooks/useObjectUrl.ts.
   tomes.ts         Tomes + the eight-table delete cascade.
   templates.ts     applyTomeTemplate, createPlotFromTemplate. Create-time only.
   elementTypes.ts  Types, field definitions, and the two count* helpers.
