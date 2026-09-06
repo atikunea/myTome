@@ -29,6 +29,10 @@ function WorkspaceLayoutInner() {
       sx={{
         display: "grid",
         gridTemplateColumns: { xs: "1fr", sm: "238px 1fr" },
+        // Auto rows stretch to fill the 100vh grid, which let the xs top bar
+        // absorb whatever height the page didn't use. Pin the bar to its
+        // content and give the leftover to main.
+        gridTemplateRows: { xs: "auto 1fr", sm: "1fr" },
         minHeight: "100vh",
       }}
     >

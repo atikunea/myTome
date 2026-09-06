@@ -477,6 +477,31 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   cards, and do not fit beside each other at 600px.
 - No hand-written inline `<svg>` icons — use `@mui/icons-material`.
 
+## Below `sm` the nav is a top bar, and its height is pinned deliberately
+
+`SideNav` turns into a horizontal strip under `sm`, and three things keep that
+strip one consistent, minimal height. Each fixes a way it grew before:
+
+- **`WorkspaceLayout`'s grid sets `gridTemplateRows`.** Its rows were implicitly
+  `auto`, and `align-content` on a grid defaults to stretch, so with
+  `minHeight: 100vh` the nav row absorbed whatever vertical space the page did
+  not use — 282px on a dashboard, and a different number on every route. The
+  rows are now `"auto 1fr"` at `xs` (bar to its content, leftover to `main`) and
+  `"1fr"` at `sm`, which is what keeps the dark sidebar running the full page
+  height in the two-column layout. If you touch that grid, keep both.
+- **`NAV_BAR_HEIGHT` is a fixed `height` at `xs`, not a `minHeight`.** A tome
+  with six plots and one with none must occupy the same strip, and a nav item is
+  a fixed 40px there (`navItemSx` drops `py` to `0.5` below `sm`).
+- **`overflowX: auto` with `overflowY: hidden`, and a thin scrollbar.** The
+  strip's `scrollWidth` runs past 2000px on a tome with several plots; only the
+  horizontal axis may scroll, and a classic scrollbar tall enough to eat the
+  bar's padding would reintroduce the varying height it was overlay-thin
+  elsewhere.
+
+Verified by driving the app at 375px across routes of different lengths and with
+a tome carrying fourteen nav items — the kind of layout the `node` suite cannot
+reach.
+
 ## The restore dialog is the one dialog that is not a route
 
 Every create/edit dialog in this app is mounted by a `<Route>` (see the root
@@ -526,7 +551,8 @@ none of those.
 ## Current components
 
 - `SideNav.tsx` — per-tome left nav; lists the tome's ElementTypes. Reads
-  `useTomeWorkspace()`.
+  `useTomeWorkspace()`. Below `sm` it is a **top bar of fixed height**
+  (`NAV_BAR_HEIGHT`), scrolling only sideways — see below.
 - `RestoreDialog.tsx` — the summary + merge/replace choice for a chosen backup
   file; used only by `../pages/BackupPage.tsx`. See above.
 - `PolicyProse.tsx` — chrome and prose primitives for the privacy and terms

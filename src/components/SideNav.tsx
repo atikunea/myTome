@@ -10,11 +10,14 @@ import { useObservable } from "../hooks/useObservable";
 import { brandFontFamily } from "../theme";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 
+/** Height of the xs top bar, in px. Fixed so it never grows with the page. */
+const NAV_BAR_HEIGHT = 56;
+
 const navItemSx = {
   color: "#dfd7d1",
   borderRadius: "7px",
   px: 1.1,
-  py: 1,
+  py: { xs: 0.5, sm: 1 },
   flex: "0 0 auto",
   "&:hover": { bgcolor: "#44372f", color: "#fff" },
   "&.active": { bgcolor: "#44372f", color: "#fff" },
@@ -35,9 +38,18 @@ export function SideNav() {
         display: "flex",
         flexDirection: { xs: "row", sm: "column" },
         alignItems: { xs: "center", sm: "stretch" },
-        overflow: { xs: "auto", sm: "visible" },
+        // Below sm this is a top bar, and its height must not move: fixed, and
+        // scrolling only sideways. A thin scrollbar keeps a tome with many
+        // plots the same height as one with none.
+        height: { xs: NAV_BAR_HEIGHT, sm: "auto" },
+        boxSizing: "border-box",
+        overflowX: { xs: "auto", sm: "visible" },
+        overflowY: { xs: "hidden", sm: "visible" },
+        scrollbarWidth: "thin",
+        "&::-webkit-scrollbar": { height: 6 },
+        "&::-webkit-scrollbar-thumb": { bgcolor: "#5a4a3f", borderRadius: 3 },
         whiteSpace: { xs: "nowrap", sm: "normal" },
-        py: { xs: 1.75, sm: 4 },
+        py: { xs: 0, sm: 4 },
         px: { xs: 1.75, sm: 2.5 },
         gap: 0.5,
       }}
