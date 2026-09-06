@@ -30,6 +30,43 @@ stylesheets; reach for an MUI component (`Card`, `Dialog`, `Chip`, `Stack`,
 markup. That preference (MUI over homemade) is deliberate project policy,
 not just a style nit.
 
+## Object URLs: hold the Blob, derive the URL
+
+`URL.createObjectURL` hands back a handle with a lifetime, and its caller owns
+the matching revoke. A component that *stores* that handle inherits the
+bookkeeping — revoke before overwriting, revoke on close, revoke on unmount —
+and every path that sets it becomes a path that can leak. Calling it in a
+render body is the worst case: one URL per render, each pinning the Blob for
+the life of the document. This went wrong twice (the dashboard cover and
+`ImagePicker`'s tile) before it was made structural.
+
+**`hooks/useObjectUrl.ts` is the only place in render-land that allocates
+one.** `useObjectUrl(blob)` keys a `useLayoutEffect` on the Blob and revokes on
+unmount and on change; `useImageSrc(image)` is one line on top of it resolving
+the `ImageSource` union. So components hold **Blobs and `File`s — inert values
+— and let the hook derive the URL.** `ImagePickerDialog` is the worked example:
+storing the picked `File` instead of a URL made from it deleted a ref, a
+revoke-before-overwrite helper, and both manual revokes, and turned "which
+preview wins" into an ordinary `??` chain.
+
+Two boundaries worth keeping:
+
+- **It is a *layout* effect.** With `useEffect` the URL lands after the first
+  paint, so a caller with a fallback paints the fallback and flashes the real
+  content in behind it.
+- **It is for a URL that lives as long as a rendered element.** A URL that
+  lives as long as one *action* — the `Blob` + `<a download>` dance in
+  `../pages/BackupPage.tsx` and `ManuscriptExportDialog.tsx` — belongs in the
+  handler that creates it, where create/click/revoke already sit together.
+  Don't convert those.
+
+`services/images.ts` was narrowed to match: `imageHref` returns the address of
+an image that already has one (`kind: "url"`) and **allocates nothing**, so it
+is safe anywhere, render bodies included. It replaced an `imageUrl` that
+silently minted an object URL for the blob case — the read that looked free and
+was not. Adding a second caller of `createObjectURL` outside the hook puts that
+trap back.
+
 ## Naming: `Plot` is the record, `Timeline` is how it's drawn
 
 The plotting feature's domain records are `Plot` and `PlotItem` (`models/Plot.ts`,
@@ -599,26 +636,23 @@ none of those.
 - `FieldDefinitionsEditor.tsx` — add/edit/remove UI for an ElementType's
   custom field definitions (`FieldDefinition[]`); used by
   `../pages/ElementTypesPage.tsx`.
-- `CoverThumbnail.tsx` — shared cover image / fallback-letter-avatar,
-  used by Tome and Element cards and the tome dashboard. **It is the only
-  component allowed to render a stored `ImageSource`**, because it owns that
-  image's object-URL lifetime: `imageUrl` from `services/store` mints a *fresh*
-  `URL.createObjectURL` on every call for a `kind: "local"` cover and hands the
-  caller the revoke, so calling it in a render body leaks one URL per render and
-  pins the Blob for the life of the document. Here the blob case lives in a
-  `useLayoutEffect` keyed on the Blob that revokes on unmount and on change; the
-  `kind: "url"` case allocates nothing and is read straight through. It is a
-  *layout* effect on purpose — with `useEffect` the first frame paints the
-  fallback monogram and the real cover flashes in behind it. Its no-image
-  fallback is also why nothing in the app needs a placeholder image asset: reach
-  for this component rather than an `<img>` with a `/images/…` default, which
-  would 404 anyway under `base: "/myTome/"`.
+- `CoverThumbnail.tsx` — shared cover image / fallback-letter-avatar, used by
+  Tome and Element cards, the tome dashboard, and `ImagePicker`'s own tile.
+  Its no-image fallback is why nothing in the app needs a placeholder image
+  asset: reach for this component rather than an `<img>` with a `/images/…`
+  default, which would 404 anyway under `base: "/myTome/"`. It renders a
+  stored `ImageSource` through `useImageSrc` (see **Object URLs** below) and
+  holds no lifetime of its own.
 - `ImagePicker.tsx` — clickable image-or-placeholder tile used in the Tome
   and Element edit forms; opens a dialog to paste an image URL or upload a
-  file (via `imageFrom`/`imageUrl` from `services/store.ts`, which already
-  handle both). Used by `TomeFormDialog.tsx` and the edit form in
+  file (`imageFrom` from `services/store.ts` turns either into an
+  `ImageSource`). Used by `TomeFormDialog.tsx` and the edit form in
   `../pages/ElementListPage.tsx` in place of the old inline URL field +
   upload button, adding a live preview and the ability to remove an image.
+  The tile is a `CoverThumbnail`; the dialog holds the picked **`File`**, not
+  a URL made from it, so its preview is three derived values under ordinary
+  `??` precedence — picked file, then typed URL, then the stored image. That
+  is `imageFrom`'s own order, so the preview always shows what Save would use.
 - `ElementTypeIcon.tsx` — renders an `ElementType`'s chosen icon (falls back
   to a generic glyph when unset); also exports `elementTypeIconOptions`, the
   curated icon set used by the picker in `../pages/ElementTypesPage.tsx`.
