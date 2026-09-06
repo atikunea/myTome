@@ -641,8 +641,17 @@ none of those.
   Its no-image fallback is why nothing in the app needs a placeholder image
   asset: reach for this component rather than an `<img>` with a `/images/…`
   default, which would 404 anyway under `base: "/myTome/"`. It renders a
-  stored `ImageSource` through `useImageSrc` (see **Object URLs** below) and
-  holds no lifetime of its own.
+  stored `ImageSource` through `useImageSrc` (see **Object URLs** above) and
+  holds no lifetime of its own. It takes **two** style props, because its two
+  branches are not always the same shape: `sx` sizes both — what a thumbnail
+  wants, one fixed box whichever renders — and `imageSx` lands after it on the
+  image alone. The dashboard is the one caller that needs the split: it shows
+  the cover whole (`width`/`height` auto under `maxWidth: "100%"` and
+  `maxHeight: 400`, so nothing is cropped and a small image is not stretched),
+  while the monogram, having no proportions of its own, keeps a fixed box.
+  Compose them with MUI's array form rather than a second spread — an
+  `SxProps` may be an array or a callback, and spreading two widens every
+  property past what `sx` accepts, which `tsc` catches.
 - `ImagePicker.tsx` — clickable image-or-placeholder tile used in the Tome
   and Element edit forms; opens a dialog to paste an image URL or upload a
   file (`imageFrom` from `services/store.ts` turns either into an
