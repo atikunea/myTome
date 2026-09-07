@@ -928,12 +928,22 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   arithmetic: every row's cells are siblings of one `display: grid`, so the grid
   row grows to its tallest card and the rest stretch beside it. Consequences
   worth knowing before editing it:
-  - **The track is drawn cell by cell and has to look continuous.** `Track` takes
-    `above`/`below` from the plot's first and last occupied rank, and each segment
+  - **The track is drawn cell by cell and has to look continuous.** Each segment
     overshoots its cell by `INSERT_STRIP` so the line bridges the hover-to-insert
-    strip between two rows. That is also why a cell carries no vertical padding —
-    the card does, via `my`. Change one of those three and the line breaks into
-    dashes; it is checked by measuring the segments' rects for gaps.
+    strip between two rows, which is also why a cell carries no vertical padding —
+    the card does, via `my`. Break either and the line turns to dashes. Check it
+    by measuring the segments' rects for gaps rather than by eye.
+  - **A cell draws one of five `TrackPart`s, and the ends are ends.** The track
+    runs from a plot's first beat to its last and stops, because where a thread
+    starts and finishes against the spine is worth seeing. So `"start"` and
+    `"end"` draw a *full* half — above the first dot, below the last — but flush
+    with the cell instead of overshooting, and `"none"` draws nothing at all.
+    The predecessor of `trackPart` asked `i > first` and `i < last`
+    independently, which is true on both sides of the span as well as inside it:
+    every row past the last beat drew a top half and no bottom, a line that began
+    and stopped in mid-air, and every row before the first drew the mirror image.
+    Any change here needs checking at four places — first beat, last beat, a gap
+    between two beats, and a row outside the span at each end.
   - **A drag is two gestures, chosen by what is in the target cell.** Dropping on
     a gap is `movePlotItemToRow` (a move, opening a gap behind it). Dropping on
     another beat is `reorderPlotItems` with an `arrayMove` — the ordinary

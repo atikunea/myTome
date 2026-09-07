@@ -70,6 +70,29 @@ type GridEntry =
 type Span = { first: number; last: number };
 
 /**
+ * How much track a cell draws. The track runs from a plot's first beat to its
+ * last and stops: a thread that starts a third of the way down the book and ends
+ * before the end says so by where its line begins and ends, which is worth
+ * seeing in a comparison. So the ends are drawn as ends — a full half above the
+ * first dot and below the last, stopping flush with the cell — and cells beyond
+ * them draw nothing rather than half a line.
+ */
+type TrackPart = "none" | "start" | "middle" | "end" | "only";
+
+/**
+ * Which part of the track a cell covering ranks `from`..`to` draws. One cell
+ * passes the same rank twice; a collapsed quiet run passes its whole range,
+ * which is always wholly inside the span or wholly outside it — the span's ends
+ * are beats, and a quiet run has none.
+ */
+const trackPart = (span: Span | undefined, from: number, to: number): TrackPart => {
+  if (!span || to < span.first || from > span.last) return "none";
+  const atStart = from <= span.first;
+  const atEnd = to >= span.last;
+  return atStart && atEnd ? "only" : atStart ? "start" : atEnd ? "end" : "middle";
+};
+
+/**
  * Restricts a drag to the column it started in. A beat belongs to one plot, so
  * moving it into another is not a reorder — filtering the candidates rather than
  * rejecting the drop afterwards means the grid never highlights a cell that would
@@ -371,19 +394,17 @@ export function PlotGrid({
                     })
                   }
                 />
-                {plots.map((plot) => {
-                  const span = spans.get(plot.id);
-                  const through = Boolean(
-                    span &&
-                      entry.index > span.first &&
-                      entry.index + entry.rows.length - 1 < span.last,
-                  );
-                  return (
-                    <Box key={plot.id} sx={{ minWidth: 0, display: "flex", minHeight: 30 }}>
-                      <Track above={through} below={through} />
-                    </Box>
-                  );
-                })}
+                {plots.map((plot) => (
+                  <Box key={plot.id} sx={{ minWidth: 0, display: "flex", minHeight: 30 }}>
+                    <Track
+                      part={trackPart(
+                        spans.get(plot.id),
+                        entry.index,
+                        entry.index + entry.rows.length - 1,
+                      )}
+                    />
+                  </Box>
+                ))}
               </Fragment>
             ) : (
               <Fragment key={entry.row.id}>
@@ -399,16 +420,13 @@ export function PlotGrid({
                 />
                 {plots.map((plot) => {
                   const item = byCell.get(cellId(plot.id, entry.row.id));
-                  const span = spans.get(plot.id);
-                  const above = Boolean(span && entry.index > span.first);
-                  const below = Boolean(span && entry.index < span.last);
+                  const part = trackPart(spans.get(plot.id), entry.index, entry.index);
                   return item ? (
                     <BeatCell
                       key={plot.id}
                       item={item}
                       types={types}
-                      above={above}
-                      below={below}
+                      part={part}
                       attachments={item.attachedElementIds
                         .map((id) => elementsById.get(id))
                         .filter((element): element is Element => Boolean(element))}
@@ -422,8 +440,7 @@ export function PlotGrid({
                       plot={plot}
                       row={entry.row}
                       rowLabel={plotRowName(entry.row, entry.index)}
-                      above={above}
-                      below={below}
+                      part={part}
                       onAdd={() => onAddBeat(plot.id, entry.row.id)}
                     />
                   );
@@ -450,17 +467,7 @@ export function PlotGrid({
  * Each segment overshoots its cell by the height of the insert strip between two
  * rows, which is what makes a track drawn cell by cell read as one unbroken line.
  */
-function Track({
-  above,
-  below,
-  children,
-}: {
-  /** Continue the line up out of this cell — false at the plot's first beat. */
-  above: boolean;
-  /** Continue it down — false at the last. */
-  below: boolean;
-  children?: ReactNode;
-}) {
+function Track({ part, children }: { part: TrackPart; children?: ReactNode }) {
   const segment = {
     position: "absolute",
     left: "50%",
@@ -468,6 +475,11 @@ function Track({
     ml: "-1px",
     bgcolor: "divider",
   } as const;
+  // A segment that carries on into the next cell overshoots by the insert
+  // strip's height so the line bridges it; one that ends the track stops flush
+  // with the cell instead, or it would trail off into the strip.
+  const openTop = part === "middle" || part === "end";
+  const openBottom = part === "middle" || part === "start";
   return (
     <Box
       sx={{
@@ -479,8 +491,12 @@ function Track({
         justifyContent: "center",
       }}
     >
-      {above ? <Box sx={{ ...segment, top: -INSERT_STRIP, bottom: "50%" }} /> : null}
-      {below ? <Box sx={{ ...segment, top: "50%", bottom: -INSERT_STRIP }} /> : null}
+      {part === "none" ? null : (
+        <>
+          <Box sx={{ ...segment, top: openTop ? -INSERT_STRIP : 0, bottom: "50%" }} />
+          <Box sx={{ ...segment, top: "50%", bottom: openBottom ? -INSERT_STRIP : 0 }} />
+        </>
+      )}
       {children ? <Box sx={{ position: "relative", zIndex: 1 }}>{children}</Box> : null}
     </Box>
   );
@@ -627,8 +643,7 @@ function BeatCell({
   item,
   attachments,
   types,
-  above,
-  below,
+  part,
   onOpen,
   onOpenElement,
   onWrite,
@@ -636,8 +651,7 @@ function BeatCell({
   item: PlotItem;
   attachments: Element[];
   types: ElementType[];
-  above: boolean;
-  below: boolean;
+  part: TrackPart;
   onOpen: () => void;
   onOpenElement: (element: Element) => void;
   /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
@@ -661,7 +675,7 @@ function BeatCell({
     // No vertical padding on the cell itself: the track has to run its whole
     // height for the line to meet the next cell's. The card carries the spacing.
     <Box ref={setDropRef} sx={{ minWidth: 0, display: "flex", alignItems: "stretch" }}>
-      <Track above={above} below={below}>
+      <Track part={part}>
         <BeatDot item={item} />
       </Track>
       <Box
@@ -700,15 +714,13 @@ function EmptyCell({
   plot,
   row,
   rowLabel,
-  above,
-  below,
+  part,
   onAdd,
 }: {
   plot: Plot;
   row: PlotRow;
   rowLabel: string;
-  above: boolean;
-  below: boolean;
+  part: TrackPart;
   onAdd: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -717,7 +729,7 @@ function EmptyCell({
   });
   return (
     <Box ref={setNodeRef} sx={{ minWidth: 0, display: "flex", alignItems: "stretch" }}>
-      <Track above={above} below={below} />
+      <Track part={part} />
       <Box
         component="button"
         type="button"
