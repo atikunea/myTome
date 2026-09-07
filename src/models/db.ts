@@ -124,6 +124,26 @@ export const backfillElementProse = async (tx: Transaction) => {
       );
     });
 };
+/**
+ * Turns every tome description into a Lexical document and derives the text
+ * mirror the library cards read instead of it.
+ *
+ * v9's backfill for the other half of the app, and for the same reason: the
+ * overview page edits its description in an editor now, and an editor can only
+ * open a document. There is no `searchText` counterpart — the library filters
+ * on title and subtitle, and a tome has no custom fields to span.
+ *
+ * Safe to run repeatedly: a description that is already a document is left
+ * exactly as it is, and a mirror that already exists is not recomputed.
+ */
+export const backfillTomeProse = (tx: Transaction) =>
+  tx
+    .table<Tome>("tomes")
+    .toCollection()
+    .modify((tome) => {
+      tome.description = asProseDocument(tome.description);
+      tome.descriptionText ??= documentText(tome.description);
+    });
 export class MyTomeDB extends Dexie {
   tomes!: EntityTable<Tome, "id">;
   elements!: EntityTable<Element, "id">;
@@ -224,6 +244,14 @@ export class MyTomeDB extends Dexie {
           "id, tomeId, elementTypeId, [tomeId+elementTypeId], [elementTypeId+updatedAt], name",
       })
       .upgrade(backfillElementProse);
+    // v10 does to `Tome.description` what v9 did to the element's, and adds the
+    // `descriptionText` mirror beside it — rule 2 again, converting rather than
+    // defaulting. No index: the library filters on title and subtitle.
+    this.version(10)
+      .stores({
+        tomes: "id, status, updatedAt, title",
+      })
+      .upgrade(backfillTomeProse);
   }
 }
 export const db = new MyTomeDB();

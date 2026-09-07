@@ -6,6 +6,7 @@ import type { ElementType } from "../models/ElementType";
 import type { Plot, PlotItem, PlotRow } from "../models/Plot";
 import type { Relationship } from "../models/Relationship";
 import type { ImageSource, Tome } from "../models/Tome";
+import { tomeDescription } from "../models/Tome";
 import type { WriteItem } from "../models/WriteItem";
 import { slugify } from "./slug";
 import { syncPlotSortOrder } from "./spine";
@@ -46,8 +47,13 @@ export const backupFormat = "myTome-backup";
  * file without complaint and then show every element card a paragraph of JSON —
  * which is exactly what the version check is for. Reading *older* files stays
  * supported: `writeTome` converts a plain-text description on the way in.
+ *
+ * v3 is schema v10, and is the same bump one table over: `Tome.description` is
+ * a document now, so a v2 reader would put JSON on every library card. Both
+ * conversions are one-way and both stay readable — a v1 or v2 file restores
+ * into v3 rows.
  */
-export const backupFormatVersion = 2;
+export const backupFormatVersion = 3;
 
 /**
  * An `ImageSource` flattened for JSON. A cover or portrait the author uploaded
@@ -58,8 +64,14 @@ export type SerializedImage =
   | { kind: "url"; url: string }
   | { kind: "local"; mimeType: string; data: string };
 
-export type BackedUpTome = Omit<Tome, "coverImage"> & {
+export type BackedUpTome = Omit<Tome, "coverImage" | "descriptionText"> & {
   coverImage?: SerializedImage;
+  /**
+   * Absent in a v1 or v2 file, where `description` was plain text and the
+   * mirror did not exist. `writeTome` derives it on the way in — the tome's
+   * half of the looseness described on `BackedUpElement` below.
+   */
+  descriptionText?: string;
 };
 export type BackedUpElement = Omit<
   Element,
@@ -261,8 +273,14 @@ const fileOf = (tomes: TomeBackup[]): BackupFile => ({
 
 const writeTome = async (entry: TomeBackup) => {
   const rowIds = new Set(entry.plotRows.map((row) => row.id));
+  // A pre-v3 file carries plain text and no mirror, and a restore bypasses
+  // Dexie's upgrades — so the tome goes through the same helper the v10
+  // backfill and every save use.
+  const prose = tomeDescription(entry.tome.description);
   await db.tomes.put({
     ...entry.tome,
+    ...prose,
+    descriptionText: entry.tome.descriptionText ?? prose.descriptionText,
     coverImage: deserializeImage(entry.tome.coverImage),
   });
   await db.elementTypes.bulkPut(entry.elementTypes);

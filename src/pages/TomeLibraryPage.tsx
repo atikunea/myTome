@@ -4,7 +4,7 @@ import {
   Box,
   Button,
   Card,
-  CardActions,
+  CardActionArea,
   Chip,
   Container,
   Divider,
@@ -19,9 +19,7 @@ import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import type { Tome, TomeStatus } from "../models/Tome";
-import { store } from "../services/store";
 import { useTomes } from "../context/TomesContext";
-import { useConfirm } from "../context/ConfirmContext";
 import { CoverThumbnail } from "../components/CoverThumbnail";
 import { EmptyState } from "../components/EmptyState";
 import { FeatureHighlights } from "../components/FeatureHighlights";
@@ -58,7 +56,6 @@ export function TomeLibraryPage({
 }) {
   const tomes = useTomes();
   const navigate = useNavigate();
-  const confirmAction = useConfirm();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
 
@@ -182,15 +179,6 @@ export function TomeLibraryPage({
                   <TomeCard
                     tome={tome}
                     onOpen={() => navigate(`/tomes/${tome.id}/dashboard`)}
-                    onEdit={() => navigate(`/tomes/${tome.id}/edit`)}
-                    onDelete={() =>
-                      confirmAction(
-                        `Permanently delete "${tome.title}" and everything in it? This cannot be undone.`,
-                        async () => {
-                          await store.deleteTome(tome.id);
-                        },
-                      )
-                    }
                   />
                 </Grid>
               ))}
@@ -242,40 +230,29 @@ export function TomeLibraryPage({
   );
 }
 
-function TomeCard({
-  tome,
-  onOpen,
-  onEdit,
-  onDelete,
-}: {
-  tome: Tome;
-  onOpen: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
+/**
+ * One book on the shelf, and **the whole card is the link**. There are no
+ * buttons on it: opening, editing and deleting a tome all happen on the
+ * overview page now, so a card that offered any of them would either duplicate
+ * that page or lead somewhere it does not — and the card as a single target is
+ * a bigger one than the "Open" button it replaces.
+ */
+function TomeCard({ tome, onOpen }: { tome: Tome; onOpen: () => void }) {
   return (
-    <Card variant="outlined">
-      <CoverThumbnail image={tome.coverImage} label={tome.title} alt={`${tome.title} cover`} sx={{ height: 142 }} />
-      <Box sx={{ p: 2.1 }}>
-        <Chip size="small" label={tome.status} color={statusChipColor[tome.status]} />
-        <Typography variant="h2" sx={{ fontSize: "1.35rem", my: 1.1 }}>
-          {tome.title}
-        </Typography>
-        <Typography color="text.secondary" sx={{ fontSize: "0.92rem", lineHeight: 1.45 }}>
-          {tome.subtitle || tome.description || "No description yet."}
-        </Typography>
-      </Box>
-      <CardActions sx={{ px: 2.1, pb: 2.1, pt: 0, gap: 0.5 }}>
-        <Button size="small" onClick={onOpen}>
-          Open
-        </Button>
-        <Button size="small" onClick={onEdit}>
-          Edit
-        </Button>
-        <Button size="small" color="error" onClick={onDelete}>
-          Delete
-        </Button>
-      </CardActions>
+    <Card variant="outlined" sx={{ height: "100%" }}>
+      <CardActionArea onClick={onOpen} sx={{ height: "100%", alignItems: "stretch" }}>
+        <CoverThumbnail image={tome.coverImage} label={tome.title} alt={`${tome.title} cover`} sx={{ height: 142 }} />
+        <Box sx={{ p: 2.1 }}>
+          <Chip size="small" label={tome.status} color={statusChipColor[tome.status]} />
+          <Typography variant="h2" sx={{ fontSize: "1.35rem", my: 1.1 }}>
+            {tome.title}
+          </Typography>
+          {/* The mirror, never the document: `description` is Lexical JSON. */}
+          <Typography color="text.secondary" sx={{ fontSize: "0.92rem", lineHeight: 1.45 }}>
+            {tome.subtitle || tome.descriptionText || "No description yet."}
+          </Typography>
+        </Box>
+      </CardActionArea>
     </Card>
   );
 }

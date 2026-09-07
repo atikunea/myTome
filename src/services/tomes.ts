@@ -1,5 +1,6 @@
 import { db } from "../models/db";
 import type { Tome } from "../models/Tome";
+import { tomeDescription } from "../models/Tome";
 import { now, observe, uid } from "./internal";
 
 /**
@@ -35,7 +36,9 @@ export const tomeStore = {
       id: existing?.id ?? uid(),
       title: input.title.trim(),
       subtitle: input.subtitle?.trim() || undefined,
-      description: input.description.trim(),
+      // Wrapped rather than trimmed: the create dialog still hands over a line
+      // of plain text, and so do the tests and every pre-v10 caller.
+      ...tomeDescription(input.description),
       status: input.status,
       coverImage: input.coverImage,
       createdAt: existing?.createdAt ?? time,
@@ -48,6 +51,43 @@ export const tomeStore = {
     if (!tome.title) throw new Error("A tome title is required.");
     await db.tomes.put(tome);
     return tome;
+  },
+  /**
+   * The overview page's write: one field at a time, on the autosave debounce.
+   *
+   * A **patch, re-read inside the transaction**, for `updateElement`'s reason —
+   * several fields on one page write to one row, and a caller merging against
+   * the tome it last observed would revert the field it edited a moment ago
+   * whenever a live query's echo was still in flight.
+   *
+   * `archivedAt` is derived here exactly as `saveTome` derives it, so archiving
+   * from the overview and archiving from anywhere else date the book the same
+   * day.
+   */
+  async updateTome(
+    id: string,
+    patch: Partial<
+      Pick<Tome, "title" | "subtitle" | "description" | "status" | "coverImage">
+    >,
+  ) {
+    return db.transaction("rw", db.tomes, async () => {
+      const existing = await db.tomes.get(id);
+      if (!existing) throw new Error("That tome no longer exists.");
+      const merged = { ...existing, ...patch };
+      const time = now();
+      const tome: Tome = {
+        ...merged,
+        title: merged.title.trim(),
+        subtitle: merged.subtitle?.trim() || undefined,
+        ...tomeDescription(merged.description),
+        updatedAt: time,
+        archivedAt:
+          merged.status === "Archived" ? (existing.archivedAt ?? time) : undefined,
+      };
+      if (!tome.title) throw new Error("A tome title is required.");
+      await db.tomes.put(tome);
+      return tome;
+    });
   },
   /** Clears all eight tables of everything belonging to the tome. */
   async deleteTome(id: string) {

@@ -36,9 +36,8 @@ export function AppHeader() {
           {tome.title}
         </Typography>
       </Box>
-      <Button component={RouterLink} to={`/tomes/${tome.id}/edit`}>
-        Edit tome
-      </Button>
+      {/* No "Edit tome" button: the overview page in the nav *is* the editor,
+          and a second way in would only ever land on the same screen. */}
     </Box>
   );
 }

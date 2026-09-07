@@ -552,6 +552,30 @@ whose kind was changed from `text` and therefore holds a line of plain text. Do
 the same anywhere else a stored value reaches an editor. The rest of the
 prose-kind rules — emptiness, search, cards — are in the root `AGENTS.md`.
 
+### The tome overview is the same page, one table over
+
+`../pages/TomeDashboardPage.tsx` is the **third** screen with no Save button,
+and it is deliberately the element page with different fields: `InlineTextField`
+for title and subtitle, a plain select for status, `ImagePicker` for the cover,
+one `ProseField` for the description, `SaveStatus` and a delete `IconButton` in
+its header. Every rule above holds here unchanged — the click that reaches the
+page stands the prose field down, the field redraws from the page's pending edit
+rather than from the row, and `store.updateTome` is a patch re-read inside its
+transaction. Read that section, not this one, for *why*.
+
+Three things are its own:
+
+- **It has no unmount sweep**, and needs none. `WriteEditorPage` and
+  `ElementPage` sweep because their rows are created blank at a click site; a
+  tome is only ever created deliberately, from `/tomes/new`, with a title.
+- **The delete button lives here and nowhere else.** The library card is a
+  `CardActionArea` and nothing more — no Open, no Edit, no Delete — so the one
+  place a book can be destroyed from is the page showing what would go with it.
+  It still goes through `useConfirm()`, naming the tome.
+- **The cover is a picker, not a thumbnail**, and it is the reason `ImagePicker`
+  forwards `imageSx`: this is the one place a cover is shown whole rather than
+  cropped to its tile.
+
 ## The editor toolbar is described by a config, not hand-wired JSX
 
 `../lexical/ToolbarPlugin.tsx` renders from `ToolbarItem[][]` — an array of
@@ -771,13 +795,15 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   starts disconnected, and that is correct rather than a bug to paper over.
 - `AppHeader.tsx` — per-tome workspace header (title + back link + edit
   link). Reads `useTomeWorkspace()`.
-- `TomeFormDialog.tsx` — create/edit dialog for a Tome, used by both
-  `TomeLibraryPage` (`/tomes/new`) and `TomeDashboardPage`
-  (`/tomes/:id/edit`) — matches the original behavior where editing a tome
-  always lands you on that tome's dashboard with the dialog open on top,
-  regardless of where you clicked "Edit" from. In create mode it also carries
-  both template pickers (see above); in edit mode it carries neither, because a
-  template is only ever applied at creation.
+- `TomeFormDialog.tsx` — **create-only** dialog for a Tome, used by
+  `TomeLibraryPage` at `/tomes/new` and nowhere else. It had an edit mode, and
+  `/tomes/:id/edit` mounted it over the dashboard; both are gone — editing a
+  tome happens on `../pages/TomeDashboardPage.tsx` where the fields are (see
+  above). What is left here is the part a page cannot do, because it happens
+  before the tome exists: the two template pickers. Its Description box is
+  still plain text, wrapped into a document by `saveTome` — a first line about
+  the book is worth asking for while the author is here, and the writing of it
+  happens in the editor on the overview.
 - `FieldDefinitionsEditor.tsx` — add/edit/remove/**reorder** UI for an
   ElementType's custom field definitions (`FieldDefinition[]`); used by
   `../pages/ElementTypesPage.tsx`. Reordering is the cheapest kind of drag in
@@ -806,18 +832,21 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   branches are not always the same shape: `sx` sizes both — what a thumbnail
   wants, one fixed box whichever renders — and `imageSx` lands after it on the
   image alone. The dashboard is the one caller that needs the split: it shows
-  the cover whole (`width`/`height` auto under `maxWidth: "100%"` and
-  `maxHeight: 400`, so nothing is cropped and a small image is not stretched),
-  while the monogram, having no proportions of its own, keeps a fixed box.
+  the cover whole (`objectFit: "contain"` over a transparent ground, so nothing
+  is cropped and a small image is not stretched), while the monogram, having no
+  proportions of its own, fills the same fixed box. It reaches the thumbnail
+  through `ImagePicker`, which forwards `imageSx` for exactly this caller.
   Compose them with MUI's array form rather than a second spread — an
   `SxProps` may be an array or a callback, and spreading two widens every
   property past what `sx` accepts, which `tsc` catches.
 - `ImagePicker.tsx` — clickable image-or-placeholder tile used in the Tome
   and Element edit forms; opens a dialog to paste an image URL or upload a
   file (`imageFrom` from `services/store.ts` turns either into an
-  `ImageSource`). Used by `TomeFormDialog.tsx` and the edit form in
-  `../pages/ElementListPage.tsx` in place of the old inline URL field +
-  upload button, adding a live preview and the ability to remove an image.
+  `ImageSource`). Used by `TomeFormDialog.tsx`, `../pages/ElementPage.tsx` and
+  `../pages/TomeDashboardPage.tsx` in place of the old inline URL field +
+  upload button, adding a live preview and the ability to remove an image. It
+  forwards an optional `imageSx` to its `CoverThumbnail` — see that entry for
+  the one caller that needs it.
   The tile is a `CoverThumbnail`; the dialog holds the picked **`File`**, not
   a URL made from it, so its preview is three derived values under ordinary
   `??` precedence — picked file, then typed URL, then the stored image. That

@@ -420,6 +420,36 @@ describe("files from other versions", () => {
     expect(stored.searchText).toBe("Ash\nA smith.\nQuiet about it.\n31");
   });
 
+  it("converts a pre-v10 tome description into prose", async () => {
+    const { tome } = await fullTome("The Long Road");
+    const file = throughJson(await store.exportTomeBackup(tome.id));
+
+    // What a v2 file held: plain text in `description`, and no mirror.
+    const old: BackupFile = {
+      ...file,
+      formatVersion: 2,
+      schemaVersion: 9,
+      tomes: [
+        {
+          ...file.tomes[0],
+          tome: (() => {
+            const { descriptionText: _text, ...rest } = file.tomes[0].tome;
+            return { ...rest, description: "A war, told sideways." };
+          })(),
+        },
+      ],
+    };
+
+    await store.restoreBackup(old, "replace");
+
+    // The tome's half of the rule above: what the v10 backfill would have done
+    // has to happen here, or the overview opens on unparseable text and every
+    // library card shows a paragraph of JSON.
+    const stored = (await db.tomes.get(tome.id))!;
+    expect(isProseDocument(stored.description)).toBe(true);
+    expect(stored.descriptionText).toBe("A war, told sideways.");
+  });
+
   it("refuses a file from a newer version of the app", () => {
     const future = JSON.stringify({
       format: "myTome-backup",

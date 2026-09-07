@@ -28,12 +28,19 @@ export function ImagePicker({
   alt,
   onChange,
   sx,
+  imageSx,
 }: {
   image?: ImageSource;
   label: string;
   alt: string;
   onChange: (image: ImageSource | undefined) => void;
   sx?: SxProps<Theme>;
+  /**
+   * Forwarded to `CoverThumbnail`, for the same caller it has it for: the tome
+   * overview shows a cover at its own proportions rather than cropped to the
+   * tile, and the monogram standing in for one has no proportions to show.
+   */
+  imageSx?: SxProps<Theme>;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -52,7 +59,13 @@ export function ImagePicker({
           ...sx,
         }}
       >
-        <CoverThumbnail image={image} label={label} alt={alt} sx={{ width: "100%", height: "100%" }} />
+        <CoverThumbnail
+          image={image}
+          label={label}
+          alt={alt}
+          sx={{ width: "100%", height: "100%" }}
+          imageSx={imageSx}
+        />
         <Stack
           className="image-picker-overlay"
           direction="row"

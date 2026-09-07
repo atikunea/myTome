@@ -145,7 +145,7 @@ services/
   slug.ts          The one slug rule. Pure and table-free — see below.
   validate.ts      The four validators, plus the two completeness helpers.
   images.ts        imageHref / imageFrom. Neither allocates — see hooks/useObjectUrl.ts.
-  tomes.ts         Tomes + the eight-table delete cascade.
+  tomes.ts         Tomes + the eight-table delete cascade. Sole writer of the text mirror.
   templates.ts     applyTomeTemplate, createPlotFromTemplate. Create-time only.
   elementTypes.ts  Types, field definitions, and the two count* helpers.
   elements.ts      Elements + relationships. Sole writer of the two text mirrors.
@@ -354,14 +354,17 @@ that arrives without a row and ends with `syncPlotSortOrder` for every tome it
 touched. Treat that as the standing rule: **a restore must leave the spine
 satisfying `expectSpineIntact`, whatever version wrote the file.** The same
 standing rule now covers elements: `writeTome` converts a plain-text
-`description` and derives both text mirrors, since a v1 file carries neither.
+`description` and derives both text mirrors, since a v1 file carries neither —
+and the tome itself, whose own description a v2 file still carries as text.
 
-**`backupFormatVersion` is 2, and v9 is why.** `Element.description` kept its
-name while its meaning changed from text to a document, so a v1 reader would
-restore a v2 file without complaint and then show every card a paragraph of
-JSON. The version check refuses it instead. That is the test for a bump: not
-"did a field appear?" — an older reader ignores those — but "would an older
-reader mis*read* what it already knows?"
+**`backupFormatVersion` is 3, and the two prose migrations are why.**
+`Element.description` (v2, schema v9) and then `Tome.description` (v3, schema
+v10) each kept their name while their meaning changed from text to a document,
+so an older reader would restore the file without complaint and then show a
+paragraph of JSON — on every element card, and then on every library card. The
+version check refuses it instead. That is the test for a bump: not "did a field
+appear?" — an older reader ignores those — but "would an older reader mis*read*
+what it already knows?"
 
 ### `drive.ts` — transport, and the app's only network code
 
@@ -536,7 +539,7 @@ else they appear.
 
 ## Dexie schema changes — read before editing `models/db.ts`
 
-The database is `myTomeDB`, at **version 9**, running in users' browsers.
+The database is `myTomeDB`, at **version 10**, running in users' browsers.
 
 1. **Never edit a shipped `.version(n).stores({…})` block.** Add
    `.version(n+1)`. Dexie replays versions in order to upgrade an existing
@@ -581,6 +584,15 @@ The database is `myTomeDB`, at **version 9**, running in users' browsers.
    free instead of burying the author's paragraph inside a document whose only
    text is JSON. It reads `elementTypes` as well, because `searchText` spans the
    custom fields. No index came with it, for v8's reason.
+8. **v10 did the same to `Tome.description`** and added `descriptionText`
+   beside it, when the overview became a page you read with every field edited
+   where it sits. `backfillTomeProse` is `backfillElementProse` minus the search
+   mirror — a tome has no custom fields to span, and the library filters on
+   title and subtitle — and it carries the same `isProseDocument` guard for the
+   same reason. What the pair do *not* share is where the conversion lives: the
+   tome's is `tomeDescription` in `models/Tome.ts`, so the upgrade, `saveTome`,
+   `updateTome` and a restore cannot drift. No index came with it, for v8's
+   reason.
 
 ### Prose is a *kind* now, not just the description
 
@@ -669,6 +681,15 @@ list. Which field is being edited is **not** in the URL — the same call
 "can the URL rebuild it?", and while it technically could, a caret inside a
 field is not somewhere anyone deep-links, and every stray click would push a
 history entry.
+
+**A tome's route is the tome, for the same reason.** `dashboard` has no `edit`
+sibling any more: `TomeDashboardPage` edits title, subtitle, status, cover and
+description where they sit, and `TomeFormDialog` — still mounted by
+`/tomes/new` — now only *creates*, which is the part a page cannot do because it
+happens before the tome exists (the two template pickers). The library card
+followed: it carries no Open, Edit or Delete buttons at all, just a
+`CardActionArea` to this page, and **deleting a tome now lives only here**,
+where the cost of it is on screen.
 
 Composing *existing* text into a beat follows the rule rather than the
 exception: `plots/:plotId/items/:itemId/write/add` and `…/write/add/:index` both

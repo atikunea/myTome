@@ -3,6 +3,7 @@ import Dexie, { type Transaction } from "dexie";
 import {
   backfillElementProse,
   backfillPlotRows,
+  backfillTomeProse,
   backfillWordCounts,
   MyTomeDB,
 } from "../../models/db";
@@ -91,14 +92,14 @@ const names: string[] = [];
 
 /** Opens a database stamped at an old version, seeds it, and closes it again. */
 const seedLegacy = async (
-  version: 4 | 6 | 7 | 8,
+  version: 4 | 6 | 7 | 8 | 9,
   seed: (write: (table: string, rows: unknown[]) => Promise<unknown>) => Promise<void>,
 ) => {
   const name = `myTomeDB-test-${crypto.randomUUID()}`;
   names.push(name);
   const old = new Dexie(name);
-  // v8 added a field, not an index, so a v8 database is stamped v8 over v7's stores.
-  const stores = { 4: v4Stores, 6: v6Stores, 7: v7Stores, 8: v7Stores }[version];
+  // v8 and v9 added fields, not indexes, so both are stamped over v7's stores.
+  const stores = { 4: v4Stores, 6: v6Stores, 7: v7Stores, 8: v7Stores, 9: v7Stores }[version];
   old.version(version).stores(stores);
   await old.open();
   await seed((table, rows) => old.table(table).bulkAdd(rows));
@@ -110,7 +111,7 @@ const seedLegacy = async (
 const upgrade = async (name: string) => {
   const db = new MyTomeDB(name);
   await db.open();
-  expect(db.verno).toBe(9);
+  expect(db.verno).toBe(10);
   const items = await db.plotItems.toArray();
   const rows = await db.plotRows.toArray();
   db.close();
@@ -369,7 +370,7 @@ describe("v9 — backfillElementProse", () => {
   const upgradeElements = async (name: string) => {
     const db = new MyTomeDB(name);
     await db.open();
-    expect(db.verno).toBe(9);
+    expect(db.verno).toBe(10);
     const elements = await db.elements.toArray();
     db.close();
     return elements;
@@ -423,5 +424,71 @@ describe("v9 — backfillElementProse", () => {
     // only text is JSON — the failure `isProseDocument` exists to prevent.
     expect(after!.description).toBe(before);
     expect(after!.descriptionText).toBe("A smith.");
+  });
+});
+
+describe("v10 — backfillTomeProse", () => {
+  /** A pre-v10 tome: a plain-text description, and no mirror. */
+  const legacyTome = (id: string, title: string, description: string) => ({
+    id,
+    title,
+    description,
+    status: "Draft",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  });
+
+  const seedTomes = (rows: ReturnType<typeof legacyTome>[]) =>
+    seedLegacy(9, async (write) => {
+      await write("tomes", rows);
+    });
+
+  const upgradeTomes = async (name: string) => {
+    const db = new MyTomeDB(name);
+    await db.open();
+    expect(db.verno).toBe(10);
+    const tomes = await db.tomes.toArray();
+    db.close();
+    return tomes;
+  };
+
+  it("wraps a plain-text description as a document the editor can open", async () => {
+    const name = await seedTomes([
+      legacyTome("t1", "The Long Road", "A war, told sideways.\nAnd a horse."),
+      legacyTome("t2", "Untitled", ""),
+    ]);
+
+    const tomes = await upgradeTomes(name);
+    const road = tomes.find((tome) => tome.id === "t1")!;
+    const blank = tomes.find((tome) => tome.id === "t2")!;
+
+    // Converted, not defaulted: the author's own words are the one thing this
+    // migration cannot be allowed to drop.
+    expect(isProseDocument(road.description)).toBe(true);
+    expect(documentText(road.description)).toBe("A war, told sideways.\nAnd a horse.");
+    expect(road.descriptionText).toBe("A war, told sideways.\nAnd a horse.");
+    // An empty description still has to be a well-formed document, or the
+    // editor has nothing to parse when the author first clicks into it.
+    expect(isProseDocument(blank.description)).toBe(true);
+    expect(blank.descriptionText).toBe("");
+  });
+
+  it("leaves an already-converted row alone on a re-run", async () => {
+    const name = await seedTomes([legacyTome("t1", "The Long Road", "A war.")]);
+    await upgradeTomes(name);
+
+    const db = new MyTomeDB(name);
+    await db.open();
+    const before = (await db.tomes.get("t1"))!.description;
+    await db.transaction("rw", db.tomes, () =>
+      backfillTomeProse(Dexie.currentTransaction as Transaction),
+    );
+    const after = await db.tomes.get("t1");
+    db.close();
+
+    // Double-wrapping would bury the description inside a document whose only
+    // text is JSON — the failure `isProseDocument` exists to prevent.
+    expect(after!.description).toBe(before);
+    expect(after!.descriptionText).toBe("A war.");
   });
 });

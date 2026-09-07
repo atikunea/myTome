@@ -56,8 +56,10 @@ export default function App() {
                 <Route path="/terms" element={<TermsOfUsePage />} />
                 <Route path="/tomes/:tomeId" element={<WorkspaceLayout />}>
                   <Route index element={<Navigate to="dashboard" replace />} />
+                  {/* The tome itself, edited where it sits. There is no `edit`
+                      sibling: the old form over it is gone, exactly as the
+                      element form is — `TomeFormDialog` now only creates. */}
                   <Route path="dashboard" element={<TomeDashboardPage />} />
-                  <Route path="edit" element={<TomeDashboardPage editing />} />
                   <Route path="elements/settings" element={<ElementTypesPage />} />
                   <Route path="elements/settings/new" element={<ElementTypesPage creating />} />
                   <Route path="elements/settings/:configId" element={<ElementTypesPage />} />
