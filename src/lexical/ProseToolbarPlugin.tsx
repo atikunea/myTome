@@ -63,6 +63,17 @@ function SelectionToolbar() {
   const [rect, setRect] = useState<DOMRect | null>(null);
 
   const sync = useCallback(() => {
+    // The selection may have left the editor entirely — a control this pill
+    // opened has taken it, and `getSelection` now describes the link field or
+    // an open menu rather than the manuscript. Hold the rect rather than
+    // dropping it: the pill owns those controls, so unmounting it takes the
+    // open one down with it. That is what closed the link popover the instant a
+    // pasted URL outgrew the field and scrolled it — a scroll anywhere on the
+    // page reaches this through the capturing listener below.
+    const root = editor.getRootElement();
+    const anchor = window.getSelection()?.anchorNode ?? null;
+    if (root && anchor && !root.contains(anchor)) return;
+
     const ranged = editor
       .getEditorState()
       .read(() => {

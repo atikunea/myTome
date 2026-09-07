@@ -367,6 +367,22 @@ enough to outgrow a narrow window, so its `Paper` caps its width and scrolls
 horizontally the way the docked strip does — wrapping would put a second row
 over the selection.
 
+**The pill is the parent of every control it opens, so it must not vanish while
+one is open.** `SelectionToolbar` returns `null` the moment its rect goes, which
+unmounts `ToolbarPlugin` and takes the link popover — and any open menu — with
+it. Its `sync` therefore returns early, holding the last rect, whenever the
+document selection's `anchorNode` is outside the editor root: focus has moved
+into the pill's own chrome, where `getSelection` describes the link field rather
+than the manuscript. Without that guard **pasting a URL into "Insert link" just
+closed the tool**: a URL longer than the field scrolls it horizontally to follow
+the caret, and the `scroll` listener is capturing on `document` (the surface
+scrolls its own container, not the window), so an input's own scroll arrived
+here as "the page moved" and dropped the rect. Typing worked because a short URL
+never overflows. `resize` was the same trip wire, one window-drag away. This is
+the class of bug the `node` suite cannot see — verify it by driving the app, and
+a `scroll` event dispatched on the focused field reproduces it without a
+clipboard.
+
 ### `ColorModeToggle` sits in the surface's corner
 
 It is `position: fixed` at `zIndex.modal + 1` so it stays usable over any
