@@ -11,7 +11,7 @@ import { ElementTypesPage } from "./pages/ElementTypesPage";
 import { ElementListPage } from "./pages/ElementListPage";
 import { ElementPage } from "./pages/ElementPage";
 import { PlotPage } from "./pages/PlotPage";
-import { PlotComparePage } from "./pages/PlotComparePage";
+import { PlotCompareRedirect } from "./pages/PlotCompareRedirect";
 import { WriteListPage } from "./pages/WriteListPage";
 import { WriteEditorPage } from "./pages/WriteEditorPage";
 import { BeatManuscriptPage } from "./pages/BeatManuscriptPage";
@@ -63,21 +63,34 @@ export default function App() {
                   <Route path="elements/settings" element={<ElementTypesPage />} />
                   <Route path="elements/settings/new" element={<ElementTypesPage creating />} />
                   <Route path="elements/settings/:configId" element={<ElementTypesPage />} />
+                  {/*
+                    One plotting route family for one plotting page. `:plotIds` is
+                    a comma-joined list of one or more, so a single plot and a
+                    comparison are the same address at different lengths and
+                    there is no compare mode to enter or leave. The list is
+                    canonical — `PlotPage` drops unknown and repeated ids and
+                    rewrites the URL.
+                  */}
                   <Route path="plots" element={<PlotPage />} />
-                  <Route path="plots/:plotId" element={<PlotPage />} />
-                  <Route path="plots/:plotId/items/:itemId" element={<PlotPage />} />
+                  <Route path="plots/:plotIds" element={<PlotPage />} />
+                  <Route path="plots/:plotIds/items/:itemId" element={<PlotPage />} />
+                  {/* Naming a spine row. The row belongs to the tome, not to a column. */}
+                  <Route path="plots/:plotIds/rows/:rowId" element={<PlotPage />} />
                   {/*
                     The manuscript export. A route rather than a `useState` flag
                     like every other dialog here — and deliberately scoped to one
                     plot: beats on the same spine row are contemporaneous, which
                     is the absence of a reading order, so there is no honest
-                    address for "the manuscript of several plots at once".
+                    address for "the manuscript of several plots at once". With
+                    several columns drawn it exports the primary one, `:plotIds`
+                    first, which is the tab the author has selected.
                   */}
-                  <Route path="plots/:plotId/export" element={<PlotPage exporting />} />
+                  <Route path="plots/:plotIds/export" element={<PlotPage exporting />} />
                   {/*
-                    A beat's composed text, as one manuscript. There is deliberately
-                    no `plots/compare/...` variant: the compare view links here, so
-                    a beat's writing has a single address whichever view found it.
+                    A beat's composed text, as one manuscript. It takes the beat's
+                    own `:plotId`, never the `:plotIds` list it was clicked from,
+                    so a beat's writing has one address however many plots were
+                    drawn when the author reached it.
                   */}
                   <Route
                     path="plots/:plotId/items/:itemId/write"
@@ -98,37 +111,30 @@ export default function App() {
                     element={<BeatManuscriptPage adding />}
                   />
                   {/*
-                    Two ways to author a beat, because there are two questions a
-                    caller can answer. "Add item" knows only that the beat goes at
-                    the end of the plot, and lets `rowForNewPlotItem` pick the row;
-                    an empty cell in the grid already names the row, which is the
-                    same split `plots/compare/:plotIds/insert/…` makes.
+                    Authoring a beat. It always names the plot, because with
+                    several columns drawn a position alone does not say which one
+                    is being added to — and one column is only the case where
+                    that is obvious. The row is optional: an empty cell in the
+                    grid knows which cell it is, while "Add item" knows only that
+                    the beat goes last and lets `rowForNewPlotItem` choose.
                   */}
-                  <Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
-                  <Route path="plots/:plotId/insert/row/:rowId" element={<PlotPage creating />} />
-                  {/* Naming a spine row, the single-plot twin of the compare route below. */}
-                  <Route path="plots/:plotId/rows/:rowId" element={<PlotPage />} />
+                  <Route
+                    path="plots/:plotIds/insert/:sidePlotId"
+                    element={<PlotPage creating />}
+                  />
+                  <Route
+                    path="plots/:plotIds/insert/:sidePlotId/:rowId"
+                    element={<PlotPage creating />}
+                  />
                   {/*
-                    Compare draws any number of plots against the tome's shared row
-                    axis, so `:plotIds` is a comma-joined list rather than a pair.
-                    Its insert route names the plot as well as the row: with several
-                    columns on screen, a row alone does not say which one to add to,
-                    and the row is optional — without it the beat is appended.
+                    The old compare addresses, kept working. Comparing was a page
+                    of its own until the two plot views became one; every one of
+                    its routes maps to the new shape by deleting the `compare`
+                    segment, which is what the splat carries. The static segment
+                    outranks `:plotIds`, so these win over the routes above.
                   */}
-                  <Route path="plots/compare/:plotIds" element={<PlotComparePage />} />
-                  <Route
-                    path="plots/compare/:plotIds/items/:itemId"
-                    element={<PlotComparePage />}
-                  />
-                  <Route path="plots/compare/:plotIds/rows/:rowId" element={<PlotComparePage />} />
-                  <Route
-                    path="plots/compare/:plotIds/insert/:sidePlotId"
-                    element={<PlotComparePage creating />}
-                  />
-                  <Route
-                    path="plots/compare/:plotIds/insert/:sidePlotId/:rowId"
-                    element={<PlotComparePage creating />}
-                  />
+                  <Route path="plots/compare/:plotIds" element={<PlotCompareRedirect />} />
+                  <Route path="plots/compare/:plotIds/*" element={<PlotCompareRedirect />} />
                   {/*
                     There is no `write/new` route: a draft row is created at the
                     click site and the editor is opened on its real id, so a

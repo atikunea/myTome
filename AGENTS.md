@@ -754,38 +754,48 @@ needs for `types` (the mentions plugin). Below `sm` the same surface goes
 full-bleed, because at that width `SideNav` is already a horizontal strip and
 there is nothing worth dimming.
 
-**A beat's manuscript has exactly one address.** There is no
-`plots/compare/:plotIds/items/:itemId/write` variant — `PlotComparePage` links
-at `plots/:plotId/items/:itemId/write` using the beat's own `plotId`, and the
-back button returns to the comparison. Resist adding a compare-scoped twin; the
-route shape is already three deep.
+**A beat's manuscript has exactly one address.** `plots/:plotId/items/:itemId/write`
+takes the beat's own `plotId`, never the list of columns that happened to be
+drawn when it was clicked — so a beat's writing is the same link whether one
+plot was on screen or four. Resist adding a columns-scoped twin; the route shape
+is already three deep.
 
-**Compare takes a comma-joined list of plots**, not a pair:
-`plots/compare/:plotIds` (plus `/items/:itemId`, `/rows/:rowId`, and
-`/insert/:sidePlotId` with an optional `/:rowId`). Any number of columns is just
-a link. The list is canonical — `PlotComparePage` drops unknown and repeated ids
-and rewrites the URL, and fewer than two plots falls back to the single-plot
-view, since a plot compared with itself is not a comparison. The insert route
-names the plot *and* the row because with several columns neither alone
-identifies a cell; omitting the row appends. The old
-`plots/:plotId/compare/:otherPlotId` routes were removed outright, not
-redirected.
+**`:plotIds` is a comma-joined list of one or more, and there is only one
+plotting page.** `plots/:plotIds` plus `/items/:itemId`, `/rows/:rowId`,
+`/export`, and `/insert/:sidePlotId` with an optional `/:rowId`. A single plot
+is a list of length one, so drawing one plot and drawing four is the same
+address at different lengths — there is no compare page, no compare mode, and
+nothing to exit. Which plots are in the list is decided by the toggles in
+`PlotPicker`'s tabs.
 
-**The single-plot routes now mirror those, because it is the same view with one
-column.** `PlotPage` draws through `PlotGrid` exactly as compare does, so it
-grew the two routes the spine needs: `plots/:plotId/rows/:rowId` names a row,
-and `plots/:plotId/insert/row/:rowId` authors a beat in a named cell. That last
-one is a *sibling* of `plots/:plotId/insert/:index` rather than a replacement,
-and the pair encode the two different questions a caller can answer — "Add item"
-knows only that the beat goes at the end and lets `rowForNewPlotItem` choose the
-row, while an empty cell already knows the row. Static segments outrank dynamic
-ones in React Router, so `insert/row/:rowId` and `insert/:index` do not collide.
+The list is canonical: `PlotPage` drops unknown and repeated ids and rewrites
+the URL, so a hand-edited or shared link resolves the same way, and an empty
+result falls back to the tome's first plot (creating one if the tome has none).
+The **primary** plot is the first id — the tab the strip marks selected, and
+what rename, delete, "Add item" and the export act on.
 
-**`plots/:plotId/export` mounts `PlotPage` with `exporting`**, following the
+The insert route names the plot *and* optionally the row, because with several
+columns neither alone identifies a cell; omitting the row appends and lets
+`rowForNewPlotItem` choose. There is no `insert/:index` any more — an index was
+only ever `items.length`.
+
+**`plots/compare/:plotIds` and `plots/compare/:plotIds/*` still resolve**, as
+`PlotCompareRedirect`. Comparing was a page of its own, and its columns were in
+the URL precisely so a comparison could be sent to someone — which is exactly
+why those links have to keep working. Every one of its routes maps to the new
+shape by deleting the `compare` segment, which is what the splat carries. The
+static segment outranks `:plotIds`, so these win over the routes above; the bare
+word (`plots/compare`, no ids) falls through to `plots/:plotIds` and resolves to
+no plots, which the fallback turns into the first plot. Don't remove these
+without deciding those links may 404.
+
+**`plots/:plotIds/export` mounts `PlotPage` with `exporting`**, following the
 rule rather than the backup page's exception: the dialog's whole state is two
-toggles and a plot id, all of which a URL can rebuild. It is a sibling of the
-plot's own route and deliberately has no compare-scoped twin — a manuscript is
-one plot line, for the reason set out under `services/manuscript.ts`.
+toggles and a plot id, all of which a URL can rebuild. **A manuscript is one
+plot line** — for the reason set out under `services/manuscript.ts` — so with
+several columns drawn it exports the *primary*, and reaching another one's
+manuscript is a tab click. Resist growing it a `:plotId` of its own: two ways to
+say which plot is the plot would undo the point of a primary.
 
 `StrictMode` is on in `main.tsx`. Assume every effect mounts, cleans up, and
 mounts again in dev, and write effects that survive it.

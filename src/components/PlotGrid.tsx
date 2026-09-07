@@ -130,10 +130,10 @@ const cellKeyboardCoordinates: KeyboardCoordinateGetter = (
 /**
  * A tome's plots — one of them, or all of them — drawn against the shared row
  * axis, so beats that share a row line up and a plot with nothing on a row shows
- * a gap there. **This is the only way a plot is drawn.** A single plot is one
- * column of it, which is what makes `../pages/PlotPage.tsx` and
- * `../pages/PlotComparePage.tsx` the same picture at two widths rather than two
- * layouts an author has to learn separately.
+ * a gap there. **This is the only way a plot is drawn**, and a single plot is
+ * one column of it: `../pages/PlotPage.tsx` hands it the list named by
+ * `:plotIds`, so comparing plots is this same picture with another column rather
+ * than a second screen an author has to learn.
  *
  * The alignment is CSS, not arithmetic: every row's cells are siblings in one
  * grid, so the grid row grows to its tallest card and the others stretch beside

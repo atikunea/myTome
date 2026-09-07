@@ -176,7 +176,7 @@ export const spineStore = {
     });
   },
   /**
-   * Moves a beat onto another row of its tome's spine — the compare grid's drop.
+   * Moves a beat onto another row of its tome's spine — the grid's drop.
    * Landing on a row that already holds one of the same plot's beats swaps the
    * two: a plot can only have one beat per row, because a grid cell can only draw
    * one card.

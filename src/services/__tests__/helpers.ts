@@ -32,7 +32,7 @@ export const beatsOf = (plotId: string) =>
 
 /**
  * A plot's beat titles laid out against the tome's spine — one entry per row,
- * `null` where the plot has a gap. This is what the compare grid draws, so it is
+ * `null` where the plot has a gap. This is what the grid draws, so it is
  * the shape alignment assertions should be written in.
  */
 export const columnOf = async (tomeId: string, plotId: string) => {

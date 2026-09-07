@@ -85,31 +85,43 @@ lays a row out as its own flex container, so it cannot span the columns of a
 grid — and the grid is what makes beats on the same row line up. `BeatDot` is
 the stand-in for `TimelineDot` for the same reason.
 
-## One plot and several are the same picture
+## One plot and several are the same screen
 
-`PlotPage` and `PlotComparePage` both render `PlotGrid`; the only difference is
-how many columns they hand it. This is deliberate and worth defending, because
-the two screens used to be two different layouts and an author moving between
-them had to re-learn the page:
+There is **one plotting page**, `../pages/PlotPage.tsx`, and it draws a list of
+one or more plots as columns of one `PlotGrid`. There used to be two pages, two
+layouts and a mode you entered with "Compare" and left with "Exit compare"; an
+author moving between them had to re-learn the screen. The pieces that made the
+merge possible, each worth defending:
 
-- **The gutter is the spine row, in both.** It used to be the *beat label*
+- **The gutter is the spine row.** It used to be the *beat label*
   (`PlotItem.name`) on the single-plot page and the *row label* (`PlotRow.label`)
   on compare — two unrelated records taking turns in one slot, which is how the
   spine stayed invisible to anyone who never opened the compare view. The beat
   label now lives on the card, always.
+- **A gap is drawn whatever the column count.** The single-plot view used to pack
+  beats contiguously, so a plot with a hole in it looked identical to one without.
 - **Row actions belong to the grid, not the page.** Inserting and deleting a row
-  are the same act in both views, so `PlotGrid` owns those buttons and calls the
-  store itself. Renaming needs a route, so it stays a prop (`onRenameRow`) and
-  the two pages mount the shared `PlotRowDialog`.
-- **A gap is drawn in both.** The single-plot view used to pack beats
-  contiguously, so a plot with a hole in it looked identical to one without.
-- **`renderColumnHeader` is optional**, and `PlotPage` omits it: `PlotPicker`'s
-  tabs sit directly above the grid and already name the one column.
+  are the same act however many columns are drawn, so `PlotGrid` owns those
+  buttons and calls the store itself. Renaming needs a route, so it stays a prop
+  (`onRenameRow`) and the page mounts the shared `PlotRowDialog`.
+- **The tabs are the only control over which plots are drawn.** Clicking a tab
+  shows that plot alone; the toggle inside each tab adds or removes it as a
+  further column. That replaced a "Compare" menu, an "Add plot" menu, an "Exit
+  compare" button and a per-column `<TextField select>` — four controls for one
+  question, none of them in the same place.
+- **`renderColumnHeader` is optional**, and the page passes none for a single
+  column: the tab strip sits directly above the grid and already names it. With
+  several, a header is the only thing saying which column is which — and it is
+  just a name and an add-beat button, because *which* plots are drawn is the tab
+  strip's business, not the header's.
 
-What has *not* been merged is how a plot is chosen — tabs on one page, a
-per-column select on the other. Folding those together (tabs everywhere, a tab
-click toggling a column) means merging the two pages and their routes, which is
-a bigger change than this one and has not been done.
+The two asymmetries that remain are deliberate, not leftovers. **Rename, delete,
+"Add item" and the manuscript export act on the primary plot** (`columns[0]`,
+the tab the strip marks selected) rather than on all of them, because each is
+singular by nature — most of all the export, since a manuscript is one plot line.
+And **`aria-pressed` on the tab's toggle carries the real column state**, since
+MUI's `Tabs` has one `value` and cannot say that three tabs are on: the tab
+itself means "go to this plot alone", the toggle means "in or out of the set".
 
 ## Templates are seeds, not schemas — and there are two registries
 
@@ -656,10 +668,11 @@ everything under `/tomes/:tomeId/*` (side nav + header + `<Outlet/>`).
   the original design, which had a permanently-dark sidebar.
 - The one responsive breakpoint used everywhere is MUI's default `sm`
   (600px), typically via `sx={{ flexDirection: { xs: "column", sm: "row" } }}`
-  — match this instead of inventing new breakpoints. The single deliberate
-  exception is the two-column layout in `../pages/PlotComparePage.tsx`, which
-  stacks until `md` (900px): two timelines each carry a track, labels, and
-  cards, and do not fit beside each other at 600px.
+  — match this instead of inventing new breakpoints. `PlotGrid` uses `sm` too,
+  for its gutter and column floor; it does **not** stack its columns at any
+  width, because columns that stack are not aligned and alignment is the whole
+  point. Too many columns for the screen scroll sideways inside the grid's own
+  scrollport, never the body.
 - No hand-written inline `<svg>` icons — use `@mui/icons-material`.
 
 ## Below `sm` the nav is a top bar, and its height is pinned deliberately
@@ -957,12 +970,28 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   including the multi-`Autocomplete` attachment picker. Attachments are plain
   associations to elements with no label — that is the whole difference from a
   `Relationship`, so do not grow a description field here.
-- `PlotPicker.tsx` — tabs for switching between a tome's plots, plus
-  create/rename/delete. Its "New plot" dialog carries the plot-template picker.
-  The dialog's fields are uncontrolled, so it resets the form on open: MUI keeps
-  a dialog's children mounted until the close transition ends, and without the
-  reset a cancelled rename followed straight by "New plot" reopens carrying the
-  old plot's name.
+- `PlotPicker.tsx` — the tome's plots as tabs, and **the whole of "compare"**:
+  clicking a tab shows that plot alone, and the toggle inside each tab adds or
+  removes it as a further column. Also create/rename/delete, all of which act on
+  the primary plot (`columns[0]`). Three things about the tabs are load-bearing:
+  - **A tab renders exactly one DOM node.** `Tabs` measures its indicator off
+    `tabList.children[index]`, so a wrapper element breaks it — and it clones its
+    children to inject `selected`/`indicator`/`onChange`, which is why every prop
+    is spread through to the inner `Tab`.
+  - **Both nested buttons are plain `Box component="button"`, with native
+    `title` rather than `Tooltip`.** `ButtonBase` routes key events through its
+    own wrapper and eats the Space that dnd-kit's `KeyboardSensor` needs to lift;
+    `Tooltip` clones its child and costs the drag handle its activator ref, which
+    the sensor refuses to lift without. The tab root is `component="div"` so it
+    can legally contain them.
+  - **`primary` is passed in, not read off `selected`.** `Tabs` injects a
+    `selected` prop when it clones a tab, but it is not part of `TabProps` and
+    reading it fails `tsc`.
+
+  Its "New plot" dialog carries the plot-template picker. The dialog's fields are
+  uncontrolled, so it resets the form on open: MUI keeps a dialog's children
+  mounted until the close transition ends, and without the reset a cancelled
+  rename followed straight by "New plot" reopens carrying the old plot's name.
 - `PlotTemplatePicker.tsx` — the story-structure select shared by
   `TomeFormDialog` and `PlotPicker`, with a preview of the beat count and beat
   labels the chosen structure will write. Controlled: the parent owns the id.

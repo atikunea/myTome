@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  Box,
-  Button,
-  Menu,
-  MenuItem,
-  Stack,
-  Tooltip,
-  Typography,
-} from "@mui/material";
+import { Box, Button, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem, PlotRow } from "../models/Plot";
@@ -25,15 +16,22 @@ import { PlotRowDialog, RemoveEmptyRowsButton } from "../components/PlotRowTools
 import { ManuscriptExportDialog } from "../components/ManuscriptExportDialog";
 
 /**
- * One plot against the tome's spine. It draws through `PlotGrid` with a single
- * column, which is the whole of what makes this page and `PlotComparePage` the
- * same picture: the gutter names the same rows, the track and dots look the way
- * the old `PlotTimeline` did, and adding a second column is the only difference
- * between the two screens.
+ * The plotting screen: **one or more** of a tome's plots drawn against its
+ * shared row axis. Beats sharing a row line up, and a plot with nothing on a row
+ * shows a gap there.
  *
- * The grid gets no column header here. `PlotPicker` sits directly above it with
- * this plot's tab selected and its own "Add item" button, so a header would name
- * the plot a third time on one screen.
+ * There used to be a second page for the several-plots case, reached through a
+ * "Compare" button and left through "Exit compare". It is gone, and so is the
+ * mode: `:plotIds` is a comma-joined list of one or more, the tabs in
+ * `PlotPicker` toggle which plots are in it, and one plot is simply a list of
+ * length one. `plots/compare/:plotIds` still resolves — `PlotCompareRedirect`
+ * rewrites the old addresses — because a comparison was always a link people
+ * could have kept.
+ *
+ * The list is canonical: unknown and repeated ids are dropped and the URL
+ * rewritten, so a refresh or a shared link resolves the same way. The **primary**
+ * plot is `columns[0]` — the tab the strip marks selected, and what rename,
+ * delete, "Add item" and the manuscript export act on.
  */
 export function PlotPage({
   creating = false,
@@ -42,23 +40,23 @@ export function PlotPage({
   creating?: boolean;
   exporting?: boolean;
 }) {
-  const { plotId, itemId, index, rowId } = useParams<{
-    plotId?: string;
+  const { plotIds, itemId, sidePlotId, rowId } = useParams<{
+    plotIds?: string;
     itemId?: string;
-    index?: string;
+    sidePlotId?: string;
     rowId?: string;
   }>();
   const { tome, types } = useTomeWorkspace();
   const navigate = useNavigate();
-  const [compareMenu, setCompareMenu] = useState<HTMLElement | null>(null);
   const [newPlotOpen, setNewPlotOpen] = useState(false);
 
   const plots = useObservable<Plot[]>((cb) => store.observePlots(tome!.id, cb), [tome?.id]);
   const rows =
     useObservable<PlotRow[]>((cb) => store.observePlotRows(tome!.id, cb), [tome?.id]) ?? [];
-  // Every beat in the tome rather than this plot's alone: the spine is tome-wide,
-  // so "which rows are empty" is a question about all of them — a row this plot
-  // has nothing on may still be occupied by a plot that is not on screen.
+  // Every beat in the tome in one query, rather than one subscription per column:
+  // the number of columns is a route parameter, and hooks cannot be counted by it.
+  // It is also what "which rows are empty" has to be asked of, since the spine is
+  // tome-wide and a row nothing on screen stands on may still be occupied.
   const allItems =
     useObservable<PlotItem[]>((cb) => store.observeTomePlotItems(tome!.id, cb), [tome?.id]) ?? [];
   const elements =
@@ -71,19 +69,32 @@ export function PlotPage({
       [tome?.id],
     ) ?? [];
 
-  // `observeTomePlotItems` reads the `tomeId` index, so unlike `observePlotItems`
-  // it arrives unordered — and the manuscript export reads beats in `sortOrder`.
-  const items = useMemo(
-    () =>
-      allItems
-        .filter((item) => item.plotId === plotId)
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [allItems, plotId],
-  );
+  const requested = useMemo(() => (plotIds ?? "").split(",").filter(Boolean), [plotIds]);
+  const columns = useMemo(() => {
+    if (!plots) return [];
+    const resolved: Plot[] = [];
+    for (const id of requested) {
+      const plot = plots.find((candidate) => candidate.id === id);
+      if (plot && !resolved.some((seen) => seen.id === plot.id)) resolved.push(plot);
+    }
+    return resolved;
+  }, [plots, requested]);
 
-  // No :plotId in the URL — resolve the tome's first plot, creating one if needed.
+  const canonical = columns.map((plot) => plot.id).join(",");
+  const plotsPath = tome ? `/tomes/${tome.id}/plots/${canonical}` : "";
+
   useEffect(() => {
-    if (plotId || !tome || !plots) return;
+    if (!tome || !plots) return;
+    if (columns.length) {
+      // A hand-edited URL naming a deleted or repeated plot is rewritten to what
+      // is actually on screen.
+      if (canonical !== plotIds) navigate(plotsPath, { replace: true });
+      return;
+    }
+    if (plots.length) {
+      navigate(`/tomes/${tome.id}/plots/${plots[0].id}`, { replace: true });
+      return;
+    }
     let active = true;
     store.ensureDefaultPlot(tome.id).then((plot) => {
       if (active) navigate(`/tomes/${tome.id}/plots/${plot.id}`, { replace: true });
@@ -91,25 +102,25 @@ export function PlotPage({
     return () => {
       active = false;
     };
-  }, [plotId, tome, plots, navigate]);
+  }, [tome, plots, columns, canonical, plotIds, plotsPath, navigate]);
 
-  if (!tome) return null;
-  const plot = plots?.find((p) => p.id === plotId);
-  if (!plotId || !plots) return null;
-  if (!plot)
-    return (
-      <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
-        Plot not found
-      </Typography>
-    );
+  if (!tome || !plots) return null;
+  if (!columns.length) return null;
 
-  const plotPath = `/tomes/${tome.id}/plots/${plot.id}`;
-  const closeDialog = () => navigate(plotPath);
-  const insertAt = creating && index !== undefined ? Number(index) : undefined;
-  const editingItem = itemId ? items.find((item) => item.id === itemId) : undefined;
+  const primary = columns[0];
+  const items = allItems.filter((item) => columns.some((plot) => plot.id === item.plotId));
+  // The manuscript is one plot line, and `buildManuscript` reads its beats in
+  // `sortOrder` — which `observeTomePlotItems` does not return them in.
+  const primaryItems = allItems
+    .filter((item) => item.plotId === primary.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const closeDialog = () => navigate(plotsPath);
+  const withColumns = (ids: string[]) => `/tomes/${tome.id}/plots/${ids.join(",")}`;
+  const editingItem = itemId ? allItems.find((item) => item.id === itemId) : undefined;
+  const insertPlot = creating ? columns.find((plot) => plot.id === sidePlotId) : undefined;
   // `:rowId` serves both the rename route and the insert route; `creating` says which.
   const renamingRow = !creating && rowId ? rows.find((row) => row.id === rowId) : undefined;
-  const others = plots.filter((candidate) => candidate.id !== plot.id);
 
   return (
     <Box>
@@ -126,58 +137,29 @@ export function PlotPage({
             PLOT
           </Typography>
           <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
-            {plot.name}
+            {columns.map((plot) => plot.name).join(" · ")}
           </Typography>
         </Box>
         <Stack direction="row" sx={{ alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          <RemoveEmptyRowsButton tomeId={tome.id} rows={rows} tomeItems={allItems} />
+          {/*
+            A manuscript is one plot line, so with several columns this has to
+            name one of them: the primary, which is the tab the author selected.
+            Reaching another one's manuscript is a tab click away.
+          */}
           <Tooltip
             title={
-              others.length
-                ? "Show this plot beside another one"
-                : "Create a second plot to compare timelines"
+              !primaryItems.length
+                ? "Add a beat before exporting a manuscript"
+                : `Turn ${primary.name} into a Word or PDF manuscript`
             }
           >
             {/* A disabled button fires no events, so the tooltip needs a live wrapper. */}
             <span>
               <Button
-                startIcon={<CompareArrowsIcon />}
-                disabled={!others.length}
-                onClick={(event) => setCompareMenu(event.currentTarget)}
-              >
-                Compare
-              </Button>
-            </span>
-          </Tooltip>
-          <Menu
-            anchorEl={compareMenu}
-            open={Boolean(compareMenu)}
-            onClose={() => setCompareMenu(null)}
-          >
-            {others.map((other) => (
-              <MenuItem
-                key={other.id}
-                onClick={() => {
-                  setCompareMenu(null);
-                  navigate(`/tomes/${tome.id}/plots/compare/${plot.id},${other.id}`);
-                }}
-              >
-                {other.name}
-              </MenuItem>
-            ))}
-          </Menu>
-          <RemoveEmptyRowsButton tomeId={tome.id} rows={rows} tomeItems={allItems} />
-          <Tooltip
-            title={
-              items.length
-                ? "Turn this plot line into a Word or PDF manuscript"
-                : "Add a beat before exporting a manuscript"
-            }
-          >
-            <span>
-              <Button
                 startIcon={<IosShareIcon />}
-                disabled={!items.length}
-                onClick={() => navigate(`${plotPath}/export`)}
+                disabled={!primaryItems.length}
+                onClick={() => navigate(`${plotsPath}/export`)}
               >
                 Export
               </Button>
@@ -192,39 +174,85 @@ export function PlotPage({
       <PlotPicker
         tome={tome}
         plots={plots}
-        current={plot}
+        columns={columns}
         newPlotOpen={newPlotOpen}
         onCloseNewPlot={() => setNewPlotOpen(false)}
-        onAddItem={() => navigate(`${plotPath}/insert/${items.length}`)}
+        onAddItem={() => navigate(`${plotsPath}/insert/${primary.id}`)}
+        onShowOnly={(plot) => navigate(withColumns([plot.id]))}
+        onToggleColumn={(plot) =>
+          navigate(
+            columns.some((column) => column.id === plot.id)
+              ? withColumns(columns.filter((column) => column.id !== plot.id).map((c) => c.id))
+              : withColumns([...columns.map((column) => column.id), plot.id]),
+          )
+        }
       />
 
       <PlotGrid
         tomeId={tome.id}
         rows={rows}
-        plots={[plot]}
+        plots={columns}
         items={items}
         types={types}
         elements={elements}
-        onOpenItem={(item) => navigate(`${plotPath}/items/${item.id}`)}
+        // One column needs no header: the tab strip sits directly above it and
+        // already names it. Several do, and the header is only a name and a way
+        // to add a beat — which plots are drawn is the tab strip's business.
+        renderColumnHeader={
+          columns.length > 1
+            ? (plot) => (
+                <Stack direction="row" sx={{ alignItems: "center", gap: 0.5 }}>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {plot.name}
+                  </Typography>
+                  <Tooltip title={`Add a beat to ${plot.name}`}>
+                    <IconButton
+                      size="small"
+                      aria-label={`Add a beat to ${plot.name}`}
+                      onClick={() => navigate(`${plotsPath}/insert/${plot.id}`)}
+                    >
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+              )
+            : undefined
+        }
+        onOpenItem={(item) => navigate(`${plotsPath}/items/${item.id}`)}
         onOpenElement={(element) =>
           navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}`)
         }
-        onWrite={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
-        onAddBeat={(_, targetRow) => navigate(`${plotPath}/insert/row/${targetRow}`)}
-        onRenameRow={(row) => navigate(`${plotPath}/rows/${row.id}`)}
+        // A beat's manuscript has one address regardless of how many columns
+        // found it, so this links at the beat's own plot alone.
+        onWrite={(item) => navigate(`/tomes/${tome.id}/plots/${item.plotId}/items/${item.id}/write`)}
+        onAddBeat={(plotId, targetRow) => navigate(`${plotsPath}/insert/${plotId}/${targetRow}`)}
+        onRenameRow={(row) => navigate(`${plotsPath}/rows/${row.id}`)}
       />
 
       <PlotItemDialog
-        open={Boolean(editingItem) || (creating && (insertAt !== undefined || Boolean(rowId)))}
+        open={Boolean(editingItem) || Boolean(insertPlot)}
         item={editingItem}
-        insertAt={insertAt}
         // Only a create carries a row from the route; an edit keeps the one it has.
         plotRowId={creating ? rowId : undefined}
         tomeId={tome.id}
-        plotId={plot.id}
+        // An existing beat carries the plot it belongs to; a new one takes it from
+        // the route, because with several columns on screen a position alone does
+        // not say which plot is being added to.
+        plotId={editingItem?.plotId ?? insertPlot?.id ?? primary.id}
         elements={elements}
         types={types}
-        onOpenManuscript={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
+        onOpenManuscript={(item) =>
+          navigate(`/tomes/${tome.id}/plots/${item.plotId}/items/${item.id}/write`)
+        }
         onClose={closeDialog}
       />
 
@@ -233,8 +261,8 @@ export function PlotPage({
       {exporting && (
         <ManuscriptExportDialog
           tomeTitle={tome.title}
-          plot={plot}
-          beats={items}
+          plot={primary}
+          beats={primaryItems}
           writeItems={writeItems}
           onClose={closeDialog}
         />
