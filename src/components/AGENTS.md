@@ -4,8 +4,8 @@ Shared UI building blocks for myTome (React 19 + TypeScript + MUI, function
 components with hooks — no class components, no web components). This
 folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
-`EmptyState`, `ColorModeToggle`, `PlotTimeline`, `PlotGrid`, `TimelineCard`,
-`PlotBeatCard`, `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`,
+`EmptyState`, `ColorModeToggle`, `PlotGrid`, `BeatDot`,
+`PlotBeatCard`, `PlotRowTools`, `PlotItemDialog`, `PlotPicker`,
 `WriteItemRow`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`,
 `PolicyProse`, `ProseField`, `InlineTextField`, `RelationshipRowEditor`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
@@ -68,7 +68,7 @@ silently minted an object URL for the blob case — the read that looked free an
 was not. Adding a second caller of `createObjectURL` outside the hook puts that
 trap back.
 
-## Naming: `Plot` is the record, `Timeline` is how it's drawn
+## Naming: `Plot` is the record, and nothing here is a `Timeline` any more
 
 The plotting feature's domain records are `Plot` and `PlotItem` (`models/Plot.ts`,
 the `plots`/`plotItems` tables, `store.savePlotItem`, the `/plots/:plotId`
@@ -77,10 +77,39 @@ routes). They are deliberately **not** named `Timeline`/`TimelineItem`, because
 import alias in every file that touched both. Keep it that way: no file should
 need to alias `@mui/lab`'s `TimelineItem`.
 
-The three components that exist only to emit MUI timeline markup —
-`PlotTimeline`, `TimelineCard`, and `TimelineConnectorInsert` — keep timeline
-vocabulary, since they are named for what they render rather than for the
-record they display.
+**`@mui/lab`'s Timeline is no longer used at all.** `PlotTimeline`,
+`TimelineCard` and `TimelineConnectorInsert` are gone; `PlotGrid` draws every
+plot, and its `Track` reproduces the line and dot by hand. That was forced
+rather than chosen: `Timeline` distributes `position` through React context and
+lays a row out as its own flex container, so it cannot span the columns of a
+grid — and the grid is what makes beats on the same row line up. `BeatDot` is
+the stand-in for `TimelineDot` for the same reason.
+
+## One plot and several are the same picture
+
+`PlotPage` and `PlotComparePage` both render `PlotGrid`; the only difference is
+how many columns they hand it. This is deliberate and worth defending, because
+the two screens used to be two different layouts and an author moving between
+them had to re-learn the page:
+
+- **The gutter is the spine row, in both.** It used to be the *beat label*
+  (`PlotItem.name`) on the single-plot page and the *row label* (`PlotRow.label`)
+  on compare — two unrelated records taking turns in one slot, which is how the
+  spine stayed invisible to anyone who never opened the compare view. The beat
+  label now lives on the card, always.
+- **Row actions belong to the grid, not the page.** Inserting and deleting a row
+  are the same act in both views, so `PlotGrid` owns those buttons and calls the
+  store itself. Renaming needs a route, so it stays a prop (`onRenameRow`) and
+  the two pages mount the shared `PlotRowDialog`.
+- **A gap is drawn in both.** The single-plot view used to pack beats
+  contiguously, so a plot with a hole in it looked identical to one without.
+- **`renderColumnHeader` is optional**, and `PlotPage` omits it: `PlotPicker`'s
+  tabs sit directly above the grid and already name the one column.
+
+What has *not* been merged is how a plot is chosen — tabs on one page, a
+per-column select on the other. Folding those together (tabs everywhere, a tab
+click toggling a column) means merging the two pages and their routes, which is
+a bigger change than this one and has not been done.
 
 ## Templates are seeds, not schemas — and there are two registries
 
@@ -163,7 +192,7 @@ the four kinds — which start a new section — then "Existing text…", which 
 
 - The "Add text to this beat" button under the manuscript. It appends.
 - A `+` in the gutter above each section, revealed on hover or focus — the same
-  trick `TimelineConnectorInsert` plays between two beats. It adds *there*,
+  trick `PlotGrid`'s `RowInsert` plays between two rows. It adds *there*,
   which is the only way to put text part-way up a beat without walking it there
   through "Move earlier".
 
@@ -810,7 +839,7 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   this codebase, because **field order is the array's order and nothing else**:
   `saveType` renumbers every `sortOrder` from the index it is handed, so a drag
   is one `arrayMove` on the parent's `useState` draft and needs no store call,
-  no locally-held render order, and no stale-drag guard — unlike `PlotTimeline`,
+  no locally-held render order, and no stale-drag guard — unlike `PlotGrid`,
   whose order is live-queried and written on drop. Nothing reaches the database
   until "Save type", which is what the rest of this form already does.
   Two details worth keeping:
@@ -860,44 +889,53 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   icon registry, so the name is a slight misnomer; the curated list also carries
   a few beat-shaped icons (`Repeat`, `Favorite`, `Warning`, `HourglassTop`) for
   that use.
-- `TimelineCard.tsx` — one row of the plot timeline, used by
-  `../pages/PlotPage.tsx`: the label column, the track with its dot and insert
-  affordances, and a `PlotBeatCard` for the beat. It **returns a MUI
-  `TimelineItem` as its own root** rather than wrapping one: `Timeline` hands its
-  `position` down through React context, so an intervening element breaks the
-  row's layout grid. The `@dnd-kit` sortable ref and transform therefore land on
-  that `TimelineItem`, and the handle's wiring is passed down to the card.
 - `PlotBeatCard.tsx` — the beat itself: title, description, attached-element
-  chips, and the drag handle. Split out of `TimelineCard` so the same card can
-  sit in a MUI `TimelineContent` or in a grid cell, since a beat is drawn in both
-  the single-plot timeline and the aligned compare grid. **It does not call
+  chips, and the drag handle. It is separate from `PlotGrid` so that the card
+  knows nothing about the cell holding it. **It always draws `item.name`**, since
+  the gutter beside it belongs to the spine row — the old `labelMode` and
+  `showDot` props are gone, and the dot now lives on the track. **It does not call
   `useSortable`** — whichever container registered the beat owns the node ref and
-  the transform and passes `dragHandle` down, because in a grid the draggable
-  node is the cell rather than the card. `labelMode` decides where `item.name` is
-  drawn: `"compact"` only below `sm`, where the timeline's own label column
-  disappears, and `"always"` for a layout with no such column. The drag handle is
-  a plain `Box component="button"`, **not** an `IconButton` — ButtonBase routes
-  key events through its own `getButtonProps` wrapper, which swallows the
-  `onKeyDown` that dnd-kit's `KeyboardSensor` needs to start a lift. The hover
-  reveal for that handle lives on the card's own `sx`, so it travels with the
-  card into whatever layout holds it.
-- `PlotTimeline.tsx` — one plot drawn as a sortable timeline: the `@dnd-kit`
-  context, the locally-held render order, the `TimelineCard` list, and the
-  empty state. Pages hand it a plot's items and callbacks and get a whole
-  timeline back. It owns the drag context **per instance** on purpose, so
-  `../pages/PlotComparePage.tsx` can mount two of them side by side without a
-  card from one plot being droppable into the other. `../pages/PlotPage.tsx`
-  mounts a single one.
-- `PlotGrid.tsx` — two or more plots drawn against the tome's shared row axis, so
-  beats sharing a row line up and a plot with nothing on a row shows a gap. The
-  alignment is CSS, not arithmetic: every row's cells are siblings of one
-  `display: grid`, so the grid row grows to its tallest card and the rest stretch
-  beside it. Consequences worth knowing before editing it:
-  - **One `DndContext` for the whole grid**, unlike the per-instance contexts
-    `PlotTimeline` uses. A column's cells are interleaved with every other
-    column's in DOM order, so a provider cannot wrap one column. `sameColumnOnly`
-    filters the droppable candidates by `plotId` instead, which also stops the
-    grid highlighting a cell that would refuse the beat.
+  the transform and passes `dragHandle` down, because the draggable node is the
+  cell rather than the card. The drag handle is a plain `Box component="button"`,
+  **not** an `IconButton` — ButtonBase routes key events through its own
+  `getButtonProps` wrapper, which swallows the `onKeyDown` that dnd-kit's
+  `KeyboardSensor` needs to start a lift. The hover reveal for that handle lives
+  on the card's own `sx`, so it travels with the card into whatever layout holds it.
+- `BeatDot.tsx` — the beat's marker on the track: colour, variant, icon. A
+  hand-rolled `TimelineDot`, because MUI's reads `Timeline`'s context and ships an
+  `align-self` meant for a `TimelineSeparator`. Used only by `PlotGrid`'s `Track`.
+- `PlotRowTools.tsx` — the two spine controls both plot pages need:
+  `PlotRowDialog` (naming a row, mounted by each page's `rows/:rowId` route) and
+  `RemoveEmptyRowsButton`. The button counts against the **tome's** beats, not the
+  ones on screen: a row can be empty in every visible column and still be occupied
+  by a plot that is not shown, so hand it `observeTomePlotItems`.
+- `PlotGrid.tsx` — **every** plot drawing goes through here: one plot is one
+  column, and compare is the same component with more. Beats sharing a row line
+  up and a plot with nothing on a row shows a gap. The alignment is CSS, not
+  arithmetic: every row's cells are siblings of one `display: grid`, so the grid
+  row grows to its tallest card and the rest stretch beside it. Consequences
+  worth knowing before editing it:
+  - **The track is drawn cell by cell and has to look continuous.** `Track` takes
+    `above`/`below` from the plot's first and last occupied rank, and each segment
+    overshoots its cell by `INSERT_STRIP` so the line bridges the hover-to-insert
+    strip between two rows. That is also why a cell carries no vertical padding —
+    the card does, via `my`. Change one of those three and the line breaks into
+    dashes; it is checked by measuring the segments' rects for gaps.
+  - **A drag is two gestures, chosen by what is in the target cell.** Dropping on
+    a gap is `movePlotItemToRow` (a move, opening a gap behind it). Dropping on
+    another beat is `reorderPlotItems` with an `arrayMove` — the ordinary
+    drag-to-reorder, which shifts the beats in between. It used to be
+    `movePlotItemToRow` in both cases, so dragging a beat three places down
+    swapped it with whatever was there and left the two in between untouched.
+  - **Quiet runs collapse.** `QUIET_RUN_MIN` consecutive rows that *nothing on
+    screen* stands on become one "n quiet rows" line, expandable per run and held
+    in component state. Without it a single plot against a deep spine is a page of
+    empty cells. A run of one or two is left alone: that is the shape of the story
+    and is also somewhere you might want to drop a beat.
+  - **One `DndContext` for the whole grid.** A column's cells are interleaved with
+    every other column's in DOM order, so a provider cannot wrap one column.
+    `sameColumnOnly` filters the droppable candidates by `plotId` instead, which
+    also stops the grid highlighting a cell that would refuse the beat.
   - **Collisions resolve by overlap (`rectIntersection`), not `closestCenter`.**
     Rows differ enormously in height — one long beat makes a row several times
     its neighbour — and `closestCenter` scores a card sitting squarely inside a
@@ -910,11 +948,11 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
     at a tall row's centre turns every keypress into a scroll that never arrives.
     Short steps keep the move a move.
   - The row gutter is `position: sticky; left: 0` with an opaque background, so
-    labels hold while the columns scroll horizontally past them.
-- `TimelineConnectorInsert.tsx` — a `TimelineConnector` that doubles as an
-  insert point, revealing a "+" on hover/focus. The gap between two cards is
-  two stacked connectors (the upper card's bottom, the lower card's top); both
-  are handed the same insert index, so the whole gap acts as one target.
+    labels hold while the columns scroll horizontally past them. Both it and the
+    column floor shrink below `sm` (`GUTTER_WIDTH_XS`, `MIN_COLUMN_WIDTH_XS`):
+    136 + 280 overflows a 375px phone by a hair, and one plot that has to be
+    nudged sideways to be read is worse than the timeline this replaced. The
+    floor only bites with several columns anyway — one column is a `1fr`.
 - `PlotItemDialog.tsx` — route-driven create/edit dialog for a `PlotItem`,
   including the multi-`Autocomplete` attachment picker. Attachments are plain
   associations to elements with no label — that is the whole difference from a

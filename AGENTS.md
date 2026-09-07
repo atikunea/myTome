@@ -242,7 +242,7 @@ load-bearing:
   rows already correct, so a no-op call costs one read and fires no live query.
   `savePlotItem` calls it too: a beat created in a gap partway up the spine
   belongs at that point in its plot, and numbering by insert index leaves the
-  grid and the timeline disagreeing about where it sits.
+  grid and the plot's own column disagreeing about where it sits.
 - **`reorderPlotItems` permutes rows, it does not renumber.** Dragging within one
   plot reassigns which of its beats stands on each row it *already occupies*, so
   the occupied set is unchanged and no other plot loses alignment or gains a gap.
@@ -770,6 +770,16 @@ names the plot *and* the row because with several columns neither alone
 identifies a cell; omitting the row appends. The old
 `plots/:plotId/compare/:otherPlotId` routes were removed outright, not
 redirected.
+
+**The single-plot routes now mirror those, because it is the same view with one
+column.** `PlotPage` draws through `PlotGrid` exactly as compare does, so it
+grew the two routes the spine needs: `plots/:plotId/rows/:rowId` names a row,
+and `plots/:plotId/insert/row/:rowId` authors a beat in a named cell. That last
+one is a *sibling* of `plots/:plotId/insert/:index` rather than a replacement,
+and the pair encode the two different questions a caller can answer — "Add item"
+knows only that the beat goes at the end and lets `rowForNewPlotItem` choose the
+row, while an empty cell already knows the row. Static segments outrank dynamic
+ones in React Router, so `insert/row/:rowId` and `insert/:index` do not collide.
 
 **`plots/:plotId/export` mounts `PlotPage` with `exporting`**, following the
 rule rather than the backup page's exception: the dialog's whole state is two

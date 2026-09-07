@@ -158,7 +158,7 @@ export const plotStore = {
       await db.plotItems.put(item);
       // Settled from row order, never from the insert index. A beat created in a
       // gap partway up the spine belongs at that point in its plot, and numbering
-      // it by index would leave the grid and the single-plot timeline disagreeing
+      // it by index would leave the compare grid and the plot's own column disagreeing
       // about where it sits.
       await syncPlotSortOrder(item.tomeId);
     });

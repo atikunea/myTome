@@ -13,16 +13,28 @@ import AddIcon from "@mui/icons-material/Add";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import type { Element } from "../models/Element";
-import type { Plot, PlotItem } from "../models/Plot";
+import type { Plot, PlotItem, PlotRow } from "../models/Plot";
 import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
-import { PlotTimeline } from "../components/PlotTimeline";
+import { PlotGrid } from "../components/PlotGrid";
 import { PlotItemDialog } from "../components/PlotItemDialog";
 import { PlotPicker } from "../components/PlotPicker";
+import { PlotRowDialog, RemoveEmptyRowsButton } from "../components/PlotRowTools";
 import { ManuscriptExportDialog } from "../components/ManuscriptExportDialog";
 
+/**
+ * One plot against the tome's spine. It draws through `PlotGrid` with a single
+ * column, which is the whole of what makes this page and `PlotComparePage` the
+ * same picture: the gutter names the same rows, the track and dots look the way
+ * the old `PlotTimeline` did, and adding a second column is the only difference
+ * between the two screens.
+ *
+ * The grid gets no column header here. `PlotPicker` sits directly above it with
+ * this plot's tab selected and its own "Add item" button, so a header would name
+ * the plot a third time on one screen.
+ */
 export function PlotPage({
   creating = false,
   exporting = false,
@@ -30,10 +42,11 @@ export function PlotPage({
   creating?: boolean;
   exporting?: boolean;
 }) {
-  const { plotId, itemId, index } = useParams<{
+  const { plotId, itemId, index, rowId } = useParams<{
     plotId?: string;
     itemId?: string;
     index?: string;
+    rowId?: string;
   }>();
   const { tome, types } = useTomeWorkspace();
   const navigate = useNavigate();
@@ -41,11 +54,13 @@ export function PlotPage({
   const [newPlotOpen, setNewPlotOpen] = useState(false);
 
   const plots = useObservable<Plot[]>((cb) => store.observePlots(tome!.id, cb), [tome?.id]);
-  const items =
-    useObservable<PlotItem[]>(
-      (cb) => store.observePlotItems(plotId ?? "", cb),
-      [plotId],
-    ) ?? [];
+  const rows =
+    useObservable<PlotRow[]>((cb) => store.observePlotRows(tome!.id, cb), [tome?.id]) ?? [];
+  // Every beat in the tome rather than this plot's alone: the spine is tome-wide,
+  // so "which rows are empty" is a question about all of them — a row this plot
+  // has nothing on may still be occupied by a plot that is not on screen.
+  const allItems =
+    useObservable<PlotItem[]>((cb) => store.observeTomePlotItems(tome!.id, cb), [tome?.id]) ?? [];
   const elements =
     useObservable<Element[]>((cb) => store.observeTomeElements(tome!.id, cb), [tome?.id]) ?? [];
   // The export needs the texts themselves: a beat holds only their ids, and the
@@ -56,7 +71,15 @@ export function PlotPage({
       [tome?.id],
     ) ?? [];
 
-  const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  // `observeTomePlotItems` reads the `tomeId` index, so unlike `observePlotItems`
+  // it arrives unordered — and the manuscript export reads beats in `sortOrder`.
+  const items = useMemo(
+    () =>
+      allItems
+        .filter((item) => item.plotId === plotId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [allItems, plotId],
+  );
 
   // No :plotId in the URL — resolve the tome's first plot, creating one if needed.
   useEffect(() => {
@@ -83,7 +106,9 @@ export function PlotPage({
   const plotPath = `/tomes/${tome.id}/plots/${plot.id}`;
   const closeDialog = () => navigate(plotPath);
   const insertAt = creating && index !== undefined ? Number(index) : undefined;
-  const editingItem = itemId ? byId.get(itemId) : undefined;
+  const editingItem = itemId ? items.find((item) => item.id === itemId) : undefined;
+  // `:rowId` serves both the rename route and the insert route; `creating` says which.
+  const renamingRow = !creating && rowId ? rows.find((row) => row.id === rowId) : undefined;
   const others = plots.filter((candidate) => candidate.id !== plot.id);
 
   return (
@@ -104,7 +129,7 @@ export function PlotPage({
             {plot.name}
           </Typography>
         </Box>
-        <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
+        <Stack direction="row" sx={{ alignItems: "center", gap: 1, flexWrap: "wrap" }}>
           <Tooltip
             title={
               others.length
@@ -140,6 +165,7 @@ export function PlotPage({
               </MenuItem>
             ))}
           </Menu>
+          <RemoveEmptyRowsButton tomeId={tome.id} rows={rows} tomeItems={allItems} />
           <Tooltip
             title={
               items.length
@@ -172,23 +198,28 @@ export function PlotPage({
         onAddItem={() => navigate(`${plotPath}/insert/${items.length}`)}
       />
 
-      <PlotTimeline
-        plotId={plot.id}
+      <PlotGrid
+        tomeId={tome.id}
+        rows={rows}
+        plots={[plot]}
         items={items}
         types={types}
         elements={elements}
         onOpenItem={(item) => navigate(`${plotPath}/items/${item.id}`)}
-        onInsert={(position) => navigate(`${plotPath}/insert/${position}`)}
         onOpenElement={(element) =>
           navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}`)
         }
         onWrite={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
+        onAddBeat={(_, targetRow) => navigate(`${plotPath}/insert/row/${targetRow}`)}
+        onRenameRow={(row) => navigate(`${plotPath}/rows/${row.id}`)}
       />
 
       <PlotItemDialog
-        open={Boolean(editingItem) || insertAt !== undefined}
+        open={Boolean(editingItem) || (creating && (insertAt !== undefined || Boolean(rowId)))}
         item={editingItem}
         insertAt={insertAt}
+        // Only a create carries a row from the route; an edit keeps the one it has.
+        plotRowId={creating ? rowId : undefined}
         tomeId={tome.id}
         plotId={plot.id}
         elements={elements}
@@ -196,6 +227,8 @@ export function PlotPage({
         onOpenManuscript={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
         onClose={closeDialog}
       />
+
+      <PlotRowDialog row={renamingRow} onClose={closeDialog} />
 
       {exporting && (
         <ManuscriptExportDialog

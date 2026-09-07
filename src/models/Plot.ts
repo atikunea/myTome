@@ -69,3 +69,14 @@ export const plotDotColors: PlotDotColor[] = [
   "error",
   "info",
 ];
+
+/**
+ * What a row is called in the gutter. A row need not be named — the spine grows
+ * as beats are inserted — so an unnamed one falls back to its position, which is
+ * why this takes the index rather than reading it off the record.
+ *
+ * It lives here rather than in a component because both plot views draw the
+ * gutter and both name a row in a confirm; three copies of `label || "Row n"` is
+ * how the two views drift.
+ */
+export const plotRowName = (row: PlotRow, index: number) => row.label || `Row ${index + 1}`;

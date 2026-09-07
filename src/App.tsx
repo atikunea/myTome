@@ -97,7 +97,17 @@ export default function App() {
                     path="plots/:plotId/items/:itemId/write/add/:index"
                     element={<BeatManuscriptPage adding />}
                   />
+                  {/*
+                    Two ways to author a beat, because there are two questions a
+                    caller can answer. "Add item" knows only that the beat goes at
+                    the end of the plot, and lets `rowForNewPlotItem` pick the row;
+                    an empty cell in the grid already names the row, which is the
+                    same split `plots/compare/:plotIds/insert/…` makes.
+                  */}
                   <Route path="plots/:plotId/insert/:index" element={<PlotPage creating />} />
+                  <Route path="plots/:plotId/insert/row/:rowId" element={<PlotPage creating />} />
+                  {/* Naming a spine row, the single-plot twin of the compare route below. */}
+                  <Route path="plots/:plotId/rows/:rowId" element={<PlotPage />} />
                   {/*
                     Compare draws any number of plots against the tome's shared row
                     axis, so `:plotIds` is a comma-joined list rather than a pair.

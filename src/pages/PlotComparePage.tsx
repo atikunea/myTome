@@ -1,12 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   Menu,
   MenuItem,
@@ -18,22 +14,24 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import CloseIcon from "@mui/icons-material/Close";
 import LibraryAddIcon from "@mui/icons-material/LibraryAdd";
-import UnfoldLessIcon from "@mui/icons-material/UnfoldLess";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem, PlotRow } from "../models/Plot";
 import { store } from "../services/store";
-import { useConfirm } from "../context/ConfirmContext";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
 import { PlotGrid } from "../components/PlotGrid";
 import { PlotItemDialog } from "../components/PlotItemDialog";
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+import { PlotRowDialog, RemoveEmptyRowsButton } from "../components/PlotRowTools";
 
 /**
  * Any number of a tome's plots drawn against its shared row axis — a subplot
  * against the main line, three POV threads, a draft against its rewrite. Beats
  * sharing a row line up, and a plot with nothing on a row shows a gap there.
+ *
+ * This is `PlotPage` with more than one column: the same `PlotGrid`, the same
+ * gutter, the same track. What it adds is which plots are drawn — hence the
+ * per-column select and "Add plot" — and it drops the plot tabs, which would be
+ * saying the same thing twice.
  *
  * The columns live in the URL as a comma-joined list (`…/plots/compare/a,b,c`),
  * so a comparison is a link like everything else in this app. The list is
@@ -50,7 +48,6 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
   }>();
   const { tome, types } = useTomeWorkspace();
   const navigate = useNavigate();
-  const confirmAction = useConfirm();
   const [addMenu, setAddMenu] = useState<HTMLElement | null>(null);
 
   const plots = useObservable<Plot[]>((cb) => store.observePlots(tome!.id, cb), [tome?.id]);
@@ -95,8 +92,6 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
   if (columns.length < 2) return null;
 
   const items = allItems.filter((item) => columns.some((plot) => plot.id === item.plotId));
-  const held = new Set(allItems.map((item) => item.plotRowId));
-  const emptyRows = rows.filter((row) => !held.has(row.id)).length;
   const unused = plots.filter((plot) => !columns.some((column) => column.id === plot.id));
 
   const closeDialog = () => navigate(comparePath);
@@ -105,26 +100,6 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
   const insertPlot = creating ? columns.find((plot) => plot.id === sidePlotId) : undefined;
   // `:rowId` serves both the rename route and the insert route; `creating` says which.
   const renamingRow = !creating && rowId ? rows.find((row) => row.id === rowId) : undefined;
-  const rowName = (row: PlotRow) =>
-    row.label || `Row ${rows.findIndex((candidate) => candidate.id === row.id) + 1}`;
-
-  const handleDeleteRow = async (row: PlotRow) => {
-    const { beats, plots: affected } = await store.countPlotRowBeats(row.id);
-    confirmAction(
-      beats
-        ? `Delete ${rowName(row)}? This also deletes ${plural(beats, "beat")} across ${plural(affected, "plot")}.`
-        : `Delete ${rowName(row)}?`,
-      () => store.deletePlotRow({ id: row.id, tomeId: tome.id }),
-    );
-  };
-
-  const handleRename = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!renamingRow) return;
-    const label = String(new FormData(event.currentTarget).get("label") ?? "");
-    store.setPlotRowLabel(renamingRow.id, label);
-    closeDialog();
-  };
 
   return (
     <Box>
@@ -140,8 +115,14 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
           >
             PLOT
           </Typography>
+          {/*
+            The plots by name, not "Compare timelines". This screen is the same
+            picture as the single-plot one with another column in it, so losing
+            the plot's identity in the heading was the loudest way of implying
+            otherwise.
+          */}
           <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
-            Compare timelines
+            {columns.map((plot) => plot.name).join(" · ")}
           </Typography>
         </Box>
         <Stack direction="row" sx={{ alignItems: "center", gap: 1, flexWrap: "wrap" }}>
@@ -149,7 +130,6 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
             {/* A disabled button fires no events, so the tooltip needs a live wrapper. */}
             <span>
               <Button
-                size="small"
                 startIcon={<LibraryAddIcon />}
                 disabled={!unused.length}
                 onClick={(event) => setAddMenu(event.currentTarget)}
@@ -171,26 +151,8 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
               </MenuItem>
             ))}
           </Menu>
-          <Tooltip
-            title={
-              emptyRows
-                ? `Drop ${plural(emptyRows, "row")} no plot has a beat on`
-                : "No empty rows to remove"
-            }
-          >
-            <span>
-              <Button
-                size="small"
-                startIcon={<UnfoldLessIcon />}
-                disabled={!emptyRows}
-                onClick={() => store.removeEmptyPlotRows(tome.id)}
-              >
-                Remove empty rows
-              </Button>
-            </span>
-          </Tooltip>
+          <RemoveEmptyRowsButton tomeId={tome.id} rows={rows} tomeItems={allItems} />
           <Button
-            size="small"
             startIcon={<CloseIcon />}
             onClick={() => navigate(`/tomes/${tome.id}/plots/${columns[0].id}`)}
           >
@@ -200,6 +162,7 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
       </Stack>
 
       <PlotGrid
+        tomeId={tome.id}
         rows={rows}
         plots={columns}
         items={items}
@@ -275,9 +238,7 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
         onAddBeat={(plotId, targetRow) =>
           navigate(`${comparePath}/insert/${plotId}/${targetRow}`)
         }
-        onInsertRow={(index) => store.insertPlotRow(tome.id, index)}
         onRenameRow={(row) => navigate(`${comparePath}/rows/${row.id}`)}
-        onDeleteRow={handleDeleteRow}
       />
 
       <PlotItemDialog
@@ -298,32 +259,7 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
         onClose={closeDialog}
       />
 
-      <Dialog open={Boolean(renamingRow)} onClose={closeDialog} maxWidth="xs" fullWidth>
-        {/*
-          Keyed on the row so the uncontrolled field re-seeds: MUI keeps a dialog's
-          children mounted until the close transition ends, and without this,
-          renaming one row and then another reopens carrying the first one's label.
-        */}
-        <Box component="form" onSubmit={handleRename} key={renamingRow?.id}>
-          <DialogTitle>Name this row</DialogTitle>
-          <DialogContent dividers>
-            <TextField
-              name="label"
-              label="Row label"
-              fullWidth
-              autoFocus
-              defaultValue={renamingRow?.label ?? ""}
-              helperText="Shown in the gutter beside every plot, e.g. Act I or Day 12"
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={closeDialog}>Cancel</Button>
-            <Button type="submit" variant="contained">
-              Save
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
+      <PlotRowDialog row={renamingRow} onClose={closeDialog} />
     </Box>
   );
 }

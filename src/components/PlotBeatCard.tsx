@@ -2,49 +2,23 @@ import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/
 import { Badge, Box, Card, Chip, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import EditNoteIcon from "@mui/icons-material/EditNote";
-import type { PlotDotColor, PlotItem } from "../models/Plot";
+import type { PlotItem } from "../models/Plot";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 
-/** `PlotDotColor` as a theme token — "grey" is not a palette entry with a `.main`. */
-const dotToken = (color: PlotDotColor) => (color === "grey" ? "grey.500" : `${color}.main`);
-
-/**
- * The beat's dot, drawn on the card. `TimelineCard` gets this from MUI's
- * `TimelineDot` on the track; a grid cell has no track, so the same three
- * properties — colour, variant, icon — are rendered here instead.
- */
-function BeatDot({ item }: { item: PlotItem }) {
-  const token = dotToken(item.dotColor ?? "grey");
-  const filled = (item.dotVariant ?? "filled") === "filled";
-  return (
-    <Box
-      aria-hidden
-      sx={{
-        flexShrink: 0,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: "50%",
-        width: item.icon ? 28 : 12,
-        height: item.icon ? 28 : 12,
-        border: filled ? 0 : 2,
-        borderColor: token,
-        bgcolor: filled ? token : "transparent",
-        color: filled ? "common.white" : token,
-      }}
-    >
-      {item.icon ? <ElementTypeIcon icon={item.icon} fontSize="small" /> : null}
-    </Box>
-  );
-}
-
 /**
  * The beat itself — title, description, attached elements, and the handle that
- * drags it. Deliberately knows nothing about what it sits inside: `TimelineCard`
- * puts one in a MUI `TimelineContent`, and the compare grid puts one in a grid
- * cell, which is the whole reason this is not part of `TimelineCard` any more.
+ * drags it. Deliberately knows nothing about what it sits inside: `PlotGrid`
+ * puts one in a cell, beside a track that carries the beat's dot.
+ *
+ * **The card always draws the beat label** (`item.name`), because the gutter
+ * beside it belongs to the spine row. Those are different records — a beat label
+ * is one plot's word for a beat, a row label is the whole tome's word for a
+ * moment — and they used to take turns in the gutter depending on which view you
+ * were in, which is how the spine stayed invisible to anyone who never opened
+ * the compare view. The dot moved to the track for the same reason: one place
+ * per thing.
  *
  * It does not call `useSortable` itself. Whichever container registered the beat
  * as draggable owns the node ref and the transform, and passes the handle's
@@ -59,8 +33,6 @@ export function PlotBeatCard({
   onOpenElement,
   onWrite,
   dragHandle,
-  labelMode = "always",
-  showDot = false,
 }: {
   item: PlotItem;
   attachments: Element[];
@@ -74,20 +46,12 @@ export function PlotBeatCard({
    * unreachable on touch, and this is not a secondary action.
    */
   onWrite: (item: PlotItem) => void;
-  /** Handle wiring from the container's `useSortable`. Omit where a beat cannot be dragged. */
+  /** Handle wiring from the container's drag hook. Omit where a beat cannot be dragged. */
   dragHandle?: {
     attributes: DraggableAttributes;
     listeners: DraggableSyntheticListeners;
     setActivatorNodeRef: (element: HTMLElement | null) => void;
   };
-  /**
-   * Where the beat label is drawn. `"compact"` shows it only below `sm`, for the
-   * timeline, whose own label column disappears at that width; `"always"` for a
-   * layout that has no label column of its own.
-   */
-  labelMode?: "always" | "compact";
-  /** Draws the beat's dot on the card, for a layout with no track to carry it. */
-  showDot?: boolean;
 }) {
   return (
     <Card
@@ -164,20 +128,14 @@ export function PlotBeatCard({
             <Typography
               variant="overline"
               color="text.secondary"
-              sx={{
-                display: labelMode === "always" ? "block" : { xs: "block", sm: "none" },
-                lineHeight: 1.6,
-              }}
+              sx={{ display: "block", lineHeight: 1.6 }}
             >
               {item.name}
             </Typography>
           ) : null}
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-            {showDot ? <BeatDot item={item} /> : null}
-            <Typography variant="h6" component="h3" sx={{ fontSize: "1.15rem", minWidth: 0 }}>
-              {item.title}
-            </Typography>
-          </Stack>
+          <Typography variant="h6" component="h3" sx={{ fontSize: "1.15rem", minWidth: 0 }}>
+            {item.title}
+          </Typography>
           {item.description ? (
             <Typography color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5 }}>
               {item.description}
