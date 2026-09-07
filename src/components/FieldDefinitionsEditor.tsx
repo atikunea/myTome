@@ -61,7 +61,9 @@ export function FieldDefinitionsEditor({
       ) : null}
       {fields.length ? (
         <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-          For configurable lists, enter choices separated by commas.
+          For configurable lists, enter choices separated by commas. A prose
+          field is a block of formatted writing on the element's page — give a
+          type as many as it needs.
         </Typography>
       ) : null}
     </Box>
@@ -114,6 +116,7 @@ function FieldRow({
       >
         <MenuItem value="text">Text</MenuItem>
         <MenuItem value="select">List</MenuItem>
+        <MenuItem value="prose">Prose</MenuItem>
       </TextField>
       {field.kind === "select" ? (
         <TextField

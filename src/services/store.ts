@@ -56,6 +56,8 @@ export { imageFrom, imageHref } from "./images";
 // for why the ask is deferred until a library has something in it.
 export { requestPersistentStorage } from "./storage";
 export {
+  isEmptyFieldValue,
+  missingRequiredFields,
   validateElement,
   validateFields,
   validatePlotItem,

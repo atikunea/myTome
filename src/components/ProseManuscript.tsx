@@ -39,7 +39,8 @@ import { blocksText, countWords, lexicalToBlocks } from "../lexical/blocks";
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
 import { StaticProse } from "./StaticProse";
 import { WriteItemTypeIcon } from "./WriteItemTypeIcon";
-import { ProseEditor, type CaretPoint, type ProseEdit } from "./ProseEditor";
+import { ProseEditor, type ProseEdit } from "./ProseEditor";
+import type { CaretPoint } from "../lexical/CaretAtPointPlugin";
 import { manuscriptSx, proseFontFamily, type ProseFace } from "./manuscriptStyles";
 
 type Draft = { title: string; type: WriteItemType };

@@ -145,7 +145,7 @@ function WriteFocus({ item, tomeId }: { item: WriteItem; tomeId: string }) {
         onOpenMention={(elementId) => {
           const element = elements.find((candidate) => candidate.id === elementId);
           if (!element) return;
-          navigate(`/tomes/${tomeId}/elements/${element.elementTypeId}/${element.id}/edit`);
+          navigate(`/tomes/${tomeId}/elements/${element.elementTypeId}/${element.id}`);
         }}
         sectionMenu={(row, closeMenu) => [
           <MenuItem

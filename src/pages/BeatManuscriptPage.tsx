@@ -283,7 +283,7 @@ function BeatFocus({
           onOpenMention={(elementId) => {
             const element = elements.find((candidate) => candidate.id === elementId);
             if (!element) return;
-            navigate(`/tomes/${tomeId}/elements/${element.elementTypeId}/${element.id}/edit`);
+            navigate(`/tomes/${tomeId}/elements/${element.elementTypeId}/${element.id}`);
           }}
           sectionMenu={(row, closeMenu) => {
             const index = beat.writeItemIds.indexOf(row.id);

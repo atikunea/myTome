@@ -1,4 +1,5 @@
 import type { FieldDefinition } from "../models/ElementType";
+import { documentText } from "../lexical/blocks";
 
 /**
  * Validation lives outside the mutations on purpose: a form calls the validator
@@ -29,6 +30,47 @@ export function validateFields(fields: FieldDefinition[]) {
   }
 }
 
+/**
+ * Whether a field has been filled in. A `prose` value is a stored document, so
+ * emptiness is a question about its text and not about the string: an empty
+ * document is several hundred characters of JSON.
+ */
+export function isEmptyFieldValue(
+  field: FieldDefinition,
+  value: string | undefined,
+) {
+  if (field.kind === "prose") return !documentText(value ?? "").trim();
+  return !value?.trim();
+}
+
+/**
+ * Which of a type's required fields this element has yet to fill in.
+ *
+ * `required` is a **completeness** signal, not a validity one — see
+ * `validateElement`. The element page shows what is outstanding; nothing
+ * refuses a write over it.
+ */
+export function missingRequiredFields(
+  attributes: Record<string, string>,
+  fields: FieldDefinition[],
+) {
+  return fields.filter(
+    (field) => field.required && isEmptyFieldValue(field, attributes[field.id]),
+  );
+}
+
+/**
+ * What must hold for an element to be stored at all.
+ *
+ * **`required` is deliberately not enforced here.** It was, while an element
+ * was only ever written by a form that submitted every field at once. Editing
+ * is now per field: rejecting a save because some *other* field is empty would
+ * throw away the edit the author just made over one they weren't touching, and
+ * an author sketching a character rarely knows its faction on the first day.
+ * What remains is what genuinely cannot be stored — a nameless element, or a
+ * choice outside its own list — and both are checkable at the field being
+ * edited. Completeness is reported by `missingRequiredFields` instead.
+ */
 export function validateElement(
   name: string,
   attributes: Record<string, string>,
@@ -37,7 +79,6 @@ export function validateElement(
   if (!name.trim()) throw new Error("Name is required.");
   for (const field of fields) {
     const value = attributes[field.id]?.trim() ?? "";
-    if (field.required && !value) throw new Error(`${field.name} is required.`);
     if (
       value &&
       field.kind === "select" &&

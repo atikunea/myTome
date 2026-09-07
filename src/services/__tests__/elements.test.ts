@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { db } from "../../models/db";
+import {
+  emptyProseDocument,
+  isProseDocument,
+  plainToLexical,
+} from "../../lexical/blocks";
 import { store } from "../store";
 import { makeTome } from "./helpers";
 
@@ -70,16 +75,41 @@ describe("saveElement", () => {
       tomeId: tome.id,
       elementTypeId: character.id,
       name: "  Dov  ",
-      description: "  a smith  ",
+      description: "a smith",
       attributes: {},
     });
     const edited = await store.saveElement({ ...created, name: "Dov the Smith" });
 
     expect(created.name).toBe("Dov");
-    expect(created.description).toBe("a smith");
     expect(edited.id).toBe(created.id);
     expect(edited.createdAt).toBe(created.createdAt);
     expect(await db.elements.count()).toBe(1 + 4);
+  });
+
+  it("stores a description as a document and derives both mirrors", async () => {
+    const { tome, character } = await setup();
+
+    const created = await store.saveElement({
+      tomeId: tome.id,
+      elementTypeId: character.id,
+      name: "Dov",
+      // Plain text from a caller that predates prose — a restored v1 backup, or
+      // a test like this one. It is wrapped rather than refused.
+      description: "A smith.",
+      attributes: {},
+    });
+
+    expect(isProseDocument(created.description)).toBe(true);
+    expect(created.descriptionText).toBe("A smith.");
+    expect(created.searchText).toBe("Dov\nA smith.");
+
+    const round = await store.saveElement({
+      ...created,
+      description: plainToLexical("A smith, and a liar."),
+    });
+    // A document goes through untouched — wrapping it again would bury the
+    // author's paragraph inside a document whose only text is JSON.
+    expect(round.descriptionText).toBe("A smith, and a liar.");
   });
 
   it("refuses an element whose type has been deleted underneath it", async () => {
@@ -105,7 +135,14 @@ describe("saveElement", () => {
       tomeId: tome.id,
       name: "Faction",
       fieldDefinitions: [
-        { id: "creed", name: "Creed", kind: "text", required: true, sortOrder: 0 },
+        {
+          id: "creed",
+          name: "Creed",
+          kind: "select",
+          options: ["Old rite", "New rite"],
+          required: true,
+          sortOrder: 0,
+        },
       ],
     });
 
@@ -115,9 +152,160 @@ describe("saveElement", () => {
         elementTypeId: type.id,
         name: "The Order",
         description: "",
-        attributes: {},
+        attributes: { creed: "No rite at all" },
       }),
-    ).rejects.toThrow(/Creed is required/);
+    ).rejects.toThrow(/listed choice/);
+
+    // A *required* field left empty is not a validity failure — the element
+    // page reports it as incomplete instead. See `validateElement`.
+    const saved = await store.saveElement({
+      tomeId: tome.id,
+      elementTypeId: type.id,
+      name: "The Order",
+      description: "",
+      attributes: {},
+    });
+    expect(saved.name).toBe("The Order");
+  });
+});
+
+describe("updateElement", () => {
+  it("merges one field over the stored row, not over a stale copy", async () => {
+    const { tome, character } = await setup();
+    const created = await store.saveElement({
+      tomeId: tome.id,
+      elementTypeId: character.id,
+      name: "Dov",
+      description: "",
+      attributes: {},
+    });
+
+    // Two fields edited in turn, the second holding the element as it was
+    // observed *before* the first landed — which is exactly what a live query's
+    // lagging echo hands the page.
+    await store.updateElement(created.id, { description: plainToLexical("A smith.") });
+    await store.updateElement(created.id, { name: "Dov the Smith" });
+
+    const stored = (await db.elements.get(created.id))!;
+    expect(stored.name).toBe("Dov the Smith");
+    // The description survives: the merge happened over what was stored.
+    expect(stored.descriptionText).toBe("A smith.");
+    expect(stored.searchText).toBe("Dov the Smith\nA smith.");
+    expect(stored.updatedAt >= created.updatedAt).toBe(true);
+  });
+
+  it("puts a prose field's words into searchText", async () => {
+    const { tome } = await setup();
+    const type = await store.saveType({
+      tomeId: tome.id,
+      name: "Place",
+      fieldDefinitions: [
+        { id: "history", name: "History", kind: "prose", required: false, sortOrder: 0 },
+      ],
+    });
+    const created = await store.saveElement({
+      tomeId: tome.id,
+      elementTypeId: type.id,
+      name: "Ashfell",
+      description: "",
+      attributes: {},
+    });
+
+    await store.updateElement(created.id, {
+      attributes: { history: plainToLexical("Burned twice.") },
+    });
+
+    const stored = (await db.elements.get(created.id))!;
+    // The list filters on this string per keystroke; a prose field that only
+    // appeared as JSON would match "paragraph" and never "burned".
+    expect(stored.searchText).toBe("Ashfell\nBurned twice.");
+    expect(stored.searchText).not.toContain("paragraph");
+  });
+
+  it("refuses a name cleared to nothing", async () => {
+    const { tome, character } = await setup();
+    const created = await store.saveElement({
+      tomeId: tome.id,
+      elementTypeId: character.id,
+      name: "Dov",
+      description: "",
+      attributes: {},
+    });
+
+    await expect(store.updateElement(created.id, { name: "   " })).rejects.toThrow(
+      /Name is required/,
+    );
+  });
+});
+
+describe("createDraftElement and discardElementIfBlank", () => {
+  it("sweeps an untouched draft and keeps one that was written in", async () => {
+    const { tome, character } = await setup();
+
+    const untouched = await store.createDraftElement(tome.id, character.id);
+    const written = await store.createDraftElement(tome.id, character.id);
+    await store.updateElement(written.id, { description: plainToLexical("A smith.") });
+
+    await store.discardElementIfBlank(untouched.id);
+    await store.discardElementIfBlank(written.id);
+
+    expect(await db.elements.get(untouched.id)).toBeUndefined();
+    expect(await db.elements.get(written.id)).toBeTruthy();
+  });
+
+  it("keeps a draft that was only renamed, or only given a relationship", async () => {
+    const { tome, character } = await setup();
+
+    const renamed = await store.createDraftElement(tome.id, character.id);
+    await store.updateElement(renamed.id, { name: "Dov" });
+
+    const linked = await store.createDraftElement(tome.id, character.id);
+    const other = await store.saveElement({
+      tomeId: tome.id,
+      elementTypeId: character.id,
+      name: "Maren",
+      description: "",
+      attributes: {},
+    });
+    await store.saveElementRelationships(linked, [
+      {
+        otherElementId: other.id,
+        otherElementTypeId: character.id,
+        label: "travels with",
+      },
+    ]);
+
+    await store.discardElementIfBlank(renamed.id);
+    await store.discardElementIfBlank(linked.id);
+
+    expect(await db.elements.get(renamed.id)).toBeTruthy();
+    // Relationships are saved as they are filled in rather than staged, so an
+    // element that gained one is not blank however empty its own fields are.
+    expect(await db.elements.get(linked.id)).toBeTruthy();
+  });
+
+  it("keeps a draft whose only content is a prose field", async () => {
+    const { tome } = await setup();
+    const type = await store.saveType({
+      tomeId: tome.id,
+      name: "Place",
+      fieldDefinitions: [
+        { id: "history", name: "History", kind: "prose", required: false, sortOrder: 0 },
+      ],
+    });
+
+    const draft = await store.createDraftElement(tome.id, type.id);
+    // An empty document must still read as blank, or nothing is ever swept.
+    await store.updateElement(draft.id, { attributes: { history: emptyProseDocument } });
+    await store.discardElementIfBlank(draft.id);
+    expect(await db.elements.get(draft.id)).toBeUndefined();
+
+    const written = await store.createDraftElement(tome.id, type.id);
+    await store.updateElement(written.id, {
+      attributes: { history: plainToLexical("Burned twice.") },
+    });
+    await store.discardElementIfBlank(written.id);
+    expect(await db.elements.get(written.id)).toBeTruthy();
   });
 });
 

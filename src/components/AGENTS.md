@@ -7,10 +7,11 @@ folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `EmptyState`, `ColorModeToggle`, `PlotTimeline`, `PlotGrid`, `TimelineCard`,
 `PlotBeatCard`, `TimelineConnectorInsert`, `PlotItemDialog`, `PlotPicker`,
 `WriteItemRow`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`,
-`PolicyProse`).
+`PolicyProse`, `ProseField`, `InlineTextField`, `RelationshipRowEditor`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
-rather than here — they are not MUI components and only the Write editor
-mounts them. Route-level screens live in `../pages`
+rather than here — they are not MUI components. The Write editor is no longer
+their only caller: `ProseField` mounts `CaretAtPointPlugin` and
+`ProseToolbarPlugin` on the element page too. Route-level screens live in `../pages`
 instead — a good
 rule of thumb is: if it's mounted directly by a `<Route>` in `App.tsx`, it's
 a page; if it's composed *into* a page (or into the workspace layout), it
@@ -457,6 +458,84 @@ Three things the page and the component still own:
   nothing to its right moves. Measured: the picker holds one x through the
   whole cycle.
 
+## The element page edits in place, and reuses the focus surface's machinery
+
+`../pages/ElementPage.tsx` is the **second** screen with no Save button, and the
+first one that is not prose end to end. An element is a page you read — name,
+description, its type's custom fields, relationships, image — and every field is
+edited where it sits. `ElementListPage` is now only a list; there is no element
+form left anywhere.
+
+It is built out of pieces the writing surface already proved, and the borrowings
+are the load-bearing part:
+
+- **`ProseField` is `ProseManuscript`'s swap applied to a field.** Static
+  `StaticProse` until clicked, then one mounted editor with the caret at the
+  click point, and the same three-step handover — the outgoing editor's unmount
+  flushes its own pending write, the field is redrawn from the page's `edits`
+  rather than from the row, and the incoming one mounts keyed by field. Its
+  wrapper's padding, margins and gutter are **identical in both states** for the
+  reason set out under the focus surface: the click point is hit-tested against
+  the editor's DOM after the swap. Verified in the browser — a description
+  measured `{x:288, y:162, w:658, h:67}` in both states, and a click on the
+  eleventh word put the caret at offset 46 of 79, inside that word.
+- **That constraint is why a description does not look like a `TextField`.** A
+  bordered control at rest and an editor when active cannot occupy the same
+  space, and the caret would land at the start of the block. It reads as prose
+  on this page because it has to, and the active mark is a gutter `::before`
+  rather than a border for the same reason.
+- **`CaretAtPointPlugin` moved to `../lexical/`** when this page needed it. Its
+  three traps are written up under "Focus must never depend on an animation
+  frame" and are now shared rather than duplicated.
+- **`ProseToolbarPlugin` comes along unchanged**, so a selection raises the same
+  floating pill here as in a chapter, and a touch device gets the same docked
+  strip. There is no standing toolbar on this page.
+- **No `MentionsPlugin`.** Mentions are prose-to-element links that are
+  deliberately not cascade-maintained, and `Relationship` already does that job
+  properly on this very page.
+
+Four rules the page itself holds:
+
+- **One prose field is live at a time.** Each mounted editor owns an autosave
+  machine, so two live fields would be two machines writing one row with
+  `SaveStatus` reporting whichever spoke last.
+- **A click that reaches the page clears the active field**; `ProseField` stops
+  its own clicks so the caret can still be moved inside the field being edited,
+  and `InlineTextField` calls the same thing on focus for the keyboard. Without
+  this the gutter accent claims an edit is in progress after the author has
+  moved on.
+- **Writes are patches.** `store.updateElement` re-reads the row inside its
+  transaction, so a field saved while a live query's echo is still in flight
+  cannot revert the field saved a moment before it. Never assemble a whole
+  element from what the page last observed.
+- **The unmount sweep is `WriteEditorPage`'s, verbatim** — deferred a tick past
+  StrictMode's remount, and awaiting the editor's flush first. Confirmed in the
+  browser: a draft typed into and immediately left survives; an untouched one is
+  gone.
+
+### `InlineTextField` does *not* swap, and that is deliberate
+
+A one-line value has no caret to resolve against a click, so the swap would buy
+nothing and cost the thing that makes it safe — two renders occupying identical
+space. The input is always live and simply looks like text until hovered or
+focused, which is also one fewer click to the word the author came to change. It
+autosaves on the shared debounce and **flushes on blur**, so a pending write
+lands as focus leaves rather than trailing the author to the next field.
+
+`select` fields are a plain MUI select, saving on change: a select at rest
+already looks like a value with a caret beside it, and there is nothing to swap.
+
+### A `prose` field can hold `""`, and Lexical throws on that
+
+`FieldKind` now includes `prose`, and its value lives in `Element.attributes`
+like any other — a serialized document is a string. A field nobody has written
+in has **no entry at all**, so the value read out is `""`, and
+`JSON.parse("")` throws before any editor exists to catch it. `ProseField`
+normalizes with `asProseDocument` at its boundary, which also rescues a field
+whose kind was changed from `text` and therefore holds a line of plain text. Do
+the same anywhere else a stored value reaches an editor. The rest of the
+prose-kind rules — emptiness, search, cards — are in the root `AGENTS.md`.
+
 ## The editor toolbar is described by a config, not hand-wired JSX
 
 `../lexical/ToolbarPlugin.tsx` renders from `ToolbarItem[][]` — an array of
@@ -624,6 +703,13 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
 - `SideNav.tsx` — per-tome left nav; lists the tome's ElementTypes. Reads
   `useTomeWorkspace()`. Below `sm` it is a **top bar of fixed height**
   (`NAV_BAR_HEIGHT`), scrolling only sideways — see below.
+- `ProseField.tsx` — one click-to-edit block of prose: the description, and
+  every `prose` custom field. The swap, the caret and the pill; see above.
+- `InlineTextField.tsx` — a line of text edited where it sits. Always live, no
+  swap, flushes on blur; see above.
+- `RelationshipRowEditor.tsx` — one relationship as the sentence it reads as.
+  Was local to the old element form and moved out with it; `ElementPage` saves
+  a row as soon as it has both a target and a label.
 - `RestoreDialog.tsx` — the summary + merge/replace choice for a chosen backup
   file; used only by `../pages/BackupPage.tsx`. See above.
 - `PolicyProse.tsx` — chrome and prose primitives for the privacy and terms

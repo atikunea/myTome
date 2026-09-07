@@ -1,6 +1,7 @@
-import { countDocumentWords } from "../lexical/blocks";
+import { asProseDocument, countDocumentWords, documentText } from "../lexical/blocks";
 import { backfillPlotRows, db } from "../models/db";
 import type { Element } from "../models/Element";
+import { elementSearchText } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
 import type { Plot, PlotItem, PlotRow } from "../models/Plot";
 import type { Relationship } from "../models/Relationship";
@@ -37,8 +38,16 @@ import { clearTome } from "./tomes";
  */
 
 export const backupFormat = "myTome-backup";
-/** Bumped only when the shape below changes in a way an older reader can't take. */
-export const backupFormatVersion = 1;
+/**
+ * Bumped only when the shape below changes in a way an older reader can't take.
+ *
+ * v2 is schema v9: `Element.description` holds a Lexical document where it used
+ * to hold plain text. The field kept its name, so a v1 reader would restore the
+ * file without complaint and then show every element card a paragraph of JSON —
+ * which is exactly what the version check is for. Reading *older* files stays
+ * supported: `writeTome` converts a plain-text description on the way in.
+ */
+export const backupFormatVersion = 2;
 
 /**
  * An `ImageSource` flattened for JSON. A cover or portrait the author uploaded
@@ -52,8 +61,18 @@ export type SerializedImage =
 export type BackedUpTome = Omit<Tome, "coverImage"> & {
   coverImage?: SerializedImage;
 };
-export type BackedUpElement = Omit<Element, "image"> & {
+export type BackedUpElement = Omit<
+  Element,
+  "image" | "descriptionText" | "searchText"
+> & {
   image?: SerializedImage;
+  /**
+   * Absent in a v1 file, where `description` was plain text and neither mirror
+   * existed. `writeTome` derives both on the way in, so this is the one place
+   * the format is knowingly loose about a field the schema requires.
+   */
+  descriptionText?: string;
+  searchText?: string;
 };
 
 /** Everything belonging to one tome, across every table that holds any of it. */
@@ -247,11 +266,30 @@ const writeTome = async (entry: TomeBackup) => {
     coverImage: deserializeImage(entry.tome.coverImage),
   });
   await db.elementTypes.bulkPut(entry.elementTypes);
+  // A restore bypasses Dexie's upgrades, so a pre-v9 file arrives with plain
+  // text in `description` and neither mirror — derived here for the same reason
+  // `wordCount` is below, and through the same helpers the v9 backfill uses so
+  // a restored row and a migrated one are searchable alike.
+  const fieldsByType = new Map(
+    entry.elementTypes.map((type) => [type.id, type.fieldDefinitions ?? []]),
+  );
   await db.elements.bulkPut(
-    entry.elements.map((element) => ({
-      ...element,
-      image: deserializeImage(element.image),
-    })),
+    entry.elements.map((element) => {
+      const description = asProseDocument(element.description);
+      const descriptionText = element.descriptionText ?? documentText(description);
+      return {
+        ...element,
+        description,
+        descriptionText,
+        searchText:
+          element.searchText ??
+          elementSearchText(
+            { ...element, descriptionText },
+            fieldsByType.get(element.elementTypeId) ?? [],
+          ),
+        image: deserializeImage(element.image),
+      };
+    }),
   );
   await db.relationships.bulkPut(entry.relationships);
   await db.plots.bulkPut(entry.plots);

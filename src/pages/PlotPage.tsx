@@ -180,7 +180,7 @@ export function PlotPage({
         onOpenItem={(item) => navigate(`${plotPath}/items/${item.id}`)}
         onInsert={(position) => navigate(`${plotPath}/insert/${position}`)}
         onOpenElement={(element) =>
-          navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
+          navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}`)
         }
         onWrite={(item) => navigate(`${plotPath}/items/${item.id}/write`)}
       />

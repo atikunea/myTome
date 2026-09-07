@@ -11,13 +11,18 @@ import {
 } from "lexical";
 import { emptyWriteItemContent } from "../../models/WriteItem";
 import {
+  asProseDocument,
   blocksText,
   countDocumentWords,
   countWords,
+  documentText,
+  emptyProseDocument,
   formatsOf,
   innerTagFor,
+  isProseDocument,
   lexicalToBlocks,
   outerTagFor,
+  plainToLexical,
   proseTextTheme,
   runClassName,
   type Block,
@@ -497,5 +502,48 @@ describe("countDocumentWords", () => {
 
   it("counts a freshly created draft as empty", () => {
     expect(countDocumentWords(emptyWriteItemContent)).toBe(0);
+  });
+});
+
+describe("plainToLexical, isProseDocument and asProseDocument", () => {
+  it("wraps plain text as one paragraph per line", () => {
+    const content = plainToLexical("A smith.\nQuiet about it.");
+
+    expect(lexicalToBlocks(content)).toEqual([
+      { kind: "paragraph", align: "", indent: 0, content: [{ kind: "text", text: "A smith.", formats: [] }] },
+      { kind: "paragraph", align: "", indent: 0, content: [{ kind: "text", text: "Quiet about it.", formats: [] }] },
+    ]);
+    // The round trip is what the v9 migration rests on: whatever an author had
+    // written in the old plain-text field has to come back out unchanged.
+    expect(documentText(content)).toBe("A smith.\nQuiet about it.");
+  });
+
+  it("gives an empty string a document with one empty paragraph", () => {
+    // Not `""`: the editor needs something well-formed to parse when the author
+    // first clicks into a field nobody has written in.
+    expect(lexicalToBlocks(emptyProseDocument)).toEqual([
+      { kind: "paragraph", align: "", indent: 0, content: [] },
+    ]);
+    expect(documentText(emptyProseDocument)).toBe("");
+    expect(countDocumentWords(emptyProseDocument)).toBe(0);
+  });
+
+  it("tells a document from plain text that merely looks like one", () => {
+    expect(isProseDocument(plainToLexical("A smith."))).toBe(true);
+    expect(isProseDocument(emptyWriteItemContent)).toBe(true);
+    expect(isProseDocument("A smith.")).toBe(false);
+    expect(isProseDocument("")).toBe(false);
+    // Plain text that happens to parse as JSON is still plain text — wrapping
+    // is decided by this, so a false positive would store unopenable prose.
+    expect(isProseDocument("42")).toBe(false);
+    expect(isProseDocument('{"root": "not a node"}')).toBe(false);
+    expect(isProseDocument("{ unclosed")).toBe(false);
+  });
+
+  it("is idempotent, which is what makes the migration re-runnable", () => {
+    const once = asProseDocument("A smith.");
+    expect(asProseDocument(once)).toBe(once);
+    expect(documentText(asProseDocument(once))).toBe("A smith.");
+    expect(asProseDocument(undefined)).toBe(emptyProseDocument);
   });
 });

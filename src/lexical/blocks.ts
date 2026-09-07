@@ -365,3 +365,92 @@ export function countWords(text: string): number {
 export function countDocumentWords(content: string): number {
   return countWords(blocksText(lexicalToBlocks(content)));
 }
+
+/**
+ * The document's plain text, straight from its stored form. The counterpart to
+ * {@link countDocumentWords} for the callers that want the words themselves —
+ * `Element.descriptionText`, the element search mirror, and the v9 backfill
+ * that derives both.
+ */
+export function documentText(content: string): string {
+  return blocksText(lexicalToBlocks(content));
+}
+
+/**
+ * True when a stored string is a Lexical document rather than plain text.
+ *
+ * The v9 migration and every restore need this: a description written before
+ * prose existed is a bare string, and one written since is serialized JSON, so
+ * the conversion has to be able to tell them apart and run twice without
+ * double-wrapping. Deliberately strict — a plain description that happens to
+ * parse as JSON (`"42"`, `"[1,2]"`) is still plain text.
+ */
+export function isProseDocument(value: string): boolean {
+  if (!value.startsWith("{")) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object") return false;
+  const root = (parsed as RawNode).root;
+  return !!root && typeof root === "object" && Array.isArray((root as RawNode).children);
+}
+
+/**
+ * Wraps plain text as a Lexical document — one paragraph per line, and a single
+ * empty paragraph for an empty string, which is what the editor needs to have
+ * something well-formed to parse.
+ *
+ * This is the migration path for every plain-text field that becomes prose, and
+ * it is written by hand rather than through Lexical's own API on purpose: it
+ * runs inside a Dexie upgrade and inside `restoreBackup`, neither of which has
+ * an editor to ask.
+ */
+export function plainToLexical(text: string): string {
+  const lines = text ? text.split(/\r?\n/) : [""];
+  return JSON.stringify({
+    root: {
+      children: lines.map((line) => ({
+        children: line
+          ? [
+              {
+                detail: 0,
+                format: 0,
+                mode: "normal",
+                style: "",
+                text: line,
+                type: "text",
+                version: 1,
+              },
+            ]
+          : [],
+        direction: null,
+        format: "",
+        indent: 0,
+        type: "paragraph",
+        version: 1,
+      })),
+      direction: null,
+      format: "",
+      indent: 0,
+      type: "root",
+      version: 1,
+    },
+  });
+}
+
+/** An empty prose document — what a field holds before anything is written in it. */
+export const emptyProseDocument = plainToLexical("");
+
+/**
+ * A stored string as a prose document, whatever it arrives as. Plain text is
+ * wrapped; a document is passed through untouched. Every writer of a prose
+ * field goes through this, so a caller holding pre-v9 text — a test, an old
+ * backup, a hand-edited row — cannot store something the editor can't open.
+ */
+export function asProseDocument(value: string | undefined): string {
+  if (!value) return emptyProseDocument;
+  return isProseDocument(value) ? value : plainToLexical(value);
+}

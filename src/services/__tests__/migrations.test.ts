@@ -1,6 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
 import Dexie, { type Transaction } from "dexie";
-import { backfillPlotRows, backfillWordCounts, MyTomeDB } from "../../models/db";
+import {
+  backfillElementProse,
+  backfillPlotRows,
+  backfillWordCounts,
+  MyTomeDB,
+} from "../../models/db";
+import { documentText, isProseDocument } from "../../lexical/blocks";
 import type { PlotItem, PlotRow } from "../../models/Plot";
 
 /**
@@ -85,13 +91,14 @@ const names: string[] = [];
 
 /** Opens a database stamped at an old version, seeds it, and closes it again. */
 const seedLegacy = async (
-  version: 4 | 6 | 7,
+  version: 4 | 6 | 7 | 8,
   seed: (write: (table: string, rows: unknown[]) => Promise<unknown>) => Promise<void>,
 ) => {
   const name = `myTomeDB-test-${crypto.randomUUID()}`;
   names.push(name);
   const old = new Dexie(name);
-  const stores = { 4: v4Stores, 6: v6Stores, 7: v7Stores }[version];
+  // v8 added a field, not an index, so a v8 database is stamped v8 over v7's stores.
+  const stores = { 4: v4Stores, 6: v6Stores, 7: v7Stores, 8: v7Stores }[version];
   old.version(version).stores(stores);
   await old.open();
   await seed((table, rows) => old.table(table).bulkAdd(rows));
@@ -103,7 +110,7 @@ const seedLegacy = async (
 const upgrade = async (name: string) => {
   const db = new MyTomeDB(name);
   await db.open();
-  expect(db.verno).toBe(8);
+  expect(db.verno).toBe(9);
   const items = await db.plotItems.toArray();
   const rows = await db.plotRows.toArray();
   db.close();
@@ -324,5 +331,97 @@ describe("v8 — backfillWordCounts", () => {
     // An upgrade that throws leaves the database unopenable, so the one row a
     // hand-edited backup damaged must not take the whole library with it.
     expect(items[0].wordCount).toBe(0);
+  });
+});
+
+describe("v9 — backfillElementProse", () => {
+  /** A pre-v9 element: a plain-text description, and neither mirror. */
+  const legacyElement = (id: string, name: string, description: string) => ({
+    id,
+    tomeId: "t1",
+    elementTypeId: "ty1",
+    name,
+    description,
+    attributes: { f1: "Ash-grey" },
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  });
+
+  const seedElements = (rows: ReturnType<typeof legacyElement>[]) =>
+    seedLegacy(8, async (write) => {
+      await write("elementTypes", [
+        {
+          id: "ty1",
+          tomeId: "t1",
+          name: "Character",
+          slug: "character",
+          sortOrder: 0,
+          fieldDefinitions: [
+            { id: "f1", name: "Eyes", kind: "text", required: false, sortOrder: 0 },
+          ],
+          createdAt: "2024-01-01T00:00:00.000Z",
+          updatedAt: "2024-01-01T00:00:00.000Z",
+        },
+      ]);
+      await write("elements", rows);
+    });
+
+  const upgradeElements = async (name: string) => {
+    const db = new MyTomeDB(name);
+    await db.open();
+    expect(db.verno).toBe(9);
+    const elements = await db.elements.toArray();
+    db.close();
+    return elements;
+  };
+
+  it("wraps a plain-text description as a document the editor can open", async () => {
+    const name = await seedElements([
+      legacyElement("e1", "Dov", "A smith.\nQuiet about it."),
+      legacyElement("e2", "Maren", ""),
+    ]);
+
+    const elements = await upgradeElements(name);
+    const dov = elements.find((element) => element.id === "e1")!;
+    const maren = elements.find((element) => element.id === "e2")!;
+
+    // Converted, not defaulted: an author's existing notes are the one thing
+    // this migration cannot be allowed to drop.
+    expect(isProseDocument(dov.description)).toBe(true);
+    expect(documentText(dov.description)).toBe("A smith.\nQuiet about it.");
+    expect(dov.descriptionText).toBe("A smith.\nQuiet about it.");
+    // An empty description still has to be a well-formed document, or the
+    // editor has nothing to parse when the author first clicks into it.
+    expect(isProseDocument(maren.description)).toBe(true);
+    expect(maren.descriptionText).toBe("");
+  });
+
+  it("derives searchText across the custom fields too", async () => {
+    const name = await seedElements([legacyElement("e1", "Dov", "A smith.")]);
+
+    const [element] = await upgradeElements(name);
+
+    // The mirror a migrated row gets has to match the one `saveElement` writes,
+    // or the same query would find an element only after it was next edited.
+    expect(element.searchText).toBe("Dov\nA smith.\nAsh-grey");
+  });
+
+  it("leaves an already-converted row alone on a re-run", async () => {
+    const name = await seedElements([legacyElement("e1", "Dov", "A smith.")]);
+    await upgradeElements(name);
+
+    const db = new MyTomeDB(name);
+    await db.open();
+    const before = (await db.elements.get("e1"))!.description;
+    await db.transaction("rw", db.elements, db.elementTypes, () =>
+      backfillElementProse(Dexie.currentTransaction as Transaction),
+    );
+    const after = await db.elements.get("e1");
+    db.close();
+
+    // Double-wrapping would bury the author's paragraph inside a document whose
+    // only text is JSON — the failure `isProseDocument` exists to prevent.
+    expect(after!.description).toBe(before);
+    expect(after!.descriptionText).toBe("A smith.");
   });
 });

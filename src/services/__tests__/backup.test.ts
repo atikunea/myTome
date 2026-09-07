@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { db } from "../../models/db";
 import type { PlotItem } from "../../models/Plot";
 import type { WriteItem } from "../../models/WriteItem";
+import { isProseDocument } from "../../lexical/blocks";
 import { backupFileName, parseBackup, store } from "../store";
 import type { BackupFile } from "../store";
 import { addBeat, beatsOf, expectSpineIntact, makeTome } from "./helpers";
@@ -385,6 +386,38 @@ describe("files from other versions", () => {
     // from an older file reads as a shelf of zero-word chapters.
     const stored = await db.writeItems.get(item.id);
     expect(stored!.wordCount).toBe(5);
+  });
+
+  it("converts a pre-v9 element description into prose", async () => {
+    const { tome, ash } = await fullTome("The Long Road");
+    const file = throughJson(await store.exportTomeBackup(tome.id));
+
+    // What a v1 file held: plain text in `description`, and neither mirror.
+    const old: BackupFile = {
+      ...file,
+      formatVersion: 1,
+      schemaVersion: 8,
+      tomes: [
+        {
+          ...file.tomes[0],
+          elements: file.tomes[0].elements.map((element) => {
+            const { descriptionText: _text, searchText: _search, ...rest } = element;
+            return { ...rest, description: "A smith.\nQuiet about it." };
+          }),
+        },
+      ],
+    };
+
+    await store.restoreBackup(old, "replace");
+
+    // A restore bypasses Dexie's upgrades, so what the v9 backfill would have
+    // done has to happen here — otherwise the editor opens on unparseable text
+    // and every card shows a paragraph of nothing.
+    const stored = (await db.elements.get(ash.id))!;
+    expect(isProseDocument(stored.description)).toBe(true);
+    expect(stored.descriptionText).toBe("A smith.\nQuiet about it.");
+    // Derived across the custom fields, exactly as `saveElement` derives it.
+    expect(stored.searchText).toBe("Ash\nA smith.\nQuiet about it.\n31");
   });
 
   it("refuses a file from a newer version of the app", () => {

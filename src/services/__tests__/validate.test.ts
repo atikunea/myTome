@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  isEmptyFieldValue,
+  missingRequiredFields,
   validateElement,
   validateFields,
   validatePlotItem,
   validateRelationship,
 } from "../store";
+import { emptyProseDocument, plainToLexical } from "../../lexical/blocks";
 import type { FieldDefinition } from "../../models/ElementType";
 
 const field = (over: Partial<FieldDefinition> = {}): FieldDefinition => ({
@@ -56,10 +59,26 @@ describe("validateElement", () => {
     expect(() => validateElement("  ", {}, [])).toThrow(/Name is required/);
   });
 
-  it("enforces required fields but tolerates blank optional ones", () => {
+  it("does not enforce required fields — that is completeness, not validity", () => {
+    // Editing is per field now: throwing here would throw away the edit the
+    // author just made because some *other* field is still empty.
     const fields = [field({ required: true })];
-    expect(() => validateElement("Ash", { f1: " " }, fields)).toThrow(/Age is required/);
-    expect(() => validateElement("Ash", {}, [field()])).not.toThrow();
+    expect(() => validateElement("Ash", { f1: " " }, fields)).not.toThrow();
+    expect(missingRequiredFields({ f1: " " }, fields)).toHaveLength(1);
+    expect(missingRequiredFields({ f1: "34" }, fields)).toHaveLength(0);
+    expect(missingRequiredFields({}, [field()])).toHaveLength(0);
+  });
+
+  it("reads a prose field's emptiness from its text, not its string", () => {
+    const prose = field({ kind: "prose", required: true });
+    // An empty document is several hundred characters of JSON, so the naive
+    // check would call every blank prose field filled in.
+    expect(emptyProseDocument.trim().length).toBeGreaterThan(0);
+    expect(isEmptyFieldValue(prose, emptyProseDocument)).toBe(true);
+    expect(isEmptyFieldValue(prose, plainToLexical("  "))).toBe(true);
+    expect(isEmptyFieldValue(prose, plainToLexical("Tall, and stooped."))).toBe(false);
+    expect(isEmptyFieldValue(prose, undefined)).toBe(true);
+    expect(missingRequiredFields({ f1: emptyProseDocument }, [prose])).toHaveLength(1);
   });
 
   it("holds a select value to its listed choices", () => {

@@ -9,6 +9,7 @@ import { TomeLibraryPage } from "./pages/TomeLibraryPage";
 import { TomeDashboardPage } from "./pages/TomeDashboardPage";
 import { ElementTypesPage } from "./pages/ElementTypesPage";
 import { ElementListPage } from "./pages/ElementListPage";
+import { ElementPage } from "./pages/ElementPage";
 import { PlotPage } from "./pages/PlotPage";
 import { PlotComparePage } from "./pages/PlotComparePage";
 import { WriteListPage } from "./pages/WriteListPage";
@@ -125,8 +126,12 @@ export default function App() {
                   <Route path="write" element={<WriteListPage />} />
                   <Route path="write/:writeItemId" element={<WriteEditorPage />} />
                   <Route path="elements/:typeId" element={<ElementListPage />} />
-                  <Route path="elements/:typeId/new" element={<ElementListPage creating />} />
-                  <Route path="elements/:typeId/:elementId/edit" element={<ElementListPage />} />
+                  {/* An element has an address of its own, and editing happens on
+                      it rather than through a form. There is no `new` sibling:
+                      the row is created at the click site so a create-on-mount
+                      effect cannot double under StrictMode — the same rule
+                      `write/:writeItemId` follows. */}
+                  <Route path="elements/:typeId/:elementId" element={<ElementPage />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/tomes" replace />} />
               </Routes>

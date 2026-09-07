@@ -5,7 +5,8 @@ import type { ElementType } from "./ElementType";
 import type { Relationship } from "./Relationship";
 import type { Plot, PlotItem, PlotRow } from "./Plot";
 import type { WriteItem } from "./WriteItem";
-import { countDocumentWords } from "../lexical/blocks";
+import { elementSearchText } from "./Element";
+import { asProseDocument, countDocumentWords, documentText } from "../lexical/blocks";
 export interface Activity {
   id: string;
   tomeId: string;
@@ -88,6 +89,41 @@ export const backfillWordCounts = (tx: Transaction) =>
       if (typeof item.wordCount !== "number")
         item.wordCount = countDocumentWords(item.content ?? "");
     });
+/**
+ * Turns every element description into a Lexical document and derives the two
+ * text mirrors that replace reading it directly.
+ *
+ * Like v8's, this backfill has to **parse** rather than default — and unlike
+ * v8's it also *converts*, since a pre-v9 description is plain text and the
+ * editor can only open a document. It reads `elementTypes` because
+ * `searchText` spans the custom fields too, so a migrated row and one saved
+ * afterwards answer the same search; at this version no field can be `prose`
+ * yet, but going through `elementSearchText` is what keeps the two writers from
+ * drifting when they can.
+ *
+ * Safe to run repeatedly: a description that is already a document is left
+ * exactly as it is, and a mirror that already exists is not recomputed.
+ */
+export const backfillElementProse = async (tx: Transaction) => {
+  const fieldsByType = new Map<string, ElementType["fieldDefinitions"]>(
+    (await tx.table<ElementType>("elementTypes").toArray()).map((type) => [
+      type.id,
+      type.fieldDefinitions ?? [],
+    ]),
+  );
+  await tx
+    .table<Element>("elements")
+    .toCollection()
+    .modify((element) => {
+      element.description = asProseDocument(element.description);
+      element.descriptionText ??= documentText(element.description);
+      element.attributes ??= {};
+      element.searchText ??= elementSearchText(
+        element,
+        fieldsByType.get(element.elementTypeId) ?? [],
+      );
+    });
+};
 export class MyTomeDB extends Dexie {
   tomes!: EntityTable<Tome, "id">;
   elements!: EntityTable<Element, "id">;
@@ -176,6 +212,18 @@ export class MyTomeDB extends Dexie {
         writeItems: "id, tomeId, [tomeId+type], [tomeId+updatedAt], title",
       })
       .upgrade(backfillWordCounts);
+    // v9 turns `Element.description` into a Lexical document and adds the
+    // `descriptionText` / `searchText` mirrors beside it — new fields on an
+    // existing table, so rule 2 again, and this time the upgrade has to convert
+    // what is already there rather than default it. No index comes with them:
+    // the list filters one type's elements in memory, and an index maintained
+    // on every keystroke of an autosaving description would buy nothing.
+    this.version(9)
+      .stores({
+        elements:
+          "id, tomeId, elementTypeId, [tomeId+elementTypeId], [elementTypeId+updatedAt], name",
+      })
+      .upgrade(backfillElementProse);
   }
 }
 export const db = new MyTomeDB();

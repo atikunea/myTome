@@ -266,7 +266,7 @@ export function PlotComparePage({ creating = false }: { creating?: boolean }) {
         )}
         onOpenItem={(item) => navigate(`${comparePath}/items/${item.id}`)}
         onOpenElement={(element) =>
-          navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}/edit`)
+          navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}`)
         }
         // The manuscript has one address regardless of which view found the beat,
         // so compare links at the beat's own plot rather than at a compare-scoped

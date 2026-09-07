@@ -143,12 +143,12 @@ services/
   internal.ts      uid/now/slugify, observe, sameSet, byRank, the three range
                    queries, detach*, applyOrder.
   slug.ts          The one slug rule. Pure and table-free — see below.
-  validate.ts      The four validators. Callers invoke these, not the mutations.
+  validate.ts      The four validators, plus the two completeness helpers.
   images.ts        imageHref / imageFrom. Neither allocates — see hooks/useObjectUrl.ts.
   tomes.ts         Tomes + the eight-table delete cascade.
   templates.ts     applyTomeTemplate, createPlotFromTemplate. Create-time only.
   elementTypes.ts  Types, field definitions, and the two count* helpers.
-  elements.ts      Elements + relationships.
+  elements.ts      Elements + relationships. Sole writer of the two text mirrors.
   spine.ts         The shared row axis. Owns every sortOrder/plotRowId write.
   plots.ts         Plots and beats. Defers to spine.ts for ordering.
   writeItems.ts    Prose rows + the beat↔text link (both sides of writeItemIds).
@@ -352,8 +352,16 @@ A restore bypasses Dexie's upgrades entirely — rows are written straight into
 the current schema — so `restoreBackup` re-runs `backfillPlotRows` for any beat
 that arrives without a row and ends with `syncPlotSortOrder` for every tome it
 touched. Treat that as the standing rule: **a restore must leave the spine
-satisfying `expectSpineIntact`, whatever version wrote the file.** The
-`activities` table is deliberately not backed up (see below).
+satisfying `expectSpineIntact`, whatever version wrote the file.** The same
+standing rule now covers elements: `writeTome` converts a plain-text
+`description` and derives both text mirrors, since a v1 file carries neither.
+
+**`backupFormatVersion` is 2, and v9 is why.** `Element.description` kept its
+name while its meaning changed from text to a document, so a v1 reader would
+restore a v2 file without complaint and then show every card a paragraph of
+JSON. The version check refuses it instead. That is the test for a bump: not
+"did a field appear?" — an older reader ignores those — but "would an older
+reader mis*read* what it already knows?"
 
 ### `drive.ts` — transport, and the app's only network code
 
@@ -528,7 +536,7 @@ else they appear.
 
 ## Dexie schema changes — read before editing `models/db.ts`
 
-The database is `myTomeDB`, at **version 8**, running in users' browsers.
+The database is `myTomeDB`, at **version 9**, running in users' browsers.
 
 1. **Never edit a shipped `.version(n).stores({…})` block.** Add
    `.version(n+1)`. Dexie replays versions in order to upgrade an existing
@@ -564,6 +572,53 @@ The database is `myTomeDB`, at **version 8**, running in users' browsers.
    count and a restore bypasses Dexie's upgrades. No index came with the bump:
    the Write list sorts one tome's rows in memory, and an index Dexie would
    maintain on every autosave keystroke would buy nothing.
+7. **v9 turned `Element.description` into a Lexical document** and added
+   `descriptionText` and `searchText` beside it. Rule 2 again, and the first
+   backfill that has to **convert** rather than parse-or-default: a pre-v9
+   description is plain text, which the editor cannot open at all.
+   `backfillElementProse` wraps it with `plainToLexical`, skipping anything
+   `isProseDocument` already recognises — that guard is what makes a re-run
+   free instead of burying the author's paragraph inside a document whose only
+   text is JSON. It reads `elementTypes` as well, because `searchText` spans the
+   custom fields. No index came with it, for v8's reason.
+
+### Prose is a *kind* now, not just the description
+
+`FieldKind` gained `prose` alongside `text` and `select`, so an author can give
+a type as many written sections as their world needs — a Character with
+Appearance and Backstory, a Place with History — instead of piling everything
+into one description. **This needed no schema change**: `attributes` is
+`Record<string, string>` and a serialized document is a string. Four
+consequences, all of which have bitten once already:
+
+- **An empty prose value is `""`, not an empty document.** A field nobody has
+  written in has no entry in `attributes`, and Lexical throws outright on
+  `JSON.parse("")`. Every read of a prose value goes through `asProseDocument`,
+  which also covers a field whose kind was changed from `text` and therefore
+  holds a line of plain text. `components/ProseField.tsx` does this at its
+  boundary; do the same anywhere else a stored value reaches an editor.
+- **Emptiness is a question about the text, not the string.** An empty document
+  is several hundred characters of JSON, so `required` would be satisfied by
+  every blank prose field. `isEmptyFieldValue` in `validate.ts` is the answer,
+  and `discardElementIfBlank` leans on it.
+- **Anything printing an attribute as text has to flatten it first.**
+  `fieldValueText` in `models/Element.ts`; the element cards simply skip prose
+  fields, since a card has room for a line.
+- **`searchText` is why the list can still filter per keystroke.** It is name +
+  description + every field's text, derived on save by `elements.ts` and by the
+  v9 backfill through the same `elementSearchText`, so a migrated row and a
+  saved one answer the same query.
+
+### `required` is completeness, not validity
+
+`validateElement` no longer throws for an empty required field. It could while
+an element was written by a form that submitted everything at once; with the
+element page editing one field at a time, that rule would reject the edit an
+author just made because some *other* field is empty — and an author sketching
+a character rarely knows its faction on the first day. What is still enforced is
+what genuinely cannot be stored: a nameless element, and a select value outside
+its own list. `missingRequiredFields` reports the rest, and the page shows it as
+a chip. Keep that split if a third kind of "should" appears.
 
 ## Naming — these are load-bearing
 
@@ -589,8 +644,7 @@ Dialogs and edit forms are **URL-addressable**, not `useState` booleans. The
 pattern: one page component mounted by several routes, taking a boolean prop.
 `/tomes`, `/tomes/new` and `/tomes/guide` all render `<TomeLibraryPage>`, the
 second with `creating` and the third with `guide`;
-`elements/:typeId/:elementId/edit`, `plots/:plotId/items/:itemId`, and
-`elements/settings/new` work the same way. New create/edit UI gets a route, not
+`plots/:plotId/items/:itemId` and `elements/settings/new` work the same way. New create/edit UI gets a route, not
 a local open/closed flag — back, refresh, and deep links must work.
 
 **`/tomes/guide` is a route for a reason beyond the pattern.** The library page
@@ -599,10 +653,22 @@ strip afterwards, so without an address of its own the guide would be a page an
 author could destroy with one ✕. It is also the kind of thing someone sends to
 someone else. See `components/AGENTS.md` for the trio that renders it.
 
-One deliberate exception is `write/:writeItemId`, which has **no `write/new`
-sibling**: a draft row is created at the click site and the editor opens on its
-real id, because a create-on-mount effect fires twice under `StrictMode`. See
+Two deliberate exceptions create a row at the click site instead of routing to a
+form, because a create-on-mount effect fires twice under `StrictMode` and would
+leave an orphan behind every click. **`write/:writeItemId` has no `write/new`
+sibling**, and **`elements/:typeId/:elementId` has no `elements/:typeId/new`** —
+both open on a real id, and both sweep the row on unmount if it was left
+untouched (`discardWriteItemIfBlank`, `discardElementIfBlank`). See
 `src/components/AGENTS.md` for the full autosave/discard story.
+
+**An element's route is the element, not a form over it.** The old
+`elements/:typeId/:elementId/edit` is gone: `ElementPage` is a page you read,
+with every field editable where it sits, and `ElementListPage` is now only a
+list. Which field is being edited is **not** in the URL — the same call
+`ProseManuscript` makes about its active section. The test in this section is
+"can the URL rebuild it?", and while it technically could, a caret inside a
+field is not somewhere anyone deep-links, and every stray click would push a
+history entry.
 
 Composing *existing* text into a beat follows the rule rather than the
 exception: `plots/:plotId/items/:itemId/write/add` and `…/write/add/:index` both

@@ -1,4 +1,17 @@
-export type FieldKind = "text" | "select";
+/**
+ * What a custom field holds. `text` is a line, `select` is one of the field's
+ * own choices, and `prose` is a Lexical document — the same rich text the
+ * description is, so an author can give a type as many written sections as
+ * their world needs (a Character's Appearance and Backstory, a Place's
+ * History) rather than piling everything into one description.
+ *
+ * A `prose` value is stored in `Element.attributes` like any other, because a
+ * serialized document is a string. Two consequences: anything that renders an
+ * attribute as text has to flatten it first (`fieldValueText`), and anything
+ * asking whether a value is empty has to parse it (`isEmptyFieldValue`) — an
+ * empty document is a long non-empty string.
+ */
+export type FieldKind = "text" | "select" | "prose";
 export interface FieldDefinition {
   id: string;
   name: string;
