@@ -29,9 +29,16 @@ import { ManuscriptExportDialog } from "../components/ManuscriptExportDialog";
  * could have kept.
  *
  * The list is canonical: unknown and repeated ids are dropped and the URL
- * rewritten, so a refresh or a shared link resolves the same way. The **primary**
- * plot is `columns[0]` — the tab the strip marks selected, and what rename,
- * delete, "Add item" and the manuscript export act on.
+ * rewritten, so a refresh or a shared link resolves the same way. Two orders
+ * come out of it and they are not the same one:
+ *
+ * - **`selected`** is the URL's own order, and its first id is the **primary**
+ *   plot — the tab the strip marks selected, and what rename, delete, "Add item"
+ *   and the manuscript export act on. Toggling a plot on appends to this, so the
+ *   primary stays where it is and those actions never quietly change target.
+ * - **`columns`** is the same plots in the tabs' order, and is what gets drawn.
+ *   Reordering the tabs reorders the columns; there is deliberately no second
+ *   gesture for it.
  */
 export function PlotPage({
   creating = false,
@@ -70,7 +77,10 @@ export function PlotPage({
     ) ?? [];
 
   const requested = useMemo(() => (plotIds ?? "").split(",").filter(Boolean), [plotIds]);
-  const columns = useMemo(() => {
+  // What the URL names, in the URL's own order: the **primary** plot first, then
+  // the rest in the order they were switched on. That order is what the address
+  // has to preserve, since it is the only place the primary is recorded.
+  const selected = useMemo(() => {
     if (!plots) return [];
     const resolved: Plot[] = [];
     for (const id of requested) {
@@ -80,12 +90,23 @@ export function PlotPage({
     return resolved;
   }, [plots, requested]);
 
-  const canonical = columns.map((plot) => plot.id).join(",");
+  // What is drawn, left to right: the same plots in the **tabs'** order, so the
+  // columns read in the order the strip above them does. Reordering the tabs
+  // reorders the columns, which is the only gesture for it — dragging a column
+  // would be a second way to say the same thing, and the tab drag already writes
+  // `Plot.sortOrder`, which is what `observePlots` returns them in.
+  const columns = useMemo(() => {
+    if (!plots) return [];
+    const rank = new Map(plots.map((plot, index) => [plot.id, index]));
+    return [...selected].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+  }, [plots, selected]);
+
+  const canonical = selected.map((plot) => plot.id).join(",");
   const plotsPath = tome ? `/tomes/${tome.id}/plots/${canonical}` : "";
 
   useEffect(() => {
     if (!tome || !plots) return;
-    if (columns.length) {
+    if (selected.length) {
       // A hand-edited URL naming a deleted or repeated plot is rewritten to what
       // is actually on screen.
       if (canonical !== plotIds) navigate(plotsPath, { replace: true });
@@ -102,12 +123,15 @@ export function PlotPage({
     return () => {
       active = false;
     };
-  }, [tome, plots, columns, canonical, plotIds, plotsPath, navigate]);
+  }, [tome, plots, selected, canonical, plotIds, plotsPath, navigate]);
 
   if (!tome || !plots) return null;
-  if (!columns.length) return null;
+  if (!selected.length) return null;
 
-  const primary = columns[0];
+  // The tab the strip marks selected. It is the URL's first id rather than the
+  // leftmost column, so switching another plot on cannot silently retarget the
+  // rename, the delete or the export at whichever one happens to sort first.
+  const primary = selected[0];
   const items = allItems.filter((item) => columns.some((plot) => plot.id === item.plotId));
   // The manuscript is one plot line, and `buildManuscript` reads its beats in
   // `sortOrder` — which `observeTomePlotItems` does not return them in.
@@ -175,15 +199,16 @@ export function PlotPage({
         tome={tome}
         plots={plots}
         columns={columns}
+        primary={primary}
         newPlotOpen={newPlotOpen}
         onCloseNewPlot={() => setNewPlotOpen(false)}
         onAddItem={() => navigate(`${plotsPath}/insert/${primary.id}`)}
         onShowOnly={(plot) => navigate(withColumns([plot.id]))}
         onToggleColumn={(plot) =>
           navigate(
-            columns.some((column) => column.id === plot.id)
-              ? withColumns(columns.filter((column) => column.id !== plot.id).map((c) => c.id))
-              : withColumns([...columns.map((column) => column.id), plot.id]),
+            selected.some((column) => column.id === plot.id)
+              ? withColumns(selected.filter((column) => column.id !== plot.id).map((c) => c.id))
+              : withColumns([...selected.map((column) => column.id), plot.id]),
           )
         }
       />

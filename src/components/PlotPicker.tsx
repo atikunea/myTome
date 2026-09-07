@@ -212,6 +212,7 @@ export function PlotPicker({
   tome,
   plots,
   columns,
+  primary,
   newPlotOpen,
   onCloseNewPlot,
   onAddItem,
@@ -220,8 +221,10 @@ export function PlotPicker({
 }: {
   tome: Tome;
   plots: Plot[];
-  /** The plots currently drawn, left to right. Never empty. */
+  /** The plots currently drawn. Only the set matters here, not the order. */
   columns: Plot[];
+  /** The one the tablist marks selected, and what rename and delete act on. */
+  primary: Plot;
   newPlotOpen: boolean;
   onCloseNewPlot: () => void;
   onAddItem: () => void;
@@ -237,8 +240,10 @@ export function PlotPicker({
   const [plotTemplateId, setPlotTemplateId] = useState(defaultPlotTemplateId);
   const plotTemplate = plotTemplateById(plotTemplateId);
 
-  // Rename and delete act on the plot the tablist calls selected.
-  const current = columns[0];
+  // Rename and delete act on the plot the tablist calls selected. It is passed
+  // in rather than taken as `columns[0]`: the columns are drawn in tab order, so
+  // the leftmost is not necessarily the one the author picked.
+  const current = primary;
   const shown = useMemo(() => new Set(columns.map((plot) => plot.id)), [columns]);
 
   // "New plot" is triggered from the page header, so the parent owns that flag.

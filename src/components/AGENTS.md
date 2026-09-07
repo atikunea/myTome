@@ -115,13 +115,33 @@ merge possible, each worth defending:
   just a name and an add-beat button, because *which* plots are drawn is the tab
   strip's business, not the header's.
 
-The two asymmetries that remain are deliberate, not leftovers. **Rename, delete,
-"Add item" and the manuscript export act on the primary plot** (`columns[0]`,
-the tab the strip marks selected) rather than on all of them, because each is
-singular by nature — most of all the export, since a manuscript is one plot line.
-And **`aria-pressed` on the tab's toggle carries the real column state**, since
-MUI's `Tabs` has one `value` and cannot say that three tabs are on: the tab
-itself means "go to this plot alone", the toggle means "in or out of the set".
+**The columns are drawn in the tabs' order, and the URL's order is a different
+thing.** `PlotPage` derives two lists from `:plotIds` and they must not be
+conflated:
+
+- `selected` is the URL's own order, and its **first id is the primary plot** —
+  the tab the strip marks selected, and what rename, delete, "Add item" and the
+  manuscript export act on. Toggling a plot on *appends* to this.
+- `columns` is the same plots sorted by `Plot.sortOrder` (the order
+  `observePlots` returns, which is the tab order), and is what is drawn.
+
+Sorting the URL itself would be simpler and is wrong: the primary would become
+whichever plot happens to sort first, so switching on a plot that sits earlier in
+the strip would silently re-aim the export — and the delete — at a plot the
+author never selected. Keeping the primary at the head of the URL is what stops
+that, and it is why toggling appends rather than inserting.
+
+Reordering the columns is therefore **only** a tab drag. Don't add a second
+gesture for it: the tab drag already writes `Plot.sortOrder`, and a column drag
+would be a second way to say the same thing that also has to fight the beat drag
+already living in those cells.
+
+Two smaller asymmetries are also deliberate. Rename, delete, "Add item" and the
+export are singular by nature — most of all the export, since a manuscript is one
+plot line. And **`aria-pressed` on the tab's toggle carries the real column
+state**, since MUI's `Tabs` has one `value` and cannot say that three tabs are
+on: the tab itself means "go to this plot alone", the toggle means "in or out of
+the set".
 
 ## Templates are seeds, not schemas — and there are two registries
 
