@@ -17,17 +17,18 @@ import {
 import { arrayMove } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
-import { Box, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, IconButton, Tooltip, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
+import type { SaveState } from "../hooks/autosave";
 import { plotRowName, type Plot, type PlotItem, type PlotRow } from "../models/Plot";
 import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
 import { BeatDot } from "./BeatDot";
+import { InlineTextField } from "./InlineTextField";
 import { EmptyState } from "./EmptyState";
 import { PlotBeatCard } from "./PlotBeatCard";
 
@@ -176,7 +177,7 @@ export function PlotGrid({
   onOpenElement,
   onWrite,
   onAddBeat,
-  onRenameRow,
+  onSaveState,
 }: {
   tomeId: string;
   /** The tome's spine, in order. */
@@ -199,7 +200,13 @@ export function PlotGrid({
   onWrite: (item: PlotItem) => void;
   /** Author a new beat in an empty cell. */
   onAddBeat: (plotId: string, rowId: string) => void;
-  onRenameRow: (row: PlotRow) => void;
+  /**
+   * Where a row label's autosave reports to. Every gutter shares one, since only
+   * one label can be under the caret at a time; the page renders it.
+   * **It has to be stable** — a new identity re-fires every gutter's effect, and
+   * the last one to speak would overwrite the state of the one being edited.
+   */
+  onSaveState: (state: SaveState, retry: () => void) => void;
 }) {
   const confirmAction = useConfirm();
   // Which quiet runs the author has opened back up, by the ids of the rows in
@@ -390,7 +397,7 @@ export function PlotGrid({
                 <RowGutter
                   row={entry.row}
                   index={entry.index}
-                  onRename={() => onRenameRow(entry.row)}
+                  onSaveState={onSaveState}
                   onDelete={() => handleDeleteRow(entry.row, entry.index)}
                 />
                 {plots.map((plot) => {
@@ -476,12 +483,12 @@ function Track({ part, children }: { part: TrackPart; children?: ReactNode }) {
 function RowGutter({
   row,
   index,
-  onRename,
+  onSaveState,
   onDelete,
 }: {
   row: PlotRow;
   index: number;
-  onRename: () => void;
+  onSaveState: (state: SaveState, retry: () => void) => void;
   onDelete: () => void;
 }) {
   const name = plotRowName(row, index);
@@ -495,40 +502,78 @@ function RowGutter({
         bgcolor: "background.default",
         py: 1.5,
         pr: 1,
+        // Centred, so the label sits level with the dot and the card beside it
+        // rather than riding at the top of a row a long beat has made tall. The
+        // delete button is floated over it rather than sharing the line, so the
+        // label is the only thing in the flow and the centring is exact.
+        display: "flex",
+        alignItems: "center",
         "&:hover .row-action, &:focus-within .row-action": { opacity: 1 },
       }}
     >
-      <Typography
-        variant="overline"
-        color="text.secondary"
-        sx={{ display: "block", lineHeight: 1.5, overflowWrap: "anywhere" }}
+      {/*
+        `typography` on the wrapper rather than on the field: `InlineTextField`
+        sets `font: inherit` on the input, and `letter-spacing` and
+        `text-transform` — which the overline style needs and `font` does not
+        carry — are inherited CSS, so both reach the input from here.
+      */}
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          typography: "overline",
+          color: "text.secondary",
+          lineHeight: 1.5,
+        }}
       >
-        {name}
-      </Typography>
-      <Stack direction="row" sx={{ mt: 0.25, ml: -0.5 }}>
-        <Tooltip title="Rename row">
-          <IconButton
-            size="small"
-            className="row-action"
-            aria-label={`Rename ${name}`}
-            onClick={onRename}
-            sx={{ opacity: 0, transition: "opacity 120ms ease" }}
-          >
-            <EditOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Delete row">
-          <IconButton
-            size="small"
-            className="row-action"
-            aria-label={`Delete ${name}`}
-            onClick={onDelete}
-            sx={{ opacity: 0, transition: "opacity 120ms ease" }}
-          >
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Stack>
+        <InlineTextField
+          value={row.label ?? ""}
+          // An unnamed row reads as its position, the same words `plotRowName`
+          // gives it — but as a placeholder, so a name the author chose looks
+          // different from the one the spine fell back to.
+          placeholder={`Row ${index + 1}`}
+          ariaLabel={`Name ${name}`}
+          save={(label) => store.setPlotRowLabel(row.id, label)}
+          onSaveState={onSaveState}
+          sx={{
+            lineHeight: 1.5,
+            overflowWrap: "anywhere",
+            // The one thing the wrapper cannot hand down: MUI's own
+            // `InputBase-input` baseline resets `text-transform`, so the
+            // uppercase the gutter has always read in stops at the input. The
+            // author's own casing is what gets stored — this is display only,
+            // which is why the delete confirm and the labels below say the row's
+            // name as they typed it.
+            "& input": { textTransform: "uppercase" },
+          }}
+        />
+      </Box>
+      {/*
+        Floated over the label's right end rather than sitting beside it: the
+        gutter is 136px and a button in the flow left the label 78 of them, which
+        wraps anything longer than "Act I" into a column of syllables. It is
+        hidden until hover, and opaque so it does not print itself over whatever
+        it covers while it is up.
+      */}
+      <Tooltip title="Delete row">
+        <IconButton
+          size="small"
+          className="row-action"
+          aria-label={`Delete ${name}`}
+          onClick={onDelete}
+          sx={{
+            position: "absolute",
+            right: 2,
+            top: "50%",
+            transform: "translateY(-50%)",
+            opacity: 0,
+            bgcolor: "background.default",
+            transition: "opacity 120ms ease",
+          }}
+        >
+          <DeleteOutlineIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
     </Box>
   );
 }

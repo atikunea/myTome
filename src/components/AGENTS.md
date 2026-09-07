@@ -5,7 +5,7 @@ components with hooks — no class components, no web components). This
 folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `TomeFormDialog`, `FieldDefinitionsEditor`, `CoverThumbnail`, `ImagePicker`,
 `EmptyState`, `ColorModeToggle`, `PlotGrid`, `BeatDot`,
-`PlotBeatCard`, `PlotRowTools`, `PlotItemDialog`, `PlotPicker`,
+`PlotBeatCard`, `RemoveEmptyRowsButton`, `PlotItemDialog`, `PlotPicker`,
 `WriteItemRow`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`,
 `PolicyProse`, `ProseField`, `InlineTextField`, `RelationshipRowEditor`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
@@ -100,10 +100,18 @@ merge possible, each worth defending:
   label now lives on the card, always.
 - **A gap is drawn whatever the column count.** The single-plot view used to pack
   beats contiguously, so a plot with a hole in it looked identical to one without.
-- **Row actions belong to the grid, not the page.** Inserting and deleting a row
-  are the same act however many columns are drawn, so `PlotGrid` owns those
-  buttons and calls the store itself. Renaming needs a route, so it stays a prop
-  (`onRenameRow`) and the page mounts the shared `PlotRowDialog`.
+- **Row actions belong to the grid, not the page.** Inserting a row, deleting one
+  and naming one are the same act however many columns are drawn, so `PlotGrid`
+  owns all three and calls the store itself. The page is left with one prop for
+  them — `onSaveState`, because a label's autosave needs somewhere on the page to
+  report.
+- **A row is named in the gutter, not in a dialog.** The label is an
+  `InlineTextField`, the same as a tome's title or an element's fields: an
+  unnamed row shows its position as the *placeholder*, so a name the author chose
+  looks different from the one the spine fell back to. The `rows/:rowId` route
+  that opened the old dialog is kept only as a landing for `compare/…/rows/:rowId`
+  and replaces itself with the plot's address — which field is being edited is
+  not in the URL, the same call `ElementPage` and `ProseManuscript` make.
 - **The tabs are the only control over which plots are drawn.** Clicking a tab
   shows that plot alone; the toggle inside each tab adds or removes it as a
   further column. That replaced a "Compare" menu, an "Add plot" menu, an "Exit
@@ -937,11 +945,10 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
 - `BeatDot.tsx` — the beat's marker on the track: colour, variant, icon. A
   hand-rolled `TimelineDot`, because MUI's reads `Timeline`'s context and ships an
   `align-self` meant for a `TimelineSeparator`. Used only by `PlotGrid`'s `Track`.
-- `PlotRowTools.tsx` — the two spine controls both plot pages need:
-  `PlotRowDialog` (naming a row, mounted by each page's `rows/:rowId` route) and
-  `RemoveEmptyRowsButton`. The button counts against the **tome's** beats, not the
-  ones on screen: a row can be empty in every visible column and still be occupied
-  by a plot that is not shown, so hand it `observeTomePlotItems`.
+- `RemoveEmptyRowsButton.tsx` — drops every row no plot stands on. It counts
+  against the **tome's** beats, not the ones on screen: a row can be empty in
+  every visible column and still be occupied by a plot that is not shown, so hand
+  it `observeTomePlotItems`.
 - `PlotGrid.tsx` — **every** plot drawing goes through here: one plot is one
   column, and compare is the same component with more. Beats sharing a row line
   up and a plot with nothing on a row shows a gap. The alignment is CSS, not

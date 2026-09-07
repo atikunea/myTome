@@ -74,7 +74,14 @@ export default function App() {
                   <Route path="plots" element={<PlotPage />} />
                   <Route path="plots/:plotIds" element={<PlotPage />} />
                   <Route path="plots/:plotIds/items/:itemId" element={<PlotPage />} />
-                  {/* Naming a spine row. The row belongs to the tome, not to a column. */}
+                  {/*
+                    Legacy. A row label is edited in the gutter now, so there is
+                    no dialog for this to reopen and `PlotPage` replaces the
+                    address with the plot's own. It stays mounted only because
+                    the compare redirect below maps `compare/…/rows/:rowId` onto
+                    it, and a link that lands nowhere is worse than one that
+                    lands on the row it was about.
+                  */}
                   <Route path="plots/:plotIds/rows/:rowId" element={<PlotPage />} />
                   {/*
                     The manuscript export. A route rather than a `useState` flag

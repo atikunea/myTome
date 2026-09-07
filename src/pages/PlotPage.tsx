@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Box, Button, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import type { Element } from "../models/Element";
 import type { Plot, PlotItem, PlotRow } from "../models/Plot";
+import type { SaveState } from "../hooks/autosave";
 import type { WriteItem } from "../models/WriteItem";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
@@ -12,7 +13,8 @@ import { useObservable } from "../hooks/useObservable";
 import { PlotGrid } from "../components/PlotGrid";
 import { PlotItemDialog } from "../components/PlotItemDialog";
 import { PlotPicker } from "../components/PlotPicker";
-import { PlotRowDialog, RemoveEmptyRowsButton } from "../components/PlotRowTools";
+import { RemoveEmptyRowsButton } from "../components/RemoveEmptyRowsButton";
+import { SaveStatus } from "../components/SaveStatus";
 import { ManuscriptExportDialog } from "../components/ManuscriptExportDialog";
 
 /**
@@ -56,6 +58,17 @@ export function PlotPage({
   const { tome, types } = useTomeWorkspace();
   const navigate = useNavigate();
   const [newPlotOpen, setNewPlotOpen] = useState(false);
+  // Row labels are edited in the gutter, so their autosave needs somewhere to
+  // report. It stays null until the first edit: this is not an editing surface
+  // the way the tome overview is, and a permanent "Saved" beside the plot's
+  // actions would be a claim about nothing.
+  const [save, setSave] = useState<{ state: SaveState; retry: () => void } | null>(null);
+  // Stable, because `InlineTextField` re-fires on identity change and every
+  // gutter shares this one — see `PlotGrid`'s `onSaveState`.
+  const handleSaveState = useCallback(
+    (state: SaveState, retry: () => void) => setSave({ state, retry }),
+    [],
+  );
 
   const plots = useObservable<Plot[]>((cb) => store.observePlots(tome!.id, cb), [tome?.id]);
   const rows =
@@ -108,8 +121,10 @@ export function PlotPage({
     if (!tome || !plots) return;
     if (selected.length) {
       // A hand-edited URL naming a deleted or repeated plot is rewritten to what
-      // is actually on screen.
-      if (canonical !== plotIds) navigate(plotsPath, { replace: true });
+      // is actually on screen. `rows/:rowId` goes the same way: it addressed the
+      // rename dialog, and a label is edited in the gutter now, so there is
+      // nothing for that address to reopen.
+      if (canonical !== plotIds || (!creating && rowId)) navigate(plotsPath, { replace: true });
       return;
     }
     if (plots.length) {
@@ -123,7 +138,7 @@ export function PlotPage({
     return () => {
       active = false;
     };
-  }, [tome, plots, selected, canonical, plotIds, plotsPath, navigate]);
+  }, [tome, plots, selected, canonical, plotIds, plotsPath, creating, rowId, navigate]);
 
   if (!tome || !plots) return null;
   if (!selected.length) return null;
@@ -143,8 +158,6 @@ export function PlotPage({
   const withColumns = (ids: string[]) => `/tomes/${tome.id}/plots/${ids.join(",")}`;
   const editingItem = itemId ? allItems.find((item) => item.id === itemId) : undefined;
   const insertPlot = creating ? columns.find((plot) => plot.id === sidePlotId) : undefined;
-  // `:rowId` serves both the rename route and the insert route; `creating` says which.
-  const renamingRow = !creating && rowId ? rows.find((row) => row.id === rowId) : undefined;
 
   return (
     <Box>
@@ -165,6 +178,7 @@ export function PlotPage({
           </Typography>
         </Box>
         <Stack direction="row" sx={{ alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          {save ? <SaveStatus state={save.state} onRetry={save.retry} /> : null}
           <RemoveEmptyRowsButton tomeId={tome.id} rows={rows} tomeItems={allItems} />
           {/*
             A manuscript is one plot line, so with several columns this has to
@@ -260,7 +274,7 @@ export function PlotPage({
         // found it, so this links at the beat's own plot alone.
         onWrite={(item) => navigate(`/tomes/${tome.id}/plots/${item.plotId}/items/${item.id}/write`)}
         onAddBeat={(plotId, targetRow) => navigate(`${plotsPath}/insert/${plotId}/${targetRow}`)}
-        onRenameRow={(row) => navigate(`${plotsPath}/rows/${row.id}`)}
+        onSaveState={handleSaveState}
       />
 
       <PlotItemDialog
@@ -280,8 +294,6 @@ export function PlotPage({
         }
         onClose={closeDialog}
       />
-
-      <PlotRowDialog row={renamingRow} onClose={closeDialog} />
 
       {exporting && (
         <ManuscriptExportDialog

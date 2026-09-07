@@ -761,8 +761,8 @@ plot was on screen or four. Resist adding a columns-scoped twin; the route shape
 is already three deep.
 
 **`:plotIds` is a comma-joined list of one or more, and there is only one
-plotting page.** `plots/:plotIds` plus `/items/:itemId`, `/rows/:rowId`,
-`/export`, and `/insert/:sidePlotId` with an optional `/:rowId`. A single plot
+plotting page.** `plots/:plotIds` plus `/items/:itemId`, `/export`, and
+`/insert/:sidePlotId` with an optional `/:rowId`. A single plot
 is a list of length one, so drawing one plot and drawing four is the same
 address at different lengths — there is no compare page, no compare mode, and
 nothing to exit. Which plots are in the list is decided by the toggles in
@@ -778,6 +778,12 @@ The insert route names the plot *and* optionally the row, because with several
 columns neither alone identifies a cell; omitting the row appends and lets
 `rowForNewPlotItem` choose. There is no `insert/:index` any more — an index was
 only ever `items.length`.
+
+**A spine row is named in the gutter, so `rows/:rowId` no longer opens anything.**
+It stays mounted purely as the landing for `compare/:plotIds/rows/:rowId`, and
+`PlotPage` replaces it with the plot's own address — a link that lands nowhere is
+worse than one that lands on the row it was about. Which field is being edited
+stays out of the URL, the same call the element page makes.
 
 **`plots/compare/:plotIds` and `plots/compare/:plotIds/*` still resolve**, as
 `PlotCompareRedirect`. Comparing was a page of its own, and its columns were in
