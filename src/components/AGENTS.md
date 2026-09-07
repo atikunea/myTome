@@ -762,9 +762,24 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   regardless of where you clicked "Edit" from. In create mode it also carries
   both template pickers (see above); in edit mode it carries neither, because a
   template is only ever applied at creation.
-- `FieldDefinitionsEditor.tsx` — add/edit/remove UI for an ElementType's
-  custom field definitions (`FieldDefinition[]`); used by
-  `../pages/ElementTypesPage.tsx`.
+- `FieldDefinitionsEditor.tsx` — add/edit/remove/**reorder** UI for an
+  ElementType's custom field definitions (`FieldDefinition[]`); used by
+  `../pages/ElementTypesPage.tsx`. Reordering is the cheapest kind of drag in
+  this codebase, because **field order is the array's order and nothing else**:
+  `saveType` renumbers every `sortOrder` from the index it is handed, so a drag
+  is one `arrayMove` on the parent's `useState` draft and needs no store call,
+  no locally-held render order, and no stale-drag guard — unlike `PlotTimeline`,
+  whose order is live-queried and written on drop. Nothing reaches the database
+  until "Save type", which is what the rest of this form already does.
+  Two details worth keeping:
+  - **The handle is grouped with the name field, not placed in the outer row.**
+    That row is `direction={{ xs: "column", sm: "row" }}`, so a handle among its
+    direct children lands on a line of its own at `xs` and reads as a stray
+    icon. An inner row of handle + name holds them together at both widths.
+  - **`type="button"` on the handle is load-bearing here** in a way it is not on
+    `PlotBeatCard`'s: this one sits inside the element type's `<form>`, and a
+    bare `<button>` defaults to submit, so every Enter pressed while it held
+    focus would save the type.
 - `CoverThumbnail.tsx` — shared cover image / fallback-letter-avatar, used by
   Tome and Element cards, the tome dashboard, and `ImagePicker`'s own tile.
   Its no-image fallback is why nothing in the app needs a placeholder image

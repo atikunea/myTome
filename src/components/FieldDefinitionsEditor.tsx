@@ -168,44 +168,52 @@ function FieldRow({
         opacity: isDragging ? 0.65 : 1,
       }}
     >
-      <Tooltip title="Drag to reorder">
-        {/*
-          A plain button, not MUI's IconButton: ButtonBase routes key events
-          through its own `getButtonProps` wrapper, which swallows the
-          `onKeyDown` that dnd-kit's KeyboardSensor needs to start a lift.
-        */}
-        <Box
-          component="button"
-          type="button"
-          ref={setActivatorNodeRef}
-          aria-label={field.name ? `Reorder ${field.name}` : "Reorder field"}
-          sx={{
-            flex: "0 0 auto",
-            alignSelf: { xs: "flex-start", sm: "center" },
-            p: 0.5,
-            display: "inline-flex",
-            border: 0,
-            borderRadius: "50%",
-            bgcolor: "transparent",
-            color: "text.secondary",
-            cursor: "grab",
-            touchAction: "none",
-            "&:hover": { bgcolor: "action.hover" },
-            "&:active": { cursor: "grabbing" },
-          }}
-          {...attributes}
-          {...listeners}
-        >
-          <DragIndicatorIcon fontSize="small" />
-        </Box>
-      </Tooltip>
-      <TextField
-        placeholder="Field name"
-        value={field.name}
-        onChange={(e) => onUpdate({ name: e.target.value })}
-        size="small"
-        sx={{ flex: "1 1 180px" }}
-      />
+      {/*
+        The handle rides with the name rather than sitting in the outer row: at
+        `xs` that row stacks, and a lone grip on a line of its own above the
+        field reads as a stray icon rather than a control belonging to the row.
+      */}
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flex: "1 1 180px" }}>
+        <Tooltip title="Drag to reorder">
+          {/*
+            A plain button, not MUI's IconButton: ButtonBase routes key events
+            through its own `getButtonProps` wrapper, which swallows the
+            `onKeyDown` that dnd-kit's KeyboardSensor needs to start a lift.
+          */}
+          <Box
+            component="button"
+            // Without this it submits: this row sits inside the element type's
+            // form, which would save on any Enter pressed while it has focus.
+            type="button"
+            ref={setActivatorNodeRef}
+            aria-label={field.name ? `Reorder ${field.name}` : "Reorder field"}
+            sx={{
+              flex: "0 0 auto",
+              p: 0.5,
+              display: "inline-flex",
+              border: 0,
+              borderRadius: "50%",
+              bgcolor: "transparent",
+              color: "text.secondary",
+              cursor: "grab",
+              touchAction: "none",
+              "&:hover": { bgcolor: "action.hover" },
+              "&:active": { cursor: "grabbing" },
+            }}
+            {...attributes}
+            {...listeners}
+          >
+            <DragIndicatorIcon fontSize="small" />
+          </Box>
+        </Tooltip>
+        <TextField
+          placeholder="Field name"
+          value={field.name}
+          onChange={(e) => onUpdate({ name: e.target.value })}
+          size="small"
+          sx={{ flex: 1 }}
+        />
+      </Stack>
       <TextField
         select
         value={field.kind}
