@@ -933,17 +933,23 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
     strip between two rows, which is also why a cell carries no vertical padding —
     the card does, via `my`. Break either and the line turns to dashes. Check it
     by measuring the segments' rects for gaps rather than by eye.
-  - **A cell draws one of five `TrackPart`s, and the ends are ends.** The track
-    runs from a plot's first beat to its last and stops, because where a thread
-    starts and finishes against the spine is worth seeing. So `"start"` and
-    `"end"` draw a *full* half — above the first dot, below the last — but flush
-    with the cell instead of overshooting, and `"none"` draws nothing at all.
-    The predecessor of `trackPart` asked `i > first` and `i < last`
-    independently, which is true on both sides of the span as well as inside it:
-    every row past the last beat drew a top half and no bottom, a line that began
-    and stopped in mid-air, and every row before the first drew the mirror image.
-    Any change here needs checking at four places — first beat, last beat, a gap
-    between two beats, and a row outside the span at each end.
+  - **The track runs the full height of its column**, so every column is a lane
+    and the dots mark where that thread has beats. Whether a plot has anything on
+    a row is said by the cell — a card, or a dashed gap — never by the line
+    stopping. `trackPart` therefore asks only where a row sits among the *drawn*
+    rows, and the only special cases are the outermost two, which stop flush with
+    their cell instead of overshooting so the line does not trail off past the
+    grid. It is why no span is computed any more.
+
+    This was twice wrong before, and both are easy to reintroduce. Drawing the
+    line only between a plot's first and last beat leaves the first beat with no
+    line above its dot and the last with none below — the ends read as half-drawn
+    rather than as ends. And asking `i > first` and `i < last` *independently* is
+    true on both sides of that span as well as inside it, so every row past the
+    last beat drew a top half and no bottom — a line that began and stopped in
+    mid-air — and every row before the first drew the mirror image. Check any
+    change at four places: the first drawn row, the last, a gap between two
+    beats, and a column whose plot has no beat at either end.
   - **A drag is two gestures, chosen by what is in the target cell.** Dropping on
     a gap is `movePlotItemToRow` (a move, opening a gap behind it). Dropping on
     another beat is `reorderPlotItems` with an `arrayMove` — the ordinary

@@ -66,31 +66,26 @@ type GridEntry =
   | { kind: "row"; row: PlotRow; index: number }
   | { kind: "quiet"; rows: PlotRow[]; index: number };
 
-/** The stretch of spine a plot covers, as ranks. Outside it the plot has no track. */
-type Span = { first: number; last: number };
+/**
+ * How much track a cell draws. **The track runs the full height of its column**,
+ * top to bottom of the grid, so every column is a lane and the dots mark where
+ * that thread has beats. What a plot does or does not have on a row is said by
+ * the cell — a card or a dashed gap — rather than by the line stopping.
+ *
+ * Only the two outermost rows differ, and only so the line does not trail off:
+ * `"start"` and `"end"` stop flush with their cell instead of overshooting into
+ * the hover-to-insert strip beyond it.
+ */
+type TrackPart = "start" | "middle" | "end" | "only";
 
 /**
- * How much track a cell draws. The track runs from a plot's first beat to its
- * last and stops: a thread that starts a third of the way down the book and ends
- * before the end says so by where its line begins and ends, which is worth
- * seeing in a comparison. So the ends are drawn as ends — a full half above the
- * first dot and below the last, stopping flush with the cell — and cells beyond
- * them draw nothing rather than half a line.
+ * Which part of the track the cells of drawn row `position` of `count` get. It
+ * asks about position in the *drawn* rows rather than the spine, because that is
+ * what "the full height of the column" means — a collapsed quiet run is one
+ * drawn row like any other, and the outermost rows are wherever the grid ends.
  */
-type TrackPart = "none" | "start" | "middle" | "end" | "only";
-
-/**
- * Which part of the track a cell covering ranks `from`..`to` draws. One cell
- * passes the same rank twice; a collapsed quiet run passes its whole range,
- * which is always wholly inside the span or wholly outside it — the span's ends
- * are beats, and a quiet run has none.
- */
-const trackPart = (span: Span | undefined, from: number, to: number): TrackPart => {
-  if (!span || to < span.first || from > span.last) return "none";
-  const atStart = from <= span.first;
-  const atEnd = to >= span.last;
-  return atStart && atEnd ? "only" : atStart ? "start" : atEnd ? "end" : "middle";
-};
+const trackPart = (position: number, count: number): TrackPart =>
+  count <= 1 ? "only" : position === 0 ? "start" : position === count - 1 ? "end" : "middle";
 
 /**
  * Restricts a drag to the column it started in. A beat belongs to one plot, so
@@ -221,21 +216,6 @@ export function PlotGrid({
     [elements],
   );
   const rank = useMemo(() => new Map(rows.map((row, index) => [row.id, index])), [rows]);
-
-  // Where each plot's track starts and stops. Between those two ranks the line is
-  // drawn through every cell, occupied or not — a quiet stretch of a thread is
-  // the thread continuing, not the thread ending.
-  const spans = useMemo(() => {
-    const out = new Map<string, Span>();
-    for (const item of items) {
-      const at = rank.get(item.plotRowId);
-      if (at === undefined) continue;
-      const span = out.get(item.plotId);
-      if (!span) out.set(item.plotId, { first: at, last: at });
-      else out.set(item.plotId, { first: Math.min(span.first, at), last: Math.max(span.last, at) });
-    }
-    return out;
-  }, [items, rank]);
 
   // Each plot's beats in spine order — what a within-column drag permutes.
   const orderByPlot = useMemo(() => {
@@ -377,8 +357,9 @@ export function PlotGrid({
             </>
           ) : null}
 
-          {entries.map((entry) =>
-            entry.kind === "quiet" ? (
+          {entries.map((entry, position) => {
+            const part = trackPart(position, entries.length);
+            return entry.kind === "quiet" ? (
               <Fragment key={entry.rows[0].id}>
                 <RowInsert
                   label={`Insert a row above ${plotRowName(entry.rows[0], entry.index)}`}
@@ -396,13 +377,7 @@ export function PlotGrid({
                 />
                 {plots.map((plot) => (
                   <Box key={plot.id} sx={{ minWidth: 0, display: "flex", minHeight: 30 }}>
-                    <Track
-                      part={trackPart(
-                        spans.get(plot.id),
-                        entry.index,
-                        entry.index + entry.rows.length - 1,
-                      )}
-                    />
+                    <Track part={part} />
                   </Box>
                 ))}
               </Fragment>
@@ -420,7 +395,6 @@ export function PlotGrid({
                 />
                 {plots.map((plot) => {
                   const item = byCell.get(cellId(plot.id, entry.row.id));
-                  const part = trackPart(spans.get(plot.id), entry.index, entry.index);
                   return item ? (
                     <BeatCell
                       key={plot.id}
@@ -446,8 +420,8 @@ export function PlotGrid({
                   );
                 })}
               </Fragment>
-            ),
-          )}
+            );
+          })}
           <RowInsert
             label="Add a row at the end"
             onInsert={() => store.insertPlotRow(tomeId, rows.length)}
@@ -491,12 +465,8 @@ function Track({ part, children }: { part: TrackPart; children?: ReactNode }) {
         justifyContent: "center",
       }}
     >
-      {part === "none" ? null : (
-        <>
-          <Box sx={{ ...segment, top: openTop ? -INSERT_STRIP : 0, bottom: "50%" }} />
-          <Box sx={{ ...segment, top: "50%", bottom: openBottom ? -INSERT_STRIP : 0 }} />
-        </>
-      )}
+      <Box sx={{ ...segment, top: openTop ? -INSERT_STRIP : 0, bottom: "50%" }} />
+      <Box sx={{ ...segment, top: "50%", bottom: openBottom ? -INSERT_STRIP : 0 }} />
       {children ? <Box sx={{ position: "relative", zIndex: 1 }}>{children}</Box> : null}
     </Box>
   );
