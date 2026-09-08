@@ -114,10 +114,13 @@ merge possible, each worth defending:
   field is being edited is not in the URL, the same call `ElementPage` and
   `ProseManuscript` make.
 
-  `PlotItemDialog` **keeps** its Beat label field, unlike the row's dialog, which
-  went entirely. The row dialog existed for that one field; the beat dialog is
-  still the beat's full editor and the only way to create one, so removing a
-  single field from it would just be arbitrary. Both write the same value.
+  Neither label has a form field left anywhere. `PlotRowDialog` went entirely;
+  `PlotItemDialog` survives as the beat's full editor but lost its Beat label
+  row, because two fields writing one value is how they drift. It still has to
+  **carry** `item.name` through a save, though — `savePlotItem` takes `name` as
+  required and writes what it is given, so omitting it or passing `""` would
+  clear the label every time anything else about the beat was saved. Same hazard
+  as `icon` and the dot: that function has no fallback to the stored row.
 - **One `onSaveState` serves every field on the screen**, gutters and cards
   alike, and `PlotPage` renders one `SaveStatus` from it. It must be stable:
   `InlineTextField` re-fires its report whenever that identity changes, and with
