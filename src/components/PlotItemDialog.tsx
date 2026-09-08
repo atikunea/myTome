@@ -38,8 +38,14 @@ const colorLabels: Record<PlotDotColor, string> = {
 
 /**
  * Create/edit dialog for a plot item: what the beat *is* and how it is drawn.
- * `item` edits an existing row; `insertAt` creates a new one at that index — the
- * row is only written on save, so cancelling leaves no empty item behind.
+ * `item` edits an existing row; without one it creates, on `plotRowId` if the
+ * route named a cell and at the end of the plot otherwise. Either way the row is
+ * only written on save, so cancelling leaves no empty item behind.
+ *
+ * **The beat label is deliberately not here either.** `item.name` is typed on
+ * the card, where it is read, so this dialog carries the stored value through a
+ * save without offering to edit it — see `handleSubmit`. Two fields writing one
+ * value is how they drift.
  *
  * **Composition is deliberately not here.** The beat's `writeItemIds` — the
  * prose it is made of, in reading order — are edited in the beat's manuscript
@@ -52,7 +58,6 @@ const colorLabels: Record<PlotDotColor, string> = {
 export function PlotItemDialog({
   open,
   item,
-  insertAt,
   plotRowId,
   tomeId,
   plotId,
@@ -63,8 +68,7 @@ export function PlotItemDialog({
 }: {
   open: boolean;
   item?: PlotItem;
-  insertAt?: number;
-  /** Places a new beat on a specific spine row — the compare grid creates in a cell. */
+  /** Places a new beat on a specific spine row — the grid creates in a cell. */
   plotRowId?: string;
   tomeId: string;
   plotId: string;
@@ -106,7 +110,11 @@ export function PlotItemDialog({
           id: item?.id,
           tomeId,
           plotId,
-          name: String(data.get("name") ?? ""),
+          // Not a field here any more — the label is typed on the card. It still
+          // has to be *carried*, because `savePlotItem` takes `name` as required
+          // and writes what it is given: omitting it, or passing "", would clear
+          // the label every time anything else about the beat was saved.
+          name: item?.name ?? "",
           title: String(data.get("title") ?? ""),
           description: String(data.get("description") ?? ""),
           icon: icon || undefined,
@@ -115,7 +123,6 @@ export function PlotItemDialog({
           attachedElementIds: attached.map((element) => element.id),
           plotRowId,
         },
-        insertAt,
       );
       onClose();
     } catch (cause) {
@@ -137,13 +144,6 @@ export function PlotItemDialog({
               fullWidth
               autoFocus
               defaultValue={item?.title ?? ""}
-            />
-            <TextField
-              name="name"
-              label="Beat label"
-              fullWidth
-              helperText="Shown beside the track, e.g. Chapter 1"
-              defaultValue={item?.name ?? ""}
             />
             <TextField
               name="description"

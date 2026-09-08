@@ -136,7 +136,7 @@ export const plotStore = {
       ],
       // Like `sortOrder`, a new beat's row is settled inside the transaction —
       // choosing one means reading the tome's spine. A caller may name the row
-      // itself (the compare grid's empty cells do), and an edit keeps its own.
+      // itself (the grid's empty cells do), and an edit keeps its own.
       plotRowId: input.plotRowId ?? existing?.plotRowId ?? "",
       sortOrder: existing?.sortOrder ?? 0,
       createdAt: existing?.createdAt ?? time,
@@ -148,7 +148,7 @@ export const plotStore = {
         return;
       }
       // A caller that names the row has already said where the beat goes — the
-      // compare grid creates in a specific cell. Only when it does not does the
+      // grid creates in a specific cell. Only when it does not does the
       // insert position pick a row.
       if (!item.plotRowId) {
         const count = await plotItemRange(item.plotId).count();
@@ -158,7 +158,7 @@ export const plotStore = {
       await db.plotItems.put(item);
       // Settled from row order, never from the insert index. A beat created in a
       // gap partway up the spine belongs at that point in its plot, and numbering
-      // it by index would leave the grid and the single-plot timeline disagreeing
+      // it by index would leave the grid and the plot's own column disagreeing
       // about where it sits.
       await syncPlotSortOrder(item.tomeId);
     });
@@ -189,6 +189,19 @@ export const plotStore = {
         ),
       );
     });
+  },
+  /**
+   * Names a beat, the label drawn above its title. Narrow on purpose: the card
+   * edits this where it sits, and routing that through `savePlotItem` would mean
+   * the caller restating the whole beat every keystroke — including `icon`,
+   * `dotColor` and `dotVariant`, which that function reads straight off its input
+   * with no fallback to the stored row and would therefore clear.
+   *
+   * Nothing about ordering or rows can change here, so unlike `savePlotItem`
+   * this needs no transaction and no `syncPlotSortOrder`.
+   */
+  async setPlotItemName(itemId: string, name: string) {
+    await db.plotItems.update(itemId, { name: name.trim(), updatedAt: now() });
   },
   async deletePlotItem(item: Pick<PlotItem, "id" | "plotId">) {
     await db.transaction("rw", db.plotItems, async () => {

@@ -46,10 +46,11 @@ import { WriteItemTypeIcon } from "../components/WriteItemTypeIcon";
  * out to avoid losing an unsaved reorder. The beat is named on screen here, and
  * composition is edited beside the prose rather than in a form.
  *
- * There is one route for this regardless of where the author came from —
- * `plots/:plotId/items/:itemId/write` — rather than a second variant under
- * `plots/compare/...`. The compare view links to the same place and the back
- * button returns there, so a beat's manuscript has one address.
+ * There is one route for this regardless of how many plots were on screen —
+ * `plots/:plotId/items/:itemId/write`, taking the beat's own `plotId` rather
+ * than the list of columns it was clicked from. `PlotPage` links here with one
+ * column or four and the back button returns there, so a beat's manuscript has
+ * one address.
  */
 export function BeatManuscriptPage({ adding = false }: { adding?: boolean }) {
   const { plotId, itemId, index } = useParams<{
