@@ -131,3 +131,51 @@ describe("deletePlot", () => {
     await expectSpineIntact(tome.id);
   });
 });
+
+describe("setPlotItemName", () => {
+  it("trims the label and clears it when given only whitespace", async () => {
+    const { tome, plots } = await makeTome(["Main"]);
+    const beat = await addBeat(tome.id, plots[0].id, "The ford");
+
+    await store.setPlotItemName(beat.id, "  Act I  ");
+    expect((await db.plotItems.get(beat.id))?.name).toBe("Act I");
+
+    await store.setPlotItemName(beat.id, "   ");
+    expect((await db.plotItems.get(beat.id))?.name).toBe("");
+  });
+
+  /**
+   * The reason this exists rather than the card calling `savePlotItem`: that
+   * function reads `icon`, `dotColor` and `dotVariant` straight off its input
+   * with no fallback to the stored row, so a caller naming a beat by passing a
+   * partial item would quietly strip how it is drawn.
+   */
+  it("leaves the rest of the beat alone, the dot included", async () => {
+    const { tome, plots } = await makeTome(["Main"]);
+    const beat = await store.savePlotItem({
+      tomeId: tome.id,
+      plotId: plots[0].id,
+      name: "",
+      title: "The ford",
+      description: "Crossing at dusk",
+      icon: "Place",
+      dotColor: "warning",
+      dotVariant: "outlined",
+    });
+
+    await store.setPlotItemName(beat.id, "Act II");
+
+    const stored = await db.plotItems.get(beat.id);
+    expect(stored).toMatchObject({
+      name: "Act II",
+      title: "The ford",
+      description: "Crossing at dusk",
+      icon: "Place",
+      dotColor: "warning",
+      dotVariant: "outlined",
+      plotRowId: beat.plotRowId,
+      sortOrder: beat.sortOrder,
+    });
+    await expectSpineIntact(tome.id);
+  });
+});

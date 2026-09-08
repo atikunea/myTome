@@ -105,13 +105,24 @@ merge possible, each worth defending:
   owns all three and calls the store itself. The page is left with one prop for
   them — `onSaveState`, because a label's autosave needs somewhere on the page to
   report.
-- **A row is named in the gutter, not in a dialog.** The label is an
-  `InlineTextField`, the same as a tome's title or an element's fields: an
-  unnamed row shows its position as the *placeholder*, so a name the author chose
-  looks different from the one the spine fell back to. The `rows/:rowId` route
-  that opened the old dialog is kept only as a landing for `compare/…/rows/:rowId`
-  and replaces itself with the plot's address — which field is being edited is
-  not in the URL, the same call `ElementPage` and `ProseManuscript` make.
+- **Both labels are typed where they are read.** A row's, in the gutter, and a
+  beat's, on the card — each an `InlineTextField`, the same as a tome's title or
+  an element's fields. An unnamed row shows its position as the *placeholder*, so
+  a name the author chose looks different from the one the spine fell back to.
+  The `rows/:rowId` route that opened the old dialog is kept only as a landing
+  for `compare/…/rows/:rowId` and replaces itself with the plot's address — which
+  field is being edited is not in the URL, the same call `ElementPage` and
+  `ProseManuscript` make.
+
+  `PlotItemDialog` **keeps** its Beat label field, unlike the row's dialog, which
+  went entirely. The row dialog existed for that one field; the beat dialog is
+  still the beat's full editor and the only way to create one, so removing a
+  single field from it would just be arbitrary. Both write the same value.
+- **One `onSaveState` serves every field on the screen**, gutters and cards
+  alike, and `PlotPage` renders one `SaveStatus` from it. It must be stable:
+  `InlineTextField` re-fires its report whenever that identity changes, and with
+  a fresh one every render the last field to speak would overwrite the state of
+  the one actually being edited.
 - **The tabs are the only control over which plots are drawn.** Clicking a tab
   shows that plot alone; the toggle inside each tab adds or removes it as a
   further column. That replaced a "Compare" menu, an "Add plot" menu, an "Exit
@@ -934,7 +945,25 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   chips, and the drag handle. It is separate from `PlotGrid` so that the card
   knows nothing about the cell holding it. **It always draws `item.name`**, since
   the gutter beside it belongs to the spine row — the old `labelMode` and
-  `showDot` props are gone, and the dot now lives on the track. **It does not call
+  `showDot` props are gone, and the dot now lives on the track. That label is an
+  `InlineTextField`, edited on the card, and three things about it are
+  load-bearing:
+  - **The field is rendered even when the beat has no label**, because it is the
+    only way to give it one; a slot that appeared on hover would make every card
+    jump as the pointer crossed it. What hides instead is the *placeholder*, via
+    a rule on the card's own `sx` — most beats never get a label, and a grid of
+    cards each reading "BEAT LABEL" would be worse than the thing it advertises.
+  - **Its wrapper stops the click.** The whole card is `role="button"` and opens
+    the beat dialog, so without that guard a click meant for the caret would open
+    a dialog over it. The card's `onKeyDown` needs no such guard — it already
+    ignores events whose target is not the card itself, which is what lets you
+    type in the field at all.
+  - **It saves through `store.setPlotItemName`, never `savePlotItem`.** That one
+    reads `icon`, `dotColor` and `dotVariant` straight off its input with no
+    fallback to the stored row, so naming a beat by passing a partial item would
+    strip how it is drawn. There is a test for exactly that.
+
+  **It does not call
   `useSortable`** — whichever container registered the beat owns the node ref and
   the transform and passes `dragHandle` down, because the draggable node is the
   cell rather than the card. The drag handle is a plain `Box component="button"`,

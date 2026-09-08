@@ -5,7 +5,10 @@ import EditNoteIcon from "@mui/icons-material/EditNote";
 import type { PlotItem } from "../models/Plot";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
+import type { SaveState } from "../hooks/autosave";
+import { store } from "../services/store";
 import { ElementTypeIcon } from "./ElementTypeIcon";
+import { InlineTextField } from "./InlineTextField";
 
 /**
  * The beat itself — title, description, attached elements, and the handle that
@@ -32,6 +35,7 @@ export function PlotBeatCard({
   onOpen,
   onOpenElement,
   onWrite,
+  onSaveState,
   dragHandle,
 }: {
   item: PlotItem;
@@ -46,6 +50,8 @@ export function PlotBeatCard({
    * unreachable on touch, and this is not a secondary action.
    */
   onWrite: (item: PlotItem) => void;
+  /** Where the beat label's autosave reports to. Stable, for `PlotGrid`'s reason. */
+  onSaveState: (state: SaveState, retry: () => void) => void;
   /** Handle wiring from the container's drag hook. Omit where a beat cannot be dragged. */
   dragHandle?: {
     attributes: DraggableAttributes;
@@ -76,6 +82,14 @@ export function PlotBeatCard({
         // The reveal lives here rather than on the container so that a card
         // carries its own handle affordance into whatever layout holds it.
         "&:hover .drag-handle": { opacity: 1 },
+        // An unnamed beat keeps its label slot but says nothing in it until the
+        // card is under the pointer or the field has focus. Most beats never get
+        // a label, and a grid of cards each reading "BEAT LABEL" would be worse
+        // than the thing it is advertising.
+        "& .beat-label input::placeholder": { opacity: 0, transition: "opacity 120ms ease" },
+        "&:hover .beat-label input::placeholder, & .beat-label input:focus::placeholder": {
+          opacity: 0.5,
+        },
         "&:hover": { borderColor: "primary.main" },
         "&:focus-visible": {
           outline: 2,
@@ -124,15 +138,35 @@ export function PlotBeatCard({
           </Tooltip>
         ) : null}
         <Box sx={{ minWidth: 0, flex: 1 }}>
-          {item.name ? (
-            <Typography
-              variant="overline"
-              color="text.secondary"
-              sx={{ display: "block", lineHeight: 1.6 }}
-            >
-              {item.name}
-            </Typography>
-          ) : null}
+          {/*
+            Always rendered, even with no label to show: it is the only way to
+            give a beat one, and a slot that appears on hover would make every
+            card jump as the pointer crossed it. The placeholder is what stays
+            hidden instead — see the card's `sx` — so a wall of cards reading
+            "BEAT LABEL" is not the resting state.
+
+            `typography` on the wrapper rather than the field, and the uppercase
+            restated on the input: `InlineTextField` sets `font: inherit`, but
+            MUI's own `InputBase-input` resets `text-transform`. Same pair as the
+            row gutter in `PlotGrid`.
+          */}
+          <Box
+            className="beat-label"
+            sx={{ typography: "overline", color: "text.secondary", lineHeight: 1.6 }}
+            // The card is the click target for the dialog, so the field has to
+            // keep its own clicks — the same guard the chips and the write
+            // button make.
+            onClick={(event) => event.stopPropagation()}
+          >
+            <InlineTextField
+              value={item.name}
+              placeholder="Beat label"
+              ariaLabel={`Beat label for ${item.title}`}
+              save={(name) => store.setPlotItemName(item.id, name)}
+              onSaveState={onSaveState}
+              sx={{ lineHeight: 1.6, "& input": { textTransform: "uppercase" } }}
+            />
+          </Box>
           <Typography variant="h6" component="h3" sx={{ fontSize: "1.15rem", minWidth: 0 }}>
             {item.title}
           </Typography>

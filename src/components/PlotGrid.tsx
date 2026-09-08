@@ -414,6 +414,7 @@ export function PlotGrid({
                       onOpen={() => onOpenItem(item)}
                       onOpenElement={onOpenElement}
                       onWrite={onWrite}
+                      onSaveState={onSaveState}
                     />
                   ) : (
                     <EmptyCell
@@ -662,6 +663,7 @@ function BeatCell({
   onOpen,
   onOpenElement,
   onWrite,
+  onSaveState,
 }: {
   item: PlotItem;
   attachments: Element[];
@@ -671,6 +673,7 @@ function BeatCell({
   onOpenElement: (element: Element) => void;
   /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
   onWrite: (item: PlotItem) => void;
+  onSaveState: (state: SaveState, retry: () => void) => void;
 }) {
   const data: CellData = { plotId: item.plotId, rowId: item.plotRowId };
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -717,6 +720,7 @@ function BeatCell({
           onOpen={onOpen}
           onOpenElement={onOpenElement}
           onWrite={onWrite}
+          onSaveState={onSaveState}
           dragHandle={{ attributes, listeners, setActivatorNodeRef }}
         />
       </Box>

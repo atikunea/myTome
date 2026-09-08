@@ -190,6 +190,19 @@ export const plotStore = {
       );
     });
   },
+  /**
+   * Names a beat, the label drawn above its title. Narrow on purpose: the card
+   * edits this where it sits, and routing that through `savePlotItem` would mean
+   * the caller restating the whole beat every keystroke — including `icon`,
+   * `dotColor` and `dotVariant`, which that function reads straight off its input
+   * with no fallback to the stored row and would therefore clear.
+   *
+   * Nothing about ordering or rows can change here, so unlike `savePlotItem`
+   * this needs no transaction and no `syncPlotSortOrder`.
+   */
+  async setPlotItemName(itemId: string, name: string) {
+    await db.plotItems.update(itemId, { name: name.trim(), updatedAt: now() });
+  },
   async deletePlotItem(item: Pick<PlotItem, "id" | "plotId">) {
     await db.transaction("rw", db.plotItems, async () => {
       await db.plotItems.delete(item.id);
