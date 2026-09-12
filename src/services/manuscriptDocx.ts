@@ -17,7 +17,12 @@ import {
   type ISectionOptions,
 } from "docx";
 import type { Align, Block, Inline, InlineFormat, ListEntry } from "../lexical/blocks";
-import type { Manuscript, ManuscriptBeat, ManuscriptTitlePage } from "./manuscript";
+import type {
+  Manuscript,
+  ManuscriptAuthorPage,
+  ManuscriptBeat,
+  ManuscriptTitlePage,
+} from "./manuscript";
 
 /**
  * A `Manuscript` as a Word document. Transport, not decision: `manuscript.ts`
@@ -282,17 +287,21 @@ export function manuscriptParagraphs(beats: ManuscriptBeat[]) {
 }
 
 /**
- * The cover as bytes Word can embed, prepared by the caller. Reading a `Blob`
- * and measuring an image both need the browser, so `ManuscriptExportDialog`
- * does it and this module stays pure; `width`/`height` are the image's natural
- * pixels, and only their ratio is used.
+ * An image as bytes Word can embed, prepared by the caller — the cover for the
+ * title page, the author's photo for the author page. Reading a `Blob` and
+ * measuring an image both need the browser, so `ManuscriptExportDialog` does it
+ * and this module stays pure; `width`/`height` are the image's natural pixels,
+ * and only their ratio is used.
  */
-export type DocxCover = {
+export type DocxImage = {
   data: Uint8Array;
   type: "png" | "jpg" | "gif" | "bmp";
   width: number;
   height: number;
 };
+
+/** The two images a manuscript can carry, each prepared only if its page exists. */
+export type DocxImages = { cover?: DocxImage; photo?: DocxImage };
 
 /**
  * The largest the cover is drawn, in the pixels `docx` measures images in (96
@@ -301,7 +310,42 @@ export type DocxCover = {
  */
 const COVER_BOX = { width: 384, height: 432 };
 
+/**
+ * The largest the author's photo is drawn: three inches by three and a half,
+ * smaller than a cover because the bio below it needs the room.
+ */
+const PHOTO_BOX = { width: 288, height: 336 };
+
 const margins = { top: INCH, right: INCH, bottom: INCH, left: INCH };
+
+/**
+ * An image centred on a line of its own, scaled into `box` by its own
+ * proportions and never enlarged. An image that could not be measured is left
+ * out rather than drawn at no size.
+ */
+function imageParagraph(
+  image: DocxImage | undefined,
+  box: { width: number; height: number },
+): Paragraph[] {
+  if (!image || image.width <= 0 || image.height <= 0) return [];
+  const scale = Math.min(box.width / image.width, box.height / image.height, 1);
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 480 },
+      children: [
+        new ImageRun({
+          type: image.type,
+          data: image.data,
+          transformation: {
+            width: Math.round(image.width * scale),
+            height: Math.round(image.height * scale),
+          },
+        }),
+      ],
+    }),
+  ];
+}
 
 /**
  * The title page as a section of its own, centred on the page by the section's
@@ -313,27 +357,8 @@ const margins = { top: INCH, right: INCH, bottom: INCH, left: INCH };
  * fetches one — see the root AGENTS.md), so the page goes without it and the
  * dialog says so before the download.
  */
-export function titlePageSection(page: ManuscriptTitlePage, cover?: DocxCover): ISectionOptions {
-  const children: Paragraph[] = [];
-  if (cover && cover.width > 0 && cover.height > 0) {
-    const scale = Math.min(COVER_BOX.width / cover.width, COVER_BOX.height / cover.height, 1);
-    children.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 480 },
-        children: [
-          new ImageRun({
-            type: cover.type,
-            data: cover.data,
-            transformation: {
-              width: Math.round(cover.width * scale),
-              height: Math.round(cover.height * scale),
-            },
-          }),
-        ],
-      }),
-    );
-  }
+export function titlePageSection(page: ManuscriptTitlePage, cover?: DocxImage): ISectionOptions {
+  const children: Paragraph[] = imageParagraph(cover, COVER_BOX);
   const line = (text: string, run: IRunOptions, after: number) =>
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -352,11 +377,51 @@ export function titlePageSection(page: ManuscriptTitlePage, cover?: DocxCover): 
   };
 }
 
+/**
+ * A block with no alignment of its own takes the page's centring; one the
+ * author aligned keeps it. Lists are left alone — a centred bullet reads as a
+ * mistake, not a layout.
+ */
+const centred = (block: Block): Block =>
+  block.kind !== "list" && block.align === "" ? { ...block, align: "center" } : block;
+
+/**
+ * The author page: the photo, then the bio, centred on the page both ways by
+ * the same `verticalAlign` the title page uses.
+ *
+ * It is a section for the title page's reasons, and one more: a section that
+ * names no header **inherits the previous one's** in Word, so this carries an
+ * explicitly empty header, or the running title and page number would print
+ * over the author's photo. The bio's ordered lists take numbering definitions
+ * from the same `numbering` the body uses, so a list here cannot continue a
+ * count from the text.
+ */
+export function authorPageSection(
+  page: ManuscriptAuthorPage,
+  numbering: Numbering,
+  photo?: DocxImage,
+): ISectionOptions {
+  return {
+    properties: {
+      page: { margin: margins },
+      verticalAlign: VerticalAlignSection.CENTER,
+    },
+    headers: { default: new Header({ children: [new Paragraph({ children: [] })] }) },
+    children: [
+      ...imageParagraph(photo, PHOTO_BOX),
+      ...page.blocks.flatMap((block) => blockParagraphs(centred(block), numbering)),
+    ],
+  };
+}
+
 /** The document, ready to pack. Pure — nothing here touches the DOM. */
-export function manuscriptDocument(manuscript: Manuscript, cover?: DocxCover): Document {
+export function manuscriptDocument(manuscript: Manuscript, images: DocxImages = {}): Document {
   const { children, numbering } = manuscriptParagraphs(manuscript.beats);
   const running = [manuscript.tomeTitle, manuscript.plotName].filter(Boolean).join(" — ");
   const titlePage = manuscript.titlePage;
+  // Built before the `Document`, since its lists add to `numbering`.
+  const authorPage =
+    manuscript.authorPage && authorPageSection(manuscript.authorPage, numbering, images.photo);
 
   return new Document({
     title: running,
@@ -385,7 +450,7 @@ export function manuscriptDocument(manuscript: Manuscript, cover?: DocxCover): D
     },
     numbering: { config: numbering },
     sections: [
-      ...(titlePage ? [titlePageSection(titlePage, cover)] : []),
+      ...(titlePage ? [titlePageSection(titlePage, images.cover)] : []),
       {
         properties: {
           page: {
@@ -410,10 +475,11 @@ export function manuscriptDocument(manuscript: Manuscript, cover?: DocxCover): D
         },
         children,
       },
+      ...(authorPage ? [authorPage] : []),
     ],
   });
 }
 
 /** The `.docx` bytes. The only impure step, and deliberately the last one. */
-export const manuscriptDocxBlob = (manuscript: Manuscript, cover?: DocxCover): Promise<Blob> =>
-  Packer.toBlob(manuscriptDocument(manuscript, cover));
+export const manuscriptDocxBlob = (manuscript: Manuscript, images: DocxImages = {}): Promise<Blob> =>
+  Packer.toBlob(manuscriptDocument(manuscript, images));

@@ -333,6 +333,71 @@ describe("buildManuscript — the title page", () => {
   });
 });
 
+describe("buildManuscript — the author page", () => {
+  const beats = [beat("b1", 0, ["w1"])];
+  const items = [text("w1", "Scene", "passage", ["one two"])];
+  const photo = { kind: "url" as const, url: "https://example.com/me.png" };
+  const nora = {
+    name: "Nora Roberts",
+    pseudonym: "J.D. Robb",
+    description: lexical(["Nora Roberts writes as J.D. Robb."]),
+    image: photo,
+  };
+
+  const ending = (
+    author?: Partial<typeof nora> & { name: string },
+    options: Partial<ManuscriptOptions> = {},
+  ) =>
+    buildManuscript({
+      tome: { title: "Naked in Death" },
+      author,
+      plot: { id: "p", name: "Main plot" },
+      beats,
+      writeItems: items,
+      options: { ...defaultManuscriptOptions, ...options },
+    });
+
+  it("ends on one by default, carrying the photo and the bio", () => {
+    const page = ending(nora).authorPage;
+
+    expect(page?.photo).toEqual(photo);
+    expect(page?.blocks.map((block) => block.kind)).toEqual(["paragraph"]);
+  });
+
+  it("has none when the author switches it off", () => {
+    expect(ending(nora, { authorPage: false }).authorPage).toBeUndefined();
+  });
+
+  it("has none for an uncredited tome, rather than a blank page", () => {
+    expect(ending(undefined).authorPage).toBeUndefined();
+  });
+
+  it("has none when the profile has neither a photo nor a bio", () => {
+    expect(ending({ name: "Nora Roberts", description: lexical([" "]) }).authorPage).toBeUndefined();
+  });
+
+  it("carries a photo alone, with no empty paragraph under it", () => {
+    const page = ending({ name: "Nora Roberts", description: lexical([""]), image: photo })
+      .authorPage;
+
+    expect(page).toEqual({ photo, blocks: [] });
+  });
+
+  it("carries a bio alone when there is no photo", () => {
+    const page = ending({ ...nora, image: undefined }).authorPage;
+
+    expect(page?.photo).toBeUndefined();
+    expect(page?.blocks).toHaveLength(1);
+  });
+
+  it("is not a beat, and adds nothing to the word count", () => {
+    const manuscript = ending(nora);
+
+    expect(manuscript.beats).toHaveLength(1);
+    expect(manuscript.words).toBe(2);
+  });
+});
+
 describe("manuscriptFileName", () => {
   it("slugs the tome and the plot and dates the file", () => {
     expect(

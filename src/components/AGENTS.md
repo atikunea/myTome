@@ -890,11 +890,15 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   deliberate. The third switch is the **title page**, and its caption says what
   the page will carry ("Cover, title, subtitle and J.D. Robb") plus the two
   things an author would otherwise find out on paper: no credited author, and a
-  cover that is a web link and so cannot go into the `.docx`. The dialog also
-  owns `coverForDocx` — reading an uploaded cover's bytes and size, and redrawing
-  a format Word will not embed as PNG through a canvas — because that needs the
-  browser and `manuscriptDocx.ts` must stay pure. Its object URL lives for that
-  one action and is revoked in it, the download's rule, not `useObjectUrl`'s.
+  cover that is a web link and so cannot go into the `.docx`. The fourth is the
+  **author page**, whose caption names what it will carry ("J.D. Robb's photo
+  and bio") or, while the switch is on but there is no page, why: no credited
+  author, or a profile with nothing on it yet. The dialog also owns
+  `imageForDocx` — reading an uploaded cover's or photo's bytes and size, and
+  redrawing a format Word will not embed as PNG through a canvas — because that
+  needs the browser and `manuscriptDocx.ts` must stay pure. **It measures with
+  `createImageBitmap`, not an `<img>` and `decode()`**: `decode()` never
+  settles in a hidden tab, and a download left behind hung at "Building…".
 - `ManuscriptPrint.tsx` — the same manuscript as paper, and the entire PDF
   path: there is no PDF library in this app. It renders through `StaticProse`
   and `manuscriptSx`, portals to `<body>`, and a `@media print` block blanks
@@ -906,8 +910,10 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   on `afterprint`. Its **title page is `height: 100vh`**, which on paper is the
   printable area of one page — measured by printing to PDF, not assumed — and
   `printImagesReady()` is what the dialog awaits before `window.print()`, since
-  the cover's object URL only lands in a layout effect and the browser snapshots
-  at the call. See the root AGENTS.md for the rest.
+  an image's object URL only lands in a layout effect and the browser snapshots
+  at the call — it waits on `load`, never `decode()`. Its **author page is
+  `minHeight: 100vh`** instead, because a bio can outrun a page and a fixed
+  height would clip it. See the root AGENTS.md for the rest.
 - `AuthorPicker.tsx` — "by …" under a tome's title: which profile the book
   credits, as a plain select saving on change (a select at rest already reads as
   a value). "New author…" creates *and* credits in one write, then opens the

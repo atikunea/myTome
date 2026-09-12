@@ -493,15 +493,41 @@ centre it differently and both are verified rather than assumed:
   DOM to PDF, where the box filled page 1 to its `@page` margins and the first
   beat opened on page 2. The print call also awaits `printImagesReady()`, since
   an uploaded cover only gets its object URL in a layout effect and a linked one
-  has a round trip ahead of it; the browser snapshots at `print()`.
+  has a round trip ahead of it; the browser snapshots at `print()`. It waits on
+  `load`, never `decode()` — see the author page below for why.
 - **DOCX makes it a section with `verticalAlign: center`**, which is also what
   keeps it free of the running header and lets the text restart at page 1.
   Reading a cover's bytes and size needs the browser, so
-  `ManuscriptExportDialog` prepares a `DocxCover` (redrawing anything Word will
+  `ManuscriptExportDialog` prepares a `DocxImage` (redrawing anything Word will
   not embed — WebP, say — as PNG) and `manuscriptDocx.ts` stays pure. **A cover
   pasted as a URL cannot go into the DOCX**: the app never fetches it and a
   cross-origin image would taint the canvas. The dialog says so before the
   download rather than dropping it quietly; the PDF shows it.
+
+**The author page is the title page's twin at the far end**: the credited
+profile's photo with its bio below it, centred both ways, after the last beat.
+Also on by default and a switch of its own, and it follows the same rules —
+decided in `buildManuscript` as `authorPage`, never a beat, no words counted,
+images prepared by the dialog. What differs, each for a reason:
+
+- **It can be absent while its switch is on.** An uncredited tome, or a
+  profile with neither a photo nor a word of bio, gets no page rather than a
+  blank one, and the dialog's caption says which of the two it was. A bio that
+  is only whitespace is carried as no blocks, so no empty paragraph is drawn.
+- **Print uses `minHeight: 100vh`, not `height`.** A bio is the author's own
+  prose and can outrun a page; the title page's fixed height with
+  `overflow: hidden` would cut it off silently. One that fits is centred
+  exactly as the title page is (checked by printing to PDF: three pages, the
+  third centred, no trailing blank). The last paragraph drops its bottom margin,
+  which would otherwise sit inside the centred box and lift the page.
+- **Its DOCX section carries an explicitly empty header.** Word gives a section
+  with no header of its own the previous one's, so without it the running title
+  and page number would print over the photo. Its lists number from the body's
+  `numbering`, and a paragraph with no alignment of its own is centred.
+- **Images are measured with `createImageBitmap` and awaited on `load`, never
+  `decode()`.** In a hidden tab `decode()` does not settle, so a download
+  started and then left behind sat at "Building…" forever. Found by driving the
+  export with the page hidden — the kind of thing the `node` suite cannot see.
 
 `manuscript.ts` reads no table — it takes rows the page already observes — so it
 is on neither `store` nor the barrel, like `validate.ts` and `parseBackup`.

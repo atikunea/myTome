@@ -2,8 +2,13 @@ import { Packer, VerticalAlignSection } from "docx";
 import { describe, expect, it } from "vitest";
 import type { Block } from "../../lexical/blocks";
 import type { Manuscript, ManuscriptBeat, ManuscriptTitlePage } from "../manuscript";
-import type { DocxCover } from "../manuscriptDocx";
-import { manuscriptDocument, manuscriptParagraphs, titlePageSection } from "../manuscriptDocx";
+import type { DocxImage } from "../manuscriptDocx";
+import {
+  authorPageSection,
+  manuscriptDocument,
+  manuscriptParagraphs,
+  titlePageSection,
+} from "../manuscriptDocx";
 
 /**
  * The Word mapping, tested where it is ours: which paragraph opens a page, and
@@ -213,7 +218,7 @@ describe("manuscriptDocument", () => {
     // Eight bytes of PNG signature: `docx` embeds what it is given, and the
     // test is that the section and the image relationship are coherent enough
     // to pack, not that Word can decode a picture.
-    const cover: DocxCover = {
+    const cover: DocxImage = {
       data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
       type: "png",
       width: 600,
@@ -221,7 +226,7 @@ describe("manuscriptDocument", () => {
     };
     const document = manuscriptDocument(
       { ...manuscript([beat("b1", [para("one")])]), titlePage: titlePage },
-      cover,
+      { cover },
     );
     const bytes = await Packer.toBuffer(document);
     expect(String.fromCharCode(bytes[0], bytes[1])).toBe("PK");
@@ -235,7 +240,7 @@ const titlePage: ManuscriptTitlePage = {
 };
 
 describe("titlePageSection", () => {
-  const paragraphs = (cover?: DocxCover, page = titlePage) =>
+  const paragraphs = (cover?: DocxImage, page = titlePage) =>
     (titlePageSection(page, cover).children as unknown[]).map(textOf);
 
   it("centres the page vertically, as a section of its own", () => {
@@ -276,5 +281,66 @@ describe("titlePageSection", () => {
     });
 
     expect((section.children as unknown[]).map(textOf)).toEqual(paragraphs());
+  });
+});
+
+describe("authorPageSection", () => {
+  const photo: DocxImage = {
+    data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+    type: "png",
+    width: 400,
+    height: 400,
+  };
+  const bio = [para("Nora Roberts writes as J.D. Robb."), para("She lives in Maryland.")];
+
+  it("centres the page vertically, as a section of its own", () => {
+    const section = authorPageSection({ blocks: bio }, []);
+
+    expect(section.properties?.verticalAlign).toBe(VerticalAlignSection.CENTER);
+  });
+
+  it("carries an empty header, so the running title is not inherited onto it", () => {
+    // Word gives a section with no header of its own the previous section's.
+    const section = authorPageSection({ blocks: bio }, []);
+
+    expect(section.headers?.default).toBeDefined();
+  });
+
+  it("puts the photo first and the bio below it", () => {
+    const children = authorPageSection({ blocks: bio }, [], photo).children as unknown[];
+
+    expect(keys(children[0] as Node)).toContain("w:drawing");
+    expect(children.slice(1).map(textOf)).toEqual([
+      "Nora Roberts writes as J.D. Robb.",
+      "She lives in Maryland.",
+    ]);
+  });
+
+  it("centres a bio paragraph that has no alignment of its own", () => {
+    const children = authorPageSection({ blocks: [para("centred")] }, []).children as unknown[];
+
+    expect(keys(children[0] as Node)).toContain("w:jc");
+  });
+
+  it("numbers the bio's lists alongside the body's, so neither continues the other", () => {
+    const numbering = manuscriptParagraphs([beat("b1", [list(1, "a")])]).numbering;
+
+    authorPageSection({ blocks: [list(1, "x", "y")] }, numbering);
+
+    expect(numbering.map((entry) => entry.reference)).toEqual(["ordered-0", "ordered-1"]);
+  });
+
+  it("packs as the last section of a document that has a title page too", async () => {
+    const document = manuscriptDocument(
+      {
+        ...manuscript([beat("b1", [para("one"), list(1, "a")])]),
+        titlePage,
+        authorPage: { photo: { kind: "url", url: "https://example.com/me.png" }, blocks: [...bio, list(3, "c")] },
+      },
+      { photo },
+    );
+    const bytes = await Packer.toBuffer(document);
+
+    expect(String.fromCharCode(bytes[0], bytes[1])).toBe("PK");
   });
 });

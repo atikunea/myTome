@@ -34,6 +34,8 @@ export type ManuscriptOptions = {
   beatHeadings: boolean;
   /** Whether the document opens on a title page — see `ManuscriptTitlePage`. */
   titlePage: boolean;
+  /** Whether the document ends on an author page — see `ManuscriptAuthorPage`. */
+  authorPage: boolean;
 };
 
 export const defaultManuscriptOptions: ManuscriptOptions = {
@@ -41,6 +43,7 @@ export const defaultManuscriptOptions: ManuscriptOptions = {
   types: ["passage", "chapter"],
   beatHeadings: true,
   titlePage: true,
+  authorPage: true,
 };
 
 export type ManuscriptSection = {
@@ -110,11 +113,34 @@ export type ManuscriptTitlePage = {
   cover?: ImageSource;
 };
 
+/**
+ * The page a manuscript ends on: the credited author's photo with their bio
+ * below it, centred on the page both ways — the book's "about the author".
+ *
+ * It exists only when there is something to put on it. An uncredited tome, or
+ * a profile with neither a photo nor a word of bio, gets no page at all rather
+ * than a blank one; the dialog says which, so the author knows where to go.
+ * A bio that is only whitespace counts as none, and is carried as no blocks so
+ * a writer never draws an empty paragraph under the photo.
+ *
+ * Like the title page it is not a beat and adds nothing to the word count: it
+ * is back matter, not the book.
+ */
+export type ManuscriptAuthorPage = {
+  photo?: ImageSource;
+  blocks: Block[];
+};
+
 export type Manuscript = {
   tomeTitle: string;
   plotName: string;
   /** Present only when `options.titlePage` asked for one. */
   titlePage?: ManuscriptTitlePage;
+  /**
+   * Present only when `options.authorPage` asked for one *and* the credited
+   * profile has a photo or a bio to fill it.
+   */
+  authorPage?: ManuscriptAuthorPage;
   beats: ManuscriptBeat[];
   words: number;
   repeated: ManuscriptRepeat[];
@@ -161,7 +187,7 @@ export function buildManuscript({
 }: {
   tome: Pick<Tome, "title" | "subtitle" | "coverImage">;
   /** The profile the tome credits, if it credits one that still exists. */
-  author?: Pick<Author, "name" | "pseudonym">;
+  author?: Pick<Author, "name" | "pseudonym"> & Partial<Pick<Author, "description" | "image">>;
   plot: Pick<Plot, "id" | "name">;
   beats: PlotItem[];
   writeItems: WriteItem[];
@@ -238,6 +264,12 @@ export function buildManuscript({
 
   const subtitle = tome.subtitle?.trim();
   const byline = author && authorByline(author);
+  const bioBlocks = author?.description ? lexicalToBlocks(author.description) : [];
+  const bio = blocksText(bioBlocks).trim() ? bioBlocks : [];
+  const authorPage: ManuscriptAuthorPage | undefined =
+    options.authorPage && author && (author.image || bio.length)
+      ? { ...(author.image ? { photo: author.image } : {}), blocks: bio }
+      : undefined;
   return {
     tomeTitle: tome.title,
     plotName: plot.name,
@@ -251,6 +283,7 @@ export function buildManuscript({
           },
         }
       : {}),
+    ...(authorPage ? { authorPage } : {}),
     beats: built,
     words: built.reduce((total, beat) => total + beat.words, 0),
     repeated,
