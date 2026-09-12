@@ -7,7 +7,8 @@ folder holds pieces reused across routes (`SideNav`, `AppHeader`,
 `EmptyState`, `ColorModeToggle`, `PlotGrid`, `BeatDot`,
 `PlotBeatCard`, `RemoveEmptyRowsButton`, `PlotItemDialog`, `PlotPicker`,
 `WriteItemRow`, `WriteItemTypeIcon`, `RestoreDialog`, `DriveSyncCard`,
-`PolicyProse`, `ProseField`, `InlineTextField`, `RelationshipRowEditor`).
+`PolicyProse`, `ProseField`, `InlineTextField`, `RelationshipRowEditor`,
+`AuthorPicker`).
 Lexical editor internals (custom nodes and plugins) live in `../lexical`
 rather than here — they are not MUI components. The Write editor is no longer
 their only caller: `ProseField` mounts `CaretAtPointPlugin` and
@@ -658,6 +659,34 @@ Three things are its own:
 - **The cover is a picker, not a thumbnail**, and it is the reason `ImagePicker`
   forwards `imageSx`: this is the one place a cover is shown whole rather than
   cropped to its tile.
+- **The byline sits under the title and subtitle** — `AuthorPicker`, reading
+  "by J.D. Robb" — because that is where a title page puts it, and the title
+  page is what it decides.
+
+### The author profile is that page a third time
+
+`../pages/AuthorPage.tsx` edits a profile the same way: `InlineTextField` for
+name and pseudonym, one `ProseField` for the bio, `ImagePicker` for the photo
+(shown whole, like the cover), `SaveStatus` and a delete `IconButton` in its
+header, and `store.updateAuthor` as a patch re-read inside its transaction. It
+is library-level (a `Container`, like `BackupPage`) rather than inside
+`WorkspaceLayout`, because a profile belongs to no one tome — see the root
+`AGENTS.md`. Three things are its own:
+
+- **It sweeps on unmount, like `ElementPage`**, because a profile is created
+  blank at a click site. The sweep is that page's verbatim — deferred a tick
+  past StrictMode's remount, awaiting the bio editor's flush first. Confirmed in
+  the browser: an untouched "New author" is gone on leaving, and survives the
+  dev remount while open.
+- **The sweep ignores credits.** "New author…" in a tome's `AuthorPicker`
+  credits the draft at the click, so an abandoned one is credited *and* blank.
+  Keeping it would leave a book by "New author"; `discardAuthorIfBlank` takes
+  the credit with the row.
+- **It states the title-page rule where the fields feeding it are** — "Title
+  pages read “J.D. Robb”" — so a blank pseudonym reads as a choice (publish
+  under your own name) rather than as a field left undone. "Credited on" lists
+  the tomes as chips linking to their overviews, and the delete confirm names
+  how many will lose their byline.
 
 ## The editor toolbar is described by a config, not hand-wired JSX
 
@@ -858,7 +887,18 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   with each beat it lands in. That list is not an omission: the text is printed
   in every one of them. Don't turn it back into a count — the name is the whole
   point, because it is what lets the author go and check whether the repeat was
-  deliberate.
+  deliberate. The third switch is the **title page**, and its caption says what
+  the page will carry ("Cover, title, subtitle and J.D. Robb") plus the two
+  things an author would otherwise find out on paper: no credited author, and a
+  cover that is a web link and so cannot go into the `.docx`. The fourth is the
+  **author page**, whose caption names what it will carry ("J.D. Robb's photo
+  and bio") or, while the switch is on but there is no page, why: no credited
+  author, or a profile with nothing on it yet. The dialog also owns
+  `imageForDocx` — reading an uploaded cover's or photo's bytes and size, and
+  redrawing a format Word will not embed as PNG through a canvas — because that
+  needs the browser and `manuscriptDocx.ts` must stay pure. **It measures with
+  `createImageBitmap`, not an `<img>` and `decode()`**: `decode()` never
+  settles in a hidden tab, and a download left behind hung at "Building…".
 - `ManuscriptPrint.tsx` — the same manuscript as paper, and the entire PDF
   path: there is no PDF library in this app. It renders through `StaticProse`
   and `manuscriptSx`, portals to `<body>`, and a `@media print` block blanks
@@ -867,7 +907,20 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   near-white text when the app is in dark mode — verified by printing in dark
   mode, not assumed. Mounted only while printing, via `flushSync` before
   `window.print()` (an effect would fire twice under `StrictMode`) and removed
-  on `afterprint`. See the root AGENTS.md for the rest.
+  on `afterprint`. Its **title page is `height: 100vh`**, which on paper is the
+  printable area of one page — measured by printing to PDF, not assumed — and
+  `printImagesReady()` is what the dialog awaits before `window.print()`, since
+  an image's object URL only lands in a layout effect and the browser snapshots
+  at the call — it waits on `load`, never `decode()`. Its **author page is
+  `minHeight: 100vh`** instead, because a bio can outrun a page and a fixed
+  height would clip it. See the root AGENTS.md for the rest.
+- `AuthorPicker.tsx` — "by …" under a tome's title: which profile the book
+  credits, as a plain select saving on change (a select at rest already reads as
+  a value). "New author…" creates *and* credits in one write, then opens the
+  profile page. A credit naming a profile that is gone shows as uncredited, not
+  as an empty select. **Don't put a `Divider` in it**: MUI's `Select` clones
+  every child into an option, so a divider becomes a blank, selectable row — the
+  last item carries a top border instead. Found by driving the menu.
 - `DriveSyncCard.tsx` — the "Where backups go" card, including Google Drive
   connect/sync. **Its first state is "not set up":** without a
   `VITE_GOOGLE_CLIENT_ID` compiled in, `driveConfigured` is false and the card
@@ -888,6 +941,11 @@ band under a full shelf). `../pages/TomeLibraryPage.tsx` chooses between them.
   still plain text, wrapped into a document by `saveTome` — a first line about
   the book is worth asking for while the author is here, and the writing of it
   happens in the editor on the overview.
+  Once any author profile exists it also asks **who the book is by**, defaulting
+  to the byline on the most recently touched tome that has one (or the only
+  profile): the next book is usually the next in a series. The choice is held as
+  `null` until the author picks, so the suggestion follows the profiles in as
+  they load instead of freezing on the empty first render.
 - `FieldDefinitionsEditor.tsx` — add/edit/remove/**reorder** UI for an
   ElementType's custom field definitions (`FieldDefinition[]`); used by
   `../pages/ElementTypesPage.tsx`. Reordering is the cheapest kind of drag in

@@ -15,6 +15,8 @@ import { PlotCompareRedirect } from "./pages/PlotCompareRedirect";
 import { WriteListPage } from "./pages/WriteListPage";
 import { WriteEditorPage } from "./pages/WriteEditorPage";
 import { BeatManuscriptPage } from "./pages/BeatManuscriptPage";
+import { AuthorPage } from "./pages/AuthorPage";
+import { AuthorsPage } from "./pages/AuthorsPage";
 import { BackupPage } from "./pages/BackupPage";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsOfUsePage } from "./pages/TermsOfUsePage";
@@ -54,6 +56,15 @@ export default function App() {
                 */}
                 <Route path="/privacy" element={<PrivacyPolicyPage />} />
                 <Route path="/terms" element={<TermsOfUsePage />} />
+                {/*
+                  Author profiles are library-level too: a profile is a byline,
+                  shared by every tome credited to it, so it belongs to no one
+                  tome's workspace. There is no `/authors/new` — like an element,
+                  a profile is created at the click site and opened on its id,
+                  so a StrictMode double mount cannot leave an orphan.
+                */}
+                <Route path="/authors" element={<AuthorsPage />} />
+                <Route path="/authors/:authorId" element={<AuthorPage />} />
                 <Route path="/tomes/:tomeId" element={<WorkspaceLayout />}>
                   <Route index element={<Navigate to="dashboard" replace />} />
                   {/* The tome itself, edited where it sits. There is no `edit`

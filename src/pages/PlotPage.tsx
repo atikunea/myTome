@@ -297,7 +297,7 @@ export function PlotPage({
 
       {exporting && (
         <ManuscriptExportDialog
-          tomeTitle={tome.title}
+          tome={tome}
           plot={primary}
           beats={primaryItems}
           writeItems={writeItems}

@@ -146,6 +146,7 @@ services/
   validate.ts      The four validators, plus the two completeness helpers.
   images.ts        imageHref / imageFrom. Neither allocates — see hooks/useObjectUrl.ts.
   tomes.ts         Tomes + the eight-table delete cascade. Sole writer of the text mirror.
+  authors.ts       Author profiles — the one table no tome owns. Sole writer of its mirror.
   templates.ts     applyTomeTemplate, createPlotFromTemplate. Create-time only.
   elementTypes.ts  Types, field definitions, and the two count* helpers.
   elements.ts      Elements + relationships. Sole writer of the two text mirrors.
@@ -347,6 +348,16 @@ Google Drive file later is a new *transport* rather than a second format:
 - **Blobs travel as base64.** `ImageSource` of `kind: "local"` holds a `Blob`,
   which `JSON.stringify` flattens to `{}`; `serializeImage`/`deserializeImage`
   are the only reason cover art survives a round trip.
+- **Author profiles are the exception to "whole tome", and ride beside the
+  tomes in `authors`.** A byline is shared by every tome credited to it, so
+  replacing it along with any one of them would let one book's copy revert
+  another's. Profiles therefore merge **row by row, newest `updatedAt` wins**,
+  independent of what happened to the tomes in the same file — safe precisely
+  because a profile is one self-contained row with nothing spanning it, unlike a
+  beat on the spine. A whole-library file carries every profile; a one-tome file
+  carries the one its tome credits, so a book handed on arrives with its byline.
+  `touchedAt` does **not** include the profile — see `drive.ts` for why a
+  profile is its own unit of sync instead.
 
 A restore bypasses Dexie's upgrades entirely — rows are written straight into
 the current schema — so `restoreBackup` re-runs `backfillPlotRows` for any beat
@@ -364,23 +375,38 @@ so an older reader would restore the file without complaint and then show a
 paragraph of JSON — on every element card, and then on every library card. The
 version check refuses it instead. That is the test for a bump: not "did a field
 appear?" — an older reader ignores those — but "would an older reader mis*read*
-what it already knows?"
+what it already knows?" Schema v11's profiles are the worked "no": `authors` and
+`Tome.authorId` are fields an older reader ignores, so the format stayed at 3.
 
 ### `drive.ts` — transport, and the app's only network code
 
 Google Drive holds **one backup file per tome** in a `myTome` folder, so a typo
 in one book doesn't rewrite the library and a conflict is scoped to the book it
-happened in. Every byte that moves is a `BackupFile`: `drive.ts` adds no format,
-no shape, no second serializer, and merges through the same
-`restoreBackup(file, "merge")` a hand-picked file goes through. Setup lives in
-`docs/google-drive-sync.md`.
+happened in — **and one per author profile**, for the reason below. Every byte
+that moves is a `BackupFile`: `drive.ts` adds no format, no shape, no second
+serializer, and merges through the same `restoreBackup(file, "merge")` a
+hand-picked file goes through. A profile's file is simply one with no tomes and
+one entry in `authors`. Setup lives in `docs/google-drive-sync.md`.
 
 The split that keeps this testable: **`syncPlan.ts` decides, `drive.ts` moves.**
 `planSync(local, remote)` is pure, has its own node test, and encodes the rule
-that a sync compares one number per tome — `touchedAt`, from `backup.ts` — and
-never inspects contents. That is why a plan comes out of a Drive *listing*: the
-mark rides in each file's `appProperties`, so a sync with nothing to do
-transfers nothing. `store.tomeMarks()` is the local half of that comparison.
+that a sync compares one number per unit — a tome's `touchedAt` from
+`backup.ts`, a profile's own `updatedAt` — and never inspects contents. That is
+why a plan comes out of a Drive *listing*: the mark rides in each file's
+`appProperties`, so a sync with nothing to do transfers nothing.
+`store.tomeMarks()` and `store.authorMarks()` are the local halves.
+
+**A profile is its own unit because it is shared.** Carried only inside tome
+files, a bio edited in one browser would never reach a second browser holding
+newer prose in the same book: that browser pushes and never pulls, the first
+then pulls its tome and keeps its own newer bio, and both report "matched"
+while holding different bios — divergence, not merely last-writer-wins. With a
+file of its own the profile converges like anything else. `planSync` does not
+know which kind it is planning; `drive.ts` splits the listing on
+`appProperties` (`tomeId` or `authorId`) and plans each kind separately,
+profiles first so a tome arriving in the same sync finds its byline here. An
+older build's planner skips any file without a `tomeId`, so it ignores profile
+files rather than mistaking one for a tome.
 
 Load-bearing, in rough order of how badly it goes if ignored:
 
@@ -396,7 +422,7 @@ Load-bearing, in rough order of how badly it goes if ignored:
 - **Nothing is ever deleted from Drive**, and no upload overwrites a file whose
   `modifiedTime` moved since the plan was made. The race is narrowed, not
   closed; a skipped write is reported so the next sync settles it.
-- **Sync has no tombstones.** A tome deleted here comes back on the next sync,
+- **Sync has no tombstones.** A tome (or profile) deleted here comes back on the next sync,
   because a listing can't distinguish "deleted" from "never seen here". The UI
   says so out loud. Adding real deletion means adding tombstones to the format —
   a `formatVersion` bump, not a patch.
@@ -452,6 +478,56 @@ Four rules the export keeps:
   beat whose every text the type filter removed.
 - **The default filter is `passage` + `chapter`.** Lore is background and a
   snippet is scratch; both are toggleable, neither is the book.
+
+**The title page is decided here too, and both writers draw it.** It is on by
+default and a switch in the dialog, and `titlePage` carries only what exists —
+title always; subtitle, byline and cover only when there is one — so neither
+writer decides whether an empty string earns a line. The byline is the credited
+profile's **pen name, or the author's own name without one**, through
+`authorByline` in `models/Author.ts`, the one home of that rule. It is a page
+of its own, never a beat, and adds nothing to the word count. The two writers
+centre it differently and both are verified rather than assumed:
+
+- **Print uses `height: 100vh`**, because in print a viewport unit resolves
+  against the page's printable area — measured by printing the app's own print
+  DOM to PDF, where the box filled page 1 to its `@page` margins and the first
+  beat opened on page 2. The print call also awaits `printImagesReady()`, since
+  an uploaded cover only gets its object URL in a layout effect and a linked one
+  has a round trip ahead of it; the browser snapshots at `print()`. It waits on
+  `load`, never `decode()` — see the author page below for why.
+- **DOCX makes it a section with `verticalAlign: center`**, which is also what
+  keeps it free of the running header and lets the text restart at page 1.
+  Reading a cover's bytes and size needs the browser, so
+  `ManuscriptExportDialog` prepares a `DocxImage` (redrawing anything Word will
+  not embed — WebP, say — as PNG) and `manuscriptDocx.ts` stays pure. **A cover
+  pasted as a URL cannot go into the DOCX**: the app never fetches it and a
+  cross-origin image would taint the canvas. The dialog says so before the
+  download rather than dropping it quietly; the PDF shows it.
+
+**The author page is the title page's twin at the far end**: the credited
+profile's photo with its bio below it, centred both ways, after the last beat.
+Also on by default and a switch of its own, and it follows the same rules —
+decided in `buildManuscript` as `authorPage`, never a beat, no words counted,
+images prepared by the dialog. What differs, each for a reason:
+
+- **It can be absent while its switch is on.** An uncredited tome, or a
+  profile with neither a photo nor a word of bio, gets no page rather than a
+  blank one, and the dialog's caption says which of the two it was. A bio that
+  is only whitespace is carried as no blocks, so no empty paragraph is drawn.
+- **Print uses `minHeight: 100vh`, not `height`.** A bio is the author's own
+  prose and can outrun a page; the title page's fixed height with
+  `overflow: hidden` would cut it off silently. One that fits is centred
+  exactly as the title page is (checked by printing to PDF: three pages, the
+  third centred, no trailing blank). The last paragraph drops its bottom margin,
+  which would otherwise sit inside the centred box and lift the page.
+- **Its DOCX section carries an explicitly empty header.** Word gives a section
+  with no header of its own the previous one's, so without it the running title
+  and page number would print over the photo. Its lists number from the body's
+  `numbering`, and a paragraph with no alignment of its own is centred.
+- **Images are measured with `createImageBitmap` and awaited on `load`, never
+  `decode()`.** In a hidden tab `decode()` does not settle, so a download
+  started and then left behind sat at "Building…" forever. Found by driving the
+  export with the page hidden — the kind of thing the `node` suite cannot see.
 
 `manuscript.ts` reads no table — it takes rows the page already observes — so it
 is on neither `store` nor the barrel, like `validate.ts` and `parseBackup`.
@@ -539,7 +615,7 @@ else they appear.
 
 ## Dexie schema changes — read before editing `models/db.ts`
 
-The database is `myTomeDB`, at **version 10**, running in users' browsers.
+The database is `myTomeDB`, at **version 11**, running in users' browsers.
 
 1. **Never edit a shipped `.version(n).stores({…})` block.** Add
    `.version(n+1)`. Dexie replays versions in order to upgrade an existing
@@ -593,6 +669,18 @@ The database is `myTomeDB`, at **version 10**, running in users' browsers.
    tome's is `tomeDescription` in `models/Tome.ts`, so the upgrade, `saveTome`,
    `updateTome` and a restore cannot drift. No index came with it, for v8's
    reason.
+9. **v11 added author profiles** — rule 2's "usually", for once going the other
+   way on both halves. `authors` is a new table, so no upgrade; and
+   `Tome.authorId` is a new field that needs none either, because it is
+   **optional**: `undefined` is exactly what a tome nobody has credited should
+   read as, nothing indexes it, and nothing iterates it. Contrast v5, where
+   `writeItemIds` had to be an array. Every reader also treats an id naming a
+   missing profile as uncredited — a one-tome backup restored into a browser that
+   never saw its author is a real way to get one. `migrations.test.ts` checks
+   the upgrade leaves a v10 tome untouched and uncredited. It is also the one
+   table with no `tomeId`: **deleting a tome never touches `authors`**, and
+   deleting a profile un-credits every tome naming it, touching their
+   `updatedAt` so a sync carries the change.
 
 ### Prose is a *kind* now, not just the description
 
@@ -649,6 +737,13 @@ a chip. Keep that split if a third kind of "should" appears.
   `ElementType` is.
 - `Element` is the app's own domain type and shadows the DOM's `Element`. That is
   intentional and pervasive; import it explicitly rather than renaming.
+- **An `Author` is a byline, not a person** — "author profile" in the UI. One
+  writer with two pen names is two rows sharing a `name`; one pen name written
+  by two people (James S. A. Corey) is one row. What a title page prints is the
+  **byline** (`authorByline`): the `pseudonym`, or the `name` when there is
+  none. The shape came from how books are actually credited, and
+  `models/Author.ts` says so; don't "fix" it into a person with a list of pen
+  names, which would make a title page ask *which* one.
 
 ## Routes are the dialog state
 
@@ -715,6 +810,16 @@ test for a non-route dialog: not "is it transient?" but "can the URL rebuild
 it?". (`/backup` itself is a route, and a library-level one: the whole-library
 file is the point, and a browser with no tomes still needs somewhere to restore
 one from.)
+
+**`/authors` and `/authors/:authorId` are library-level for the reason the
+profiles are a library-level table**: a byline belongs to every tome credited to
+it, so it cannot live in one tome's workspace. They follow the element pair
+exactly — a list that finds, opens and creates, and a page you read with every
+field edited in place — including the exception: **there is no
+`/authors/new`**. A profile is created at the click site ("New author" on the
+list, or "New author…" in a tome's byline picker, which also credits it in the
+same write) and swept on unmount if left blank. The sweep ignores credits on
+purpose; see `components/AGENTS.md`.
 
 **`/privacy` and `/terms` are the other library-level routes, and they are
 claims about this repo.** `pages/PrivacyPolicyPage.tsx` and

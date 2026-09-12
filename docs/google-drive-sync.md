@@ -1,7 +1,8 @@
 # Google Drive sync — setting it up
 
-myTome can keep one backup file per tome in a `myTome` folder in your own Google
-Drive, so a second browser signed in as you picks up the same books. There is
+myTome can keep one backup file per tome — and one per author profile — in a
+`myTome` folder in your own Google Drive, so a second browser signed in as you
+picks up the same books. There is
 still no server: the sync runs in the tab, talking straight to Google's API.
 
 **Nothing here is required.** Build without a client id and the Drive card on

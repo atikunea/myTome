@@ -14,7 +14,9 @@ import { addBeat, beatsOf, expectSpineIntact, makeTome } from "./helpers";
  */
 const fullTome = async (title: string) => {
   const { tome, plots } = await makeTome(["Main", "Side"]);
-  await store.saveTome({ ...tome, title });
+  const author = await store.createDraftAuthor();
+  await store.updateAuthor(author.id, { name: `Author of ${title}`, pseudonym: "A. Pen" });
+  await store.saveTome({ ...tome, title, authorId: author.id });
   const type = await store.saveType({
     tomeId: tome.id,
     name: "Character",
@@ -47,7 +49,15 @@ const fullTome = async (title: string) => {
     attachedElementIds: [ash.id, bel.id],
     writeItemIds: [write.id],
   });
-  return { tome: (await db.tomes.get(tome.id))!, plots, type, ash, bel, write };
+  return {
+    tome: (await db.tomes.get(tome.id))!,
+    author: (await db.authors.get(author.id))!,
+    plots,
+    type,
+    ash,
+    bel,
+    write,
+  };
 };
 
 /** Every row in the database, table by table, for whole-database comparisons. */
@@ -60,6 +70,7 @@ const snapshot = async () => ({
   plotRows: await db.plotRows.orderBy("id").toArray(),
   plotItems: await db.plotItems.orderBy("id").toArray(),
   writeItems: await db.writeItems.orderBy("id").toArray(),
+  authors: await db.authors.orderBy("id").toArray(),
 });
 
 /** A file as it comes back off disk: everything a JSON round trip would drop. */
@@ -77,7 +88,7 @@ describe("export and restore", () => {
 
     const result = await store.restoreBackup(file, "replace");
 
-    expect(result).toEqual({ added: 2, replaced: 0, kept: 0 });
+    expect(result).toMatchObject({ added: 2, replaced: 0, kept: 0 });
     expect(await snapshot()).toEqual(before);
     for (const tome of await db.tomes.toArray()) await expectSpineIntact(tome.id);
   });
@@ -88,7 +99,7 @@ describe("export and restore", () => {
 
     await store.restoreBackup(file, "replace");
     const once = await snapshot();
-    expect(await store.restoreBackup(file, "merge")).toEqual({
+    expect(await store.restoreBackup(file, "merge")).toMatchObject({
       added: 0,
       replaced: 0,
       kept: 1,
@@ -166,7 +177,7 @@ describe("restore modes", () => {
     await store.deleteTome(incoming.tome.id);
     const here = await fullTome("The Long Road");
 
-    expect(await store.restoreBackup(file, "merge")).toEqual({
+    expect(await store.restoreBackup(file, "merge")).toMatchObject({
       added: 1,
       replaced: 0,
       kept: 0,
@@ -223,7 +234,7 @@ describe("restore modes", () => {
       .equals(tome.id)
       .modify({ updatedAt: "2000-01-01T00:00:00.000Z" });
 
-    expect(await store.restoreBackup(file, "merge")).toEqual({
+    expect(await store.restoreBackup(file, "merge")).toMatchObject({
       added: 0,
       replaced: 1,
       kept: 0,
@@ -254,7 +265,7 @@ describe("restore modes", () => {
       tomes: [{ ...file.tomes[0], touchedAt: "2099-01-01T00:00:00.000Z" }],
     };
 
-    expect(await store.restoreBackup(newer, "merge")).toEqual({
+    expect(await store.restoreBackup(newer, "merge")).toMatchObject({
       added: 0,
       replaced: 1,
       kept: 0,
@@ -277,7 +288,7 @@ describe("restore modes", () => {
       preview: "It began on the road.",
     });
 
-    expect(await store.restoreBackup(file, "merge")).toEqual({
+    expect(await store.restoreBackup(file, "merge")).toMatchObject({
       added: 0,
       replaced: 0,
       kept: 1,
@@ -306,7 +317,142 @@ describe("restore modes", () => {
   });
 });
 
+describe("author profiles", () => {
+  /** Dates a profile, so which copy is newer is staged rather than raced. */
+  const dateAuthor = (id: string, updatedAt: string) => db.authors.update(id, { updatedAt });
+
+  it("a one-tome file carries the profile its tome credits, and only that one", async () => {
+    const first = await fullTome("The Long Road");
+    await fullTome("Second Book");
+
+    const file = throughJson(await store.exportTomeBackup(first.tome.id));
+
+    expect(file.authors.map((author) => author.id)).toEqual([first.author.id]);
+  });
+
+  it("a whole-library file carries every profile, credited or not", async () => {
+    const { author } = await fullTome("The Long Road");
+    const spare = await store.createDraftAuthor();
+    await store.updateAuthor(spare.id, { name: "Nora Roberts", pseudonym: "J.D. Robb" });
+
+    const file = throughJson(await store.exportBackup());
+
+    expect(file.authors.map((a) => a.id).sort()).toEqual([author.id, spare.id].sort());
+  });
+
+  it("merges a profile by its own date, whatever happens to the tome beside it", async () => {
+    // The other browser edited the bio; this one has newer prose. The tome is
+    // kept — this copy is newer — but the bio still has to arrive, or two
+    // browsers would each call themselves up to date holding different bios.
+    const { tome, author, write } = await fullTome("The Long Road");
+    const file = throughJson(await store.exportTomeBackup(tome.id));
+    await store.saveWriteItem({
+      id: write.id,
+      title: "Chapter One",
+      type: "chapter",
+      content: "{}",
+      preview: "",
+    });
+    const edited: BackupFile = {
+      ...file,
+      authors: [{ ...file.authors[0], name: "Renamed Elsewhere", updatedAt: "2099-01-01T00:00:00.000Z" }],
+    };
+
+    const result = await store.restoreBackup(edited, "merge");
+
+    expect(result).toMatchObject({ kept: 1, authors: { replaced: 1 } });
+    expect((await db.authors.get(author.id))!.name).toBe("Renamed Elsewhere");
+    expect((await db.writeItems.get(write.id))!.title).toBe("Chapter One");
+  });
+
+  it("leaves a newer profile here alone, even when the tome beside it is replaced", async () => {
+    const { tome, author } = await fullTome("The Long Road");
+    const file = throughJson(await store.exportTomeBackup(tome.id));
+    await store.updateAuthor(author.id, { name: "Edited Here" });
+    await dateAuthor(author.id, "2099-01-01T00:00:00.000Z");
+    const newerTome: BackupFile = {
+      ...file,
+      tomes: [{ ...file.tomes[0], touchedAt: "2099-01-01T00:00:00.000Z" }],
+    };
+
+    const result = await store.restoreBackup(newerTome, "merge");
+
+    expect(result).toMatchObject({ replaced: 1, authors: { kept: 1 } });
+    expect((await db.authors.get(author.id))!.name).toBe("Edited Here");
+  });
+
+  it("replace drops profiles the file does not carry", async () => {
+    const kept = await fullTome("In The File");
+    const file = throughJson(await store.exportTomeBackup(kept.tome.id));
+    const doomed = await fullTome("Only Here");
+
+    await store.restoreBackup(file, "replace");
+
+    expect((await db.authors.toArray()).map((a) => a.id)).toEqual([kept.author.id]);
+    expect(await db.authors.get(doomed.author.id)).toBeUndefined();
+  });
+
+  it("carries an uploaded author photo through the file as bytes", async () => {
+    const { author } = await fullTome("The Long Road");
+    const bytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
+    await store.updateAuthor(author.id, {
+      image: { kind: "local", blob: new Blob([bytes], { type: "image/png" }) },
+    });
+
+    const file = throughJson(await store.exportBackup());
+    await store.deleteAuthor(author.id);
+    await store.restoreBackup(file, "merge");
+
+    const image = (await db.authors.get(author.id))!.image;
+    if (image?.kind !== "local") throw new Error("photo did not come back local");
+    expect(new Uint8Array(await image.blob.arrayBuffer())).toEqual(bytes);
+  });
+
+  it("gives a profile a file of its own, with no tomes in it", async () => {
+    const { author } = await fullTome("The Long Road");
+
+    const file = throughJson(await store.exportAuthorBackup(author.id));
+
+    expect(file.tomes).toEqual([]);
+    expect(file.authors.map((a) => a.id)).toEqual([author.id]);
+  });
+
+  it("marks each profile for a sync by its byline and its own date", async () => {
+    const { author } = await fullTome("The Long Road");
+
+    expect(await store.authorMarks()).toEqual([
+      { id: author.id, title: "A. Pen", touchedAt: author.updatedAt },
+    ]);
+  });
+
+  it("summarizes what a merge would do to each profile", async () => {
+    const { tome, author } = await fullTome("The Long Road");
+    const file = throughJson(await store.exportTomeBackup(tome.id));
+    const stranger = { ...file.authors[0], id: "someone-else", name: "Stranger", pseudonym: undefined };
+
+    const summary = await store.summarizeBackup({ ...file, authors: [file.authors[0], stranger] });
+
+    expect(summary.authors).toEqual([
+      { id: author.id, byline: "A. Pen", mergeAction: "keep" },
+      { id: "someone-else", byline: "Stranger", mergeAction: "add" },
+    ]);
+  });
+});
+
 describe("files from other versions", () => {
+  it("restores a file from before author profiles with none", async () => {
+    const { tome } = await fullTome("The Long Road");
+    const { authors: _, ...old } = await store.exportTomeBackup(tome.id);
+    void _;
+    await store.deleteTome(tome.id);
+
+    const file = parseBackup(JSON.stringify(old));
+    await store.restoreBackup(file, "merge");
+
+    expect(file.authors).toEqual([]);
+    expect(await db.tomes.get(tome.id)).toBeDefined();
+  });
+
   it("puts beats from a pre-spine file onto a spine", async () => {
     const { tome, plots } = await fullTome("The Long Road");
     await addBeat(tome.id, plots[0].id, "and then");

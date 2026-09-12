@@ -18,6 +18,7 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CloudDoneIcon from "@mui/icons-material/CloudDone";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutlined";
 import type { Tome, TomeStatus } from "../models/Tome";
 import { useTomes } from "../context/TomesContext";
 import { CoverThumbnail } from "../components/CoverThumbnail";
@@ -131,6 +132,15 @@ export function TomeLibraryPage({
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+              {/* Beside Backup rather than in the footer: the names a book is
+                  credited to are the author's own work, not fine print. */}
+              <Button
+                variant="text"
+                startIcon={<PersonOutlineIcon />}
+                onClick={() => navigate("/authors")}
+              >
+                Authors
+              </Button>
               <Button
                 variant="text"
                 startIcon={<CloudDoneIcon />}

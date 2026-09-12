@@ -1,4 +1,6 @@
 import { asProseDocument, countDocumentWords, documentText } from "../lexical/blocks";
+import type { Author } from "../models/Author";
+import { authorByline, authorDescription } from "../models/Author";
 import { backfillPlotRows, db } from "../models/db";
 import type { Element } from "../models/Element";
 import { elementSearchText } from "../models/Element";
@@ -36,6 +38,16 @@ import { clearTome } from "./tomes";
  *
  * The `activities` table is deliberately left out: it has no reader and no
  * writer (see the root AGENTS.md), so its rows are not data anyone would miss.
+ *
+ * **Author profiles are the one thing here that is not a tome's.** A byline is
+ * shared by every book credited to it, so it cannot be "replaced whole" along
+ * with any one of them without one book's copy reverting another's. Profiles
+ * therefore ride beside the tomes in `authors` and merge **row by row, newest
+ * `updatedAt` wins**, independent of what happened to any tome in the same
+ * file — safe for them precisely because a profile is one self-contained row
+ * with no invariant spanning other rows, unlike a beat on the spine. A
+ * one-tome file carries the profile its tome credits, so a book handed to
+ * another browser arrives with its byline.
  */
 
 export const backupFormat = "myTome-backup";
@@ -52,6 +64,11 @@ export const backupFormat = "myTome-backup";
  * a document now, so a v2 reader would put JSON on every library card. Both
  * conversions are one-way and both stay readable — a v1 or v2 file restores
  * into v3 rows.
+ *
+ * Schema v11's author profiles did **not** bump it, and that is the test being
+ * applied rather than skipped: `authors` and `Tome.authorId` are new fields an
+ * older reader ignores, and nothing it already knows changed meaning. (An older
+ * app refuses the file anyway, on `schemaVersion`.)
  */
 export const backupFormatVersion = 3;
 
@@ -101,6 +118,8 @@ export interface TomeBackup {
   writeItems: WriteItem[];
 }
 
+export type BackedUpAuthor = Omit<Author, "image"> & { image?: SerializedImage };
+
 export interface BackupFile {
   format: typeof backupFormat;
   formatVersion: number;
@@ -108,6 +127,13 @@ export interface BackupFile {
   schemaVersion: number;
   exportedAt: string;
   tomes: TomeBackup[];
+  /**
+   * Author profiles — every one for a whole-library file, the credited one for a
+   * one-tome file, and exactly one (with no tomes) for a profile's own Drive
+   * file. Absent from a file written before schema v11; `parseBackup` defaults
+   * it. See the note at the top for why these merge row by row.
+   */
+  authors: BackedUpAuthor[];
 }
 
 /**
@@ -130,15 +156,27 @@ export interface BackupTomeSummary {
   mergeAction: MergeAction;
 }
 
+export interface BackupAuthorSummary {
+  id: string;
+  byline: string;
+  mergeAction: MergeAction;
+}
+
 export interface BackupSummary {
   exportedAt: string;
   tomes: BackupTomeSummary[];
+  authors: BackupAuthorSummary[];
 }
 
-export interface RestoreResult {
+export interface RestoreCounts {
   added: number;
   replaced: number;
   kept: number;
+}
+
+/** Tome counts at the top, as before profiles existed; the profiles' own beside them. */
+export interface RestoreResult extends RestoreCounts {
+  authors: RestoreCounts;
 }
 
 const bytesToBase64 = (bytes: Uint8Array) => {
@@ -263,13 +301,38 @@ const collectTome = async (tomeId: string): Promise<TomeBackup | undefined> => {
   };
 };
 
-const fileOf = (tomes: TomeBackup[]): BackupFile => ({
+const collectAuthor = async (author: Author): Promise<BackedUpAuthor> => ({
+  ...author,
+  image: await serializeImage(author.image),
+});
+
+const fileOf = (tomes: TomeBackup[], authors: BackedUpAuthor[]): BackupFile => ({
   format: backupFormat,
   formatVersion: backupFormatVersion,
   schemaVersion: db.verno,
   exportedAt: new Date().toISOString(),
   tomes,
+  authors,
 });
+
+/** What merging one profile would do: the newer `updatedAt` wins, a tie keeps what is here. */
+const authorMergeAction = async (entry: BackedUpAuthor): Promise<MergeAction> => {
+  const here = await db.authors.get(entry.id);
+  if (!here) return "add";
+  return entry.updatedAt > here.updatedAt ? "replace" : "keep";
+};
+
+/**
+ * One profile into the table. The bio goes through `authorDescription` so a
+ * hand-edited file holding plain text — or no mirror — lands as a document the
+ * editor can open, exactly as a tome's description does.
+ */
+const writeAuthor = (entry: BackedUpAuthor) =>
+  db.authors.put({
+    ...entry,
+    ...authorDescription(entry.description),
+    image: deserializeImage(entry.image),
+  });
 
 const writeTome = async (entry: TomeBackup) => {
   const rowIds = new Set(entry.plotRows.map((row) => row.id));
@@ -341,14 +404,49 @@ export const backupStore = {
   async exportBackup(): Promise<BackupFile> {
     const tomes = await db.tomes.orderBy("title").toArray();
     const entries = await Promise.all(tomes.map((tome) => collectTome(tome.id)));
-    return fileOf(entries.filter((entry) => entry !== undefined));
+    const authors = await Promise.all(
+      (await db.authors.orderBy("name").toArray()).map(collectAuthor),
+    );
+    return fileOf(
+      entries.filter((entry) => entry !== undefined),
+      authors,
+    );
   },
 
-  /** One tome, in exactly the shape a whole-library file holds it. */
+  /**
+   * One tome, in exactly the shape a whole-library file holds it — with the
+   * profile it credits, so the book's byline travels with it.
+   */
   async exportTomeBackup(tomeId: string): Promise<BackupFile> {
     const entry = await collectTome(tomeId);
     if (!entry) throw new Error("That tome is no longer in this browser.");
-    return fileOf([entry]);
+    const author = entry.tome.authorId
+      ? await db.authors.get(entry.tome.authorId)
+      : undefined;
+    return fileOf([entry], author ? [await collectAuthor(author)] : []);
+  },
+
+  /**
+   * One profile and no tomes: the file Drive keeps for a byline. A profile is
+   * its own unit of sync — see `syncPlan.ts` — so it needs a file of its own,
+   * and it is the same `BackupFile` shape rather than a second format.
+   */
+  async exportAuthorBackup(authorId: string): Promise<BackupFile> {
+    const author = await db.authors.get(authorId);
+    if (!author) throw new Error("That author is no longer in this browser.");
+    return fileOf([], [await collectAuthor(author)]);
+  },
+
+  /**
+   * Every profile here with the one number a sync compares. A profile is a
+   * single row, so its high-water mark is simply its own `updatedAt`.
+   */
+  async authorMarks(): Promise<{ id: string; title: string; touchedAt: string }[]> {
+    return (await db.authors.orderBy("name").toArray()).map((author) => ({
+      id: author.id,
+      title: authorByline(author),
+      touchedAt: author.updatedAt,
+    }));
   },
 
   /**
@@ -394,7 +492,14 @@ export const backupStore = {
               : "keep",
       });
     }
-    return { exportedAt: file.exportedAt, tomes };
+    const authors: BackupAuthorSummary[] = [];
+    for (const entry of file.authors)
+      authors.push({
+        id: entry.id,
+        byline: authorByline(entry),
+        mergeAction: await authorMergeAction(entry),
+      });
+    return { exportedAt: file.exportedAt, tomes, authors };
   },
 
   /**
@@ -402,6 +507,10 @@ export const backupStore = {
    * only when the file's copy is newer, and replaces it whole rather than row by
    * row — a tome is the smallest unit anyone reasons about, and half-merging one
    * could leave a beat standing on a row from the other browser.
+   *
+   * Profiles are the exception, merged one row at a time by their own
+   * `updatedAt` whatever became of the tomes beside them — see the note at the
+   * top of this file.
    */
   async restoreBackup(
     file: BackupFile,
@@ -416,10 +525,24 @@ export const backupStore = {
       db.plotRows,
       db.plotItems,
       db.writeItems,
+      db.authors,
     ];
     return db.transaction("rw", tables, async (tx) => {
-      const result: RestoreResult = { added: 0, replaced: 0, kept: 0 };
+      const result: RestoreResult = {
+        added: 0,
+        replaced: 0,
+        kept: 0,
+        authors: { added: 0, replaced: 0, kept: 0 },
+      };
       if (mode === "replace") for (const table of tables) await table.clear();
+      for (const entry of file.authors) {
+        const action = await authorMergeAction(entry);
+        if (action === "keep") result.authors.kept += 1;
+        else {
+          result.authors[action === "add" ? "added" : "replaced"] += 1;
+          await writeAuthor(entry);
+        }
+      }
       let backfill = false;
       for (const entry of file.tomes) {
         const here =
@@ -496,6 +619,15 @@ export const parseBackup = (text: string): BackupFile => {
       plotItems: entry.plotItems ?? [],
       writeItems: entry.writeItems ?? [],
     })),
+    // Absent before schema v11. A profile without the fields the merge compares
+    // is dropped rather than written as a row nothing could name or date.
+    authors: (Array.isArray(file.authors) ? file.authors : []).filter(
+      (author) =>
+        isRecord(author) &&
+        typeof author.id === "string" &&
+        typeof author.name === "string" &&
+        typeof author.updatedAt === "string",
+    ),
   };
 };
 

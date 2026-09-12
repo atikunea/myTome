@@ -30,6 +30,13 @@ export interface Tome {
    */
   descriptionText: string;
   coverImage?: ImageSource;
+  /**
+   * The `Author` this book is credited to — which byline its title page
+   * carries. Optional since schema v11, and a dangling id is read as "no
+   * author": profiles live in a library-level table, and a single-tome backup
+   * restored into a browser that never saw its author is a real way to get one.
+   */
+  authorId?: string;
   status: TomeStatus;
   createdAt: string;
   updatedAt: string;

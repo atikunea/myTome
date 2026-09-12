@@ -97,14 +97,15 @@ export function DriveSyncCard() {
               </Stack>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 {driveConfigured
-                  ? "Keeps one backup file per tome in a myTome folder in your own Drive, so another browser signed in as you can pick them up. Still no server: the sync runs here, in this tab."
+                  ? "Keeps one backup file per tome, and one per author profile, in a myTome folder in your own Drive, so another browser signed in as you can pick them up. Still no server: the sync runs here, in this tab."
                   : "Not set up in this build. It needs a Google OAuth client id compiled in — see docs/google-drive-sync.md. Nothing is sent anywhere until it is."}
               </Typography>
               {driveConfigured ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                   myTome can only see files it created there, never the rest of
-                  your Drive. Sync never deletes: remove a tome here and the next
-                  sync brings it back from Drive, so delete its file there too.
+                  your Drive. Sync never deletes: remove a tome or an author here
+                  and the next sync brings it back from Drive, so delete its file
+                  there too.
                 </Typography>
               ) : null}
             </Box>
@@ -183,7 +184,9 @@ export function DriveSyncCard() {
           ) : null}
           {report ? (
             <Alert
-              severity={report.raced.length ? "warning" : "success"}
+              severity={
+                report.tomes.raced.length || report.authors.raced.length ? "warning" : "success"
+              }
               sx={{ mt: 1.5 }}
               onClose={() => setReport(null)}
             >
@@ -196,22 +199,39 @@ export function DriveSyncCard() {
   );
 }
 
-const list = (titles: string[]) =>
-  titles.length > 2 ? `${titles.length} tomes` : titles.join(" and ");
+/**
+ * Titles and bylines together, as one list. A byline reads as "the J.D. Robb
+ * profile" so it is not taken for a book; past two names it becomes a count.
+ */
+const list = ({ tomes, authors }: { tomes: string[]; authors: string[] }) => {
+  const names = [...tomes, ...authors.map((byline) => `the ${byline} profile`)];
+  if (names.length <= 2) return names.join(" and ");
+  const counts = [
+    tomes.length ? `${tomes.length} tome${tomes.length === 1 ? "" : "s"}` : "",
+    authors.length ? `${authors.length} author profile${authors.length === 1 ? "" : "s"}` : "",
+  ];
+  return counts.filter(Boolean).join(" and ");
+};
 
 /** Says what moved, in tome titles rather than counts wherever it fits. */
 const describe = (report: SyncReport) => {
+  const moved = (key: "pulled" | "pushed" | "raced") => ({
+    tomes: report.tomes[key],
+    authors: report.authors[key],
+  });
+  const count = (key: "pulled" | "pushed" | "raced") =>
+    report.tomes[key].length + report.authors[key].length;
   const parts: string[] = [];
-  if (report.pulled.length) parts.push(`brought down ${list(report.pulled)}`);
-  if (report.pushed.length) parts.push(`sent up ${list(report.pushed)}`);
-  if (!parts.length && !report.raced.length)
+  if (count("pulled")) parts.push(`brought down ${list(moved("pulled"))}`);
+  if (count("pushed")) parts.push(`sent up ${list(moved("pushed"))}`);
+  if (!parts.length && !count("raced"))
     parts.push(
       report.matched
         ? `everything already matched (${report.matched})`
         : "nothing to sync yet",
     );
-  const raced = report.raced.length
-    ? ` ${list(report.raced)} changed in Drive mid-sync and ${report.raced.length === 1 ? "was" : "were"} left alone — sync again to settle ${report.raced.length === 1 ? "it" : "them"}.`
+  const raced = count("raced")
+    ? ` ${list(moved("raced"))} changed in Drive mid-sync and ${count("raced") === 1 ? "was" : "were"} left alone — sync again to settle ${count("raced") === 1 ? "it" : "them"}.`
     : "";
   const dupes = report.duplicates
     ? ` ${report.duplicates} older duplicate file${report.duplicates === 1 ? "" : "s"} in Drive ${report.duplicates === 1 ? "was" : "were"} ignored.`

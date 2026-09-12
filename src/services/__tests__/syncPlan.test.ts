@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { planIsEmpty, planSync } from "../syncPlan";
-import type { LocalTome, RemoteTome } from "../syncPlan";
+import type { LocalCopy, RemoteCopy } from "../syncPlan";
 
-const local = (id: string, touchedAt: string): LocalTome => ({
+const local = (id: string, touchedAt: string): LocalCopy => ({
   id,
   title: id,
   touchedAt,
@@ -12,9 +12,9 @@ const remote = (
   tomeId: string,
   touchedAt: string,
   fileId = `file-${tomeId}`,
-): RemoteTome => ({
+): RemoteCopy => ({
   fileId,
-  tomeId,
+  id: tomeId,
   touchedAt,
   modifiedTime: touchedAt,
 });
@@ -51,7 +51,7 @@ describe("planSync", () => {
       [remote("older-here", day(5)), remote("newer-here", day(2))],
     );
 
-    expect(plan.pull.map((f) => f.tomeId)).toEqual(["older-here"]);
+    expect(plan.pull.map((f) => f.id)).toEqual(["older-here"]);
     expect(plan.push.map((t) => t.id)).toEqual(["newer-here"]);
   });
 
@@ -66,7 +66,7 @@ describe("planSync", () => {
   });
 
   it("ignores files in the folder that are not tome backups", () => {
-    const stray = { fileId: "x", tomeId: "", touchedAt: "", modifiedTime: day(1) };
+    const stray = { fileId: "x", id: "", touchedAt: "", modifiedTime: day(1) };
 
     const plan = planSync([local("a", day(1))], [remote("a", day(1)), stray]);
 
@@ -81,6 +81,6 @@ describe("planSync", () => {
     // for good means deleting its Drive file too.
     const plan = planSync([], [remote("a", day(1))]);
 
-    expect(plan.pull.map((f) => f.tomeId)).toEqual(["a"]);
+    expect(plan.pull.map((f) => f.id)).toEqual(["a"]);
   });
 });

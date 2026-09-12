@@ -16,18 +16,24 @@ import {
 } from "@mui/material";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
+import type { Author } from "../models/Author";
+import { authorByline } from "../models/Author";
 import type { Plot, PlotItem } from "../models/Plot";
+import type { ImageSource, Tome } from "../models/Tome";
 import type { WriteItem } from "../models/WriteItem";
 import { writeItemTypeLabels, writeItemTypes } from "../models/WriteItem";
-import type { ManuscriptOptions } from "../services/manuscript";
+import type { ManuscriptOptions, ManuscriptTitlePage } from "../services/manuscript";
 import {
   buildManuscript,
   defaultManuscriptOptions,
   manuscriptFileName,
   summarizeSkips,
 } from "../services/manuscript";
+import type { DocxImage } from "../services/manuscriptDocx";
+import { store } from "../services/store";
 import { useProseFace } from "../context/ProseFaceContext";
-import { ManuscriptPrint } from "./ManuscriptPrint";
+import { useObservable } from "../hooks/useObservable";
+import { ManuscriptPrint, printImagesReady } from "./ManuscriptPrint";
 
 /**
  * Turns one plot line into a manuscript file.
@@ -53,14 +59,75 @@ function formatBeatNames(names: string[]) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
+/** The mime types `docx` embeds as they are. Anything else is redrawn as PNG. */
+const docxImageTypes: Record<string, DocxImage["type"]> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/bmp": "bmp",
+};
+
+/**
+ * An uploaded image — the cover, or the author's photo — as bytes Word can
+ * embed, measured. It needs the browser — a `Blob`'s bytes, an image's natural
+ * size, a canvas for a format Word will not take (a WebP cover, say) — which is
+ * why it lives here, with the other transport, and `manuscriptDocx.ts` stays
+ * pure.
+ *
+ * A linked image returns nothing: the app never fetches (the one fetch lives in
+ * `services/drive.ts`), and a cross-origin image would taint the canvas anyway.
+ * The dialog says so rather than dropping it quietly.
+ *
+ * Measured with `createImageBitmap`, **not** an `<img>` and `decode()`: in a
+ * hidden tab `decode()` never settles, so an author who clicked Download and
+ * switched away came back to "Building…" for good. Found by driving it with the
+ * page hidden; a bitmap decodes whatever the tab is doing, and needs no object
+ * URL to manage.
+ */
+async function imageForDocx(image?: ImageSource): Promise<DocxImage | undefined> {
+  if (image?.kind !== "local") return undefined;
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(image.blob);
+    const { width, height } = bitmap;
+    if (!width || !height) return undefined;
+    const type = docxImageTypes[image.blob.type];
+    if (type) return { data: new Uint8Array(await image.blob.arrayBuffer()), type, width, height };
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+    const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!png) return undefined;
+    return { data: new Uint8Array(await png.arrayBuffer()), type: "png", width, height };
+  } catch {
+    // A format the browser cannot decode — the dialog reports it by name.
+    return undefined;
+  } finally {
+    bitmap?.close();
+  }
+}
+
+/** "Cover, title, subtitle and J.D. Robb" — what the title page will carry, in words. */
+function describeTitlePage(page: ManuscriptTitlePage) {
+  const parts = [
+    page.cover ? "cover" : "",
+    "title",
+    page.subtitle ? "subtitle" : "",
+    page.byline ?? "",
+  ].filter(Boolean);
+  const text = formatBeatNames(parts);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function ManuscriptExportDialog({
-  tomeTitle,
+  tome,
   plot,
   beats,
   writeItems,
   onClose,
 }: {
-  tomeTitle: string;
+  tome: Tome;
   plot: Plot;
   beats: PlotItem[];
   writeItems: WriteItem[];
@@ -71,11 +138,28 @@ export function ManuscriptExportDialog({
   const [printing, setPrinting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  // `null` for an uncredited tome and for one whose profile has since gone —
+  // either way the title page simply has no byline.
+  const author = useObservable<Author | null>(
+    (cb) => store.observeAuthor(tome.authorId ?? "", cb),
+    [tome.authorId],
+  );
 
   const manuscript = useMemo(
-    () => buildManuscript({ tomeTitle, plot, beats, writeItems, options }),
-    [tomeTitle, plot, beats, writeItems, options],
+    () =>
+      buildManuscript({
+        tome,
+        author: author ?? undefined,
+        plot,
+        beats,
+        writeItems,
+        options,
+      }),
+    [tome, author, plot, beats, writeItems, options],
   );
+  const titlePage = manuscript.titlePage;
+  const authorPage = manuscript.authorPage;
   const skips = summarizeSkips(manuscript.skipped);
   const empty = manuscript.beats.length === 0;
 
@@ -100,16 +184,19 @@ export function ManuscriptExportDialog({
         : [...current.types, type],
     }));
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     setError("");
     // The pages have to be in the DOM before `print()` is called, and React
     // would otherwise batch the state change until after it.
     flushSync(() => setPrinting(true));
+    // And the cover has to have loaded, or it prints as an empty box.
+    await printImagesReady();
     window.print();
   };
 
   const handleDownload = async () => {
     setError("");
+    setNote("");
     setBusy(true);
     try {
       // `docx` is half a megabyte and is the only thing in this app that needs
@@ -117,7 +204,19 @@ export function ManuscriptExportDialog({
       // shipped to everyone who opens a tome. This is also why the PDF goes
       // through the browser's own printer: nothing to download at all.
       const { manuscriptDocxBlob } = await import("../services/manuscriptDocx");
-      const blob = await manuscriptDocxBlob(manuscript);
+      const cover = await imageForDocx(titlePage?.cover);
+      const photo = await imageForDocx(authorPage?.photo);
+      // A linked image is warned about before the click; an uploaded one that
+      // would not decode is only found out here, and is said aloud all the same.
+      const unread = [
+        titlePage?.cover?.kind === "local" && !cover ? "cover" : "",
+        authorPage?.photo?.kind === "local" && !photo ? "author photo" : "",
+      ].filter(Boolean);
+      if (unread.length)
+        setNote(
+          `The ${unread.join(" and ")} could not be read, so the .docx goes without ${unread.length === 1 ? "it" : "them"}.`,
+        );
+      const blob = await manuscriptDocxBlob(manuscript, { cover, photo });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -175,6 +274,101 @@ export function ManuscriptExportDialog({
               }
               label="Open each beat with its title as a heading"
             />
+
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={options.titlePage}
+                    onChange={(event) =>
+                      setOptions((current) => ({
+                        ...current,
+                        titlePage: event.target.checked,
+                      }))
+                    }
+                  />
+                }
+                label="Begin with a title page"
+                // `Stack` zeroes the margin of its direct children, which is
+                // where the switch above sits; this one is inside a `Box`, so
+                // it drops MUI's -11px itself to line up with it.
+                sx={{ ml: 0 }}
+              />
+              {/* Under the label, past the switch's 58px. */}
+              {titlePage && (
+                <Stack spacing={0.25} sx={{ pl: "58px" }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {describeTitlePage(titlePage)}, centred on a page of its own.
+                  </Typography>
+                  {/* Said here rather than discovered on paper: the page is the
+                      tome's overview, one click away, and a title page with no
+                      name on it is the omission an author most wants to catch. */}
+                  {!titlePage.byline && (
+                    <Typography variant="caption" color="text.secondary">
+                      No author is credited — choose one on the tome’s overview to put
+                      a name on it.
+                    </Typography>
+                  )}
+                  {titlePage.cover?.kind === "url" && (
+                    <Typography variant="caption" color="warning.main">
+                      The cover is a web link, so the PDF shows it but the .docx
+                      goes without — upload the image on the overview to include
+                      it in both.
+                    </Typography>
+                  )}
+                </Stack>
+              )}
+            </Box>
+
+            {/* The title page's twin at the other end of the book. Its caption
+                always says something while the switch is on: either what the
+                page will carry, or why there is no page — an uncredited tome and
+                an empty profile both leave it out rather than printing it blank. */}
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={options.authorPage}
+                    onChange={(event) =>
+                      setOptions((current) => ({
+                        ...current,
+                        authorPage: event.target.checked,
+                      }))
+                    }
+                  />
+                }
+                label="End with an author page"
+                sx={{ ml: 0 }}
+              />
+              {options.authorPage && (
+                <Stack spacing={0.25} sx={{ pl: "58px" }}>
+                  {authorPage && author ? (
+                    <Typography variant="caption" color="text.secondary">
+                      {authorByline(author)}’s{" "}
+                      {authorPage.photo && authorPage.blocks.length
+                        ? "photo and bio"
+                        : authorPage.photo
+                          ? "photo"
+                          : "bio"}
+                      , centred on a last page of its own.
+                    </Typography>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      {author
+                        ? `${authorByline(author)}’s profile has no photo or bio yet, so there is no author page — add them on the profile.`
+                        : "No author is credited, so there is no author page — choose one on the tome’s overview."}
+                    </Typography>
+                  )}
+                  {authorPage?.photo?.kind === "url" && (
+                    <Typography variant="caption" color="warning.main">
+                      The photo is a web link, so the PDF shows it but the .docx
+                      goes without — upload the image on the profile to include it
+                      in both.
+                    </Typography>
+                  )}
+                </Stack>
+              )}
+            </Box>
 
             <Box>
               <Typography variant="body2">
@@ -246,6 +440,11 @@ export function ManuscriptExportDialog({
             )}
 
             {error && <Alert severity="error">{error}</Alert>}
+            {note && (
+              <Alert severity="warning" onClose={() => setNote("")}>
+                {note}
+              </Alert>
+            )}
 
             <Typography variant="caption" color="text.secondary">
               PDF goes through your browser’s print dialog — choose “Save as PDF”
@@ -256,7 +455,7 @@ export function ManuscriptExportDialog({
         <DialogActions>
           <Button onClick={onClose}>Close</Button>
           <Button
-            onClick={handlePrint}
+            onClick={() => void handlePrint()}
             disabled={empty}
             startIcon={<PictureAsPdfOutlinedIcon />}
           >
