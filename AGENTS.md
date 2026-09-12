@@ -3,104 +3,98 @@
 A local-first novel-writing workspace. An author creates **Tomes** (books),
 defines their own **ElementTypes** (Character, Place, Faction, …) with custom
 fields, fills them with **Elements**, links elements with **Relationships**,
-lays out **Plots** as ordered **PlotItem** beats on a timeline, aligns those
-plots against each other on a shared axis of **PlotRows**, and writes prose as
-**WriteItems** in a Lexical editor.
+lays out **Plots** as ordered **PlotItem** beats aligned on a shared axis of
+**PlotRows**, and writes prose as **WriteItems** in a Lexical editor.
 
-**There is no backend.** No server of ours, no API to build, no accounts —
-everything lives in the browser's IndexedDB via Dexie, shipped as a static
-bundle on GitHub Pages. Don't reach for a data-fetching library or invent a
-service; if a feature seems to need a server, say so rather than building one.
+**There is no backend.** No server of ours, no API, no accounts — everything
+lives in IndexedDB via Dexie, shipped as a static bundle on GitHub Pages. Don't
+reach for a data-fetching library or invent a service; if a feature seems to
+need a server, say so rather than building one.
 
-**One exception, and it is the only one: `services/drive.ts`.** Optional Google
-Drive sync means the app now has an auth flow and calls out to
-`accounts.google.com` and `www.googleapis.com` — user-initiated, per click, and
-absent entirely from a build with no `VITE_GOOGLE_CLIENT_ID`. That is a
-deliberate widening of the rule above, not permission to fetch things generally:
-everything else stays local-first and offline-first, and a second remote
-dependency needs the same justification this one had. `fetch` appears in exactly
-one module, and `import.meta.env` carries exactly one variable — a *public*
-OAuth client id, never a secret (this flow has none, and the repo must never
-gain one).
+**The one exception is `services/drive.ts`** — optional Google Drive sync,
+calling `accounts.google.com` and `www.googleapis.com` per user click, and
+absent entirely from a build without `VITE_GOOGLE_CLIENT_ID`. It is not
+permission to fetch things generally; a second remote dependency needs the same
+justification. `fetch` appears in that module only, and `import.meta.env`
+carries that one variable only — a *public* OAuth client id. The repo must never
+gain a secret.
 
-`CLAUDE.md` is just `@AGENTS.md`, so this file is canonical whichever entry
-point an agent loads. `src/components/AGENTS.md` is a deeper, UI-scoped
-companion — read it before touching `src/components`, `src/pages`, or
-`src/lexical`.
+`CLAUDE.md` is just `@AGENTS.md`. `src/components/AGENTS.md` is the UI
+companion; it loads on its own in `src/components` (through that folder's own
+`CLAUDE.md`), and must be read before touching `src/pages` or `src/lexical` too.
+
+**The reasoning lives in the code.** Module header comments (`drive.ts`,
+`backup.ts`, `syncPlan.ts`, `manuscript.ts`, `spine.ts`, `storyOrder.ts`, …),
+the per-version comments in `models/db.ts` and the per-route comments in
+`App.tsx` explain *why*. This file holds the rules that span files, or that you
+would break without opening the file that explains them. Read a module's header
+before changing it.
 
 ## Commands
 
 ```bash
-npm run dev      # Vite dev server on :5173 (see .claude/launch.json)
+npm run dev      # Vite dev server on :5173 — use the myTome launch config, not a hand-started Vite
 npm run build    # tsc --noEmit, then vite build
 npm run preview  # serve the built dist/
-```
-
-```bash
-npm test         # vitest run — the data layer only (see below)
+npm test         # vitest run
 npm run test:watch
 ```
 
-**Two gates: `npm run build` and `npm test`.** There is no ESLint or Prettier
-config; the `eslint-disable` comments scattered through `src/` are leftovers
-that nothing enforces.
+**Two gates: `npm run build` and `npm test`.** There is no ESLint or Prettier;
+the stray `eslint-disable` comments are leftovers nothing enforces. Don't add a
+linter or formatter unless asked. Match surrounding formatting (2-space indent,
+double quotes, trailing commas, semicolons).
 
-- Run `npm run build` after a change. `tsc` runs first, and `noUnusedLocals`,
-  `noUnusedParameters`, and `noFallthroughCasesInSwitch` are **errors** — a
-  leftover import or abandoned variable fails the build. `tsconfig.json`
-  includes all of `src`, so the tests are type-checked here too.
-- **The suite covers `src/services`, `models/db.ts`, `hooks/autosave.ts`, and
-  `lexical/blocks.ts`.** Still no component or page tests and **no jsdom** —
-  `test.environment` is `node` and `include` is `src/**/*.test.ts`, so a
-  `.test.tsx` would not even be collected. UI tests would mean adding a DOM
-  environment and React Testing Library — don't, unless asked.
-- **That is why `hooks/autosave.ts` holds no React and no DOM.** The Write
-  editor's autosave timing was pulled out of the page precisely so its rules
-  could be driven under `vi.useFakeTimers()` in the `node` environment instead
-  of through a mounted page with Lexical and the store stubbed. Reach for the
-  same split when logic worth testing is trapped in a component: extract the
-  part that is only data and timers, and leave the React binding thin enough
-  not to need a test.
-- **`lexical/blocks.ts` is the second instance of that split**, and shows it
-  works outside `hooks/`: it turns a stored Lexical document into a plain
-  descriptor tree with no React and no DOM, so the format bitmask, list nesting
-  and check state are all driven from `node`, while `components/StaticProse.tsx`
-  stays a thin renderer. `lexical` itself imports cleanly under `node` — the
-  test decodes formats against the library's own `IS_BOLD`/`IS_ITALIC`/… exports
-  rather than hardcoded bit values. It also holds the **run tag and class rules**
-  (`outerTagFor`, `innerTagFor`, `runClassName`, `proseTextTheme`) for the same
-  reason: they are Lexical's DOM contract rather than MUI styling, and the static
-  and mounted renders drifting apart is the one failure the manuscript cannot
-  absorb.
-- **Know what this suite cannot reach.** Everything that went wrong while the
-  focus surface was built — a menu painting behind a dialog, focus waiting on an
-  animation frame, `caretPositionFromPoint` returning an element, Lexical
-  reconciling its own selection over a caret set in the DOM — is layout, timing
-  and stacking. `node` has none of that and jsdom would not help (no layout, no
-  hit-testing). Those are found by driving the real app, and are written up in
-  `src/components/AGENTS.md` so the next person does not have to rediscover them.
-  Don't let a green suite stand in for having run the thing.
-- For UI behavior, run the app and drive it. Use the `myTome` launch config,
-  not a hand-started Vite.
-- Don't add a linter or formatter unless asked. Match surrounding formatting by
-  eye (2-space indent, double quotes, trailing commas, semicolons).
+- `tsc` runs first, and `noUnusedLocals`, `noUnusedParameters` and
+  `noFallthroughCasesInSwitch` are errors. `tsconfig.json` includes all of
+  `src`, so tests are type-checked by the build too.
+- TypeScript is in bundler mode with `verbatimModuleSyntax` and
+  `erasableSyntaxOnly`: type-only imports **must** use `import type { … }`, and
+  `enum`, parameter properties and namespaces are compile errors. Use
+  string-literal unions and `const` objects (`WriteItemType`, `TomeStatus`,
+  `FieldKind`).
+- `docx` ships `@types/node`, so `setTimeout` returns a `Timeout`. Type timer
+  handles as `ReturnType<typeof setTimeout>`.
 
-TypeScript is in bundler mode with `verbatimModuleSyntax` and
-`erasableSyntaxOnly`: type-only imports **must** use `import type { … }`, and
-`enum`, parameter properties, and namespaces are compile errors. Use
-string-literal unions and `const` objects, as the codebase already does
-(`WriteItemType`, `TomeStatus`, `FieldKind`).
+### What the suite can and cannot reach
+
+`test.environment` is `node` and `include` is `src/**/*.test.ts` — no jsdom, no
+component or page tests, and a `.test.tsx` is not even collected. Don't add a
+DOM environment or React Testing Library unless asked.
+
+**When logic worth testing is trapped in a component, extract the part that is
+only data and timers into a React-free module**, and leave the React binding too
+thin to need a test. Existing instances:
+
+- `hooks/autosave.ts` — the Write editor's autosave timing, driven under
+  `vi.useFakeTimers()`; `useAutosave.ts` binds it to React.
+- `lexical/blocks.ts` — a stored Lexical document as a plain descriptor tree,
+  plus the run tag and class rules (`outerTagFor`, `innerTagFor`,
+  `runClassName`, `proseTextTheme`), kept here so the static and mounted renders
+  cannot drift. `components/StaticProse.tsx` is its thin renderer. `lexical`
+  imports cleanly under `node`: decode formats against its own
+  `IS_BOLD`/`IS_ITALIC`/… exports, never hardcoded bits.
+- `services/syncPlan.ts`, `manuscript.ts`, `storyOrder.ts`, `slug.ts` — pure,
+  read no table.
+
+**A green suite is not a run.** Layout, timing, focus, stacking and hit-testing
+bugs are invisible under `node`, and jsdom would not help. For UI behavior, run
+the app and drive it; the known traps are written up in
+`src/components/AGENTS.md`.
 
 ## Deployment
 
 `.github/workflows/deploy.yml` publishes `dist/` to GitHub Pages and is
-**`workflow_dispatch` only** — deploys are manual on purpose (`a4a7493`
-removed the push trigger). Pushing to `main` ships nothing.
+**`workflow_dispatch` only** — pushing to `main` ships nothing, on purpose.
 
-The site is served from a subpath, so `vite.config.ts` sets `base: "/myTome/"`.
-That subpath is also why the router is `HashRouter`: Pages has no rewrite rule,
-so a real deep link would 404. Every URL looks like `#/tomes/:tomeId/...`.
-Don't switch router types without solving that.
+The site is served from a subpath (`base: "/myTome/"` in `vite.config.ts`) and
+Pages has no rewrite rule, which is why the router is `HashRouter`
+(`#/tomes/:tomeId/...`). Don't switch router types without solving that.
+
+**The built page ships a CSP** as a `<meta>` from `vite.config.ts`, build-only
+(dev needs `eval` and a websocket). A new remote host must be added there or it
+is silently blocked in production only — verify a production build in the
+browser, not just `dev`. Then update the privacy page (see Routes).
 
 ## Layout
 
@@ -108,824 +102,312 @@ Don't switch router types without solving that.
 src/
   models/      Data shapes + the two template registries. Only db.ts declares the Dexie schema.
   services/    The data layer, split by table behind the store.ts barrel. Tests in __tests__/.
-  hooks/       useObservable.ts (Dexie liveQuery → React state), the
-               autosave machine (autosave.ts is framework-free and tested,
-               useAutosave.ts binds it to React), and useObjectUrl.ts — the
-               only place render-land calls createObjectURL. Tests in __tests__/.
-  context/     App-wide state: tomes, current workspace, confirm dialog, color mode.
+  hooks/       useObservable.ts (Dexie liveQuery → React state), autosave.ts (framework-free,
+               tested) + useAutosave.ts, and useObjectUrl.ts — the only place render-land
+               calls createObjectURL. Tests in __tests__/.
+  context/     App-wide state: tomes, current workspace, confirm dialog, color mode, prose face.
   layouts/     WorkspaceLayout.tsx — the /tomes/:tomeId/* shell (nav + header + Outlet).
   pages/       Route-level screens, one per <Route> in App.tsx.
   components/  Reusable UI. Has its own AGENTS.md — read it.
-  lexical/     Custom Lexical nodes and plugins (mentions, toolbars), plus
-               blocks.ts — the framework-free document reader, tested in
-               __tests__/.
+  lexical/     Custom Lexical nodes and plugins, plus blocks.ts (tested in __tests__/).
   theme.ts     getTheme(mode) — the warm-paper brand palette, light and dark.
 ```
 
-### The one layering rule
-
-**`src/models/db.ts` is imported only by files in `src/services/`.** Pages,
-components, and contexts call `store`, never `db`. That boundary is what makes
-the schema-migration rules below tractable. (It read "by exactly one file"
-until `store.ts` was split; the boundary moved from a file to a directory, and
-nothing outside it moved.)
+**The one layering rule: `src/models/db.ts` is imported only by files in
+`src/services/`.** Pages, components and contexts call `store`, never `db`. That
+boundary is what keeps schema migrations tractable.
 
 ## `services/` — the data layer
 
-`store.ts` is a **barrel**, not the implementation: it spreads one object per
-domain module into the single `store` the app imports. Consumers still write
-`import { store } from "…/services/store"` and call `store.savePlotItem` — the
-split is invisible outside this directory and should stay that way.
+`store.ts` is a **barrel**: it spreads one object per domain module into the
+single `store` the app imports (`import { store } from "…/services/store"`).
+The split is invisible outside this directory — keep it that way, and add a new
+domain module's object to the spread.
 
 ```
 services/
-  store.ts         The barrel. Add a new domain module's object to the spread here.
-  internal.ts      uid/now/slugify, observe, sameSet, byRank, the three range
-                   queries, detach*, applyOrder.
-  slug.ts          The one slug rule. Pure and table-free — see below.
-  validate.ts      The four validators, plus the two completeness helpers.
-  images.ts        imageHref / imageFrom. Neither allocates — see hooks/useObjectUrl.ts.
-  tomes.ts         Tomes + the eight-table delete cascade. Sole writer of the text mirror.
-  authors.ts       Author profiles — the one table no tome owns. Sole writer of its mirror.
-  templates.ts     applyTomeTemplate, createPlotFromTemplate. Create-time only.
-  elementTypes.ts  Types, field definitions, and the two count* helpers.
-  elements.ts      Elements + relationships. Sole writer of the two text mirrors.
-  spine.ts         The shared row axis. Owns every sortOrder/plotRowId write.
-  plots.ts         Plots and beats. Defers to spine.ts for ordering.
-  writeItems.ts    Prose rows + the beat↔text link (both sides of writeItemIds).
-  backup.ts        The backup file format, export, and the restore/merge.
-  syncPlan.ts      Pure: what a sync should move. Tested; no network, no DOM.
-  drive.ts         The only module that calls the network. Optional, gated.
-  storage.ts       navigator.storage.persist(). Touches no table; not on `store`.
-  manuscript.ts    Pure: what a plot line's manuscript contains. Reads no table.
+  store.ts           The barrel.
+  internal.ts        uid/now/slugify, observe, sameSet, byRank, range queries, detach*, applyOrder.
+  slug.ts            The one slug rule. Imports nothing, so pure modules can use it without db.
+  validate.ts        The four validators, plus the completeness helpers.
+  images.ts          imageHref / imageFrom. Neither allocates an object URL.
+  tomes.ts           Tomes + the eight-table delete cascade. Sole writer of the tome text mirror.
+  authors.ts         Author profiles — the one table no tome owns. Sole writer of its mirror.
+  templates.ts       applyTomeTemplate, createPlotFromTemplate. Create-time only.
+  elementTypes.ts    Types, field definitions, the count* helpers.
+  elements.ts        Elements + relationships. Sole writer of the element text mirrors.
+  spine.ts           The shared row axis. Sole writer of row ranks and PlotItem.plotRowId.
+  plots.ts           Plots and beats. Imports ordering from spine.ts; spine.ts imports nothing back.
+  writeItems.ts      Prose rows + both sides of the beat↔text link. Sole writer of wordCount.
+  backup.ts          The backup file format, export, restore/merge.
+  syncPlan.ts        Pure: what a sync should move.
+  drive.ts           The only network code. Optional, gated, untested — verify in the built app.
+  storage.ts         navigator.storage.persist(). Touches no table; not on `store`.
+  manuscript.ts      Pure: what a plot line's manuscript contains. Not on `store`.
   manuscriptDocx.ts  That manuscript as OOXML. Lazy-loaded; not on `store`.
-  storyOrder.ts    Pure: what the Write list shows and how it orders it. Reads no table.
-  __tests__/       vitest + fake-indexeddb. See below.
+  storyOrder.ts      Pure: what the Write list shows and how it orders it. Not on `store`.
+  __tests__/         vitest + fake-indexeddb.
 ```
 
-**Four shared primitives in `internal.ts` exist so a rule has one home rather
-than several copies**, and each is worth reaching for rather than re-spelling:
+Conventions:
 
-- **`observe(query, callback)`** is the shape of every `store.observe*` member.
-  It also owns the decision that a live query's error goes to the console and
-  nowhere else — a database that cannot be read is not something a page-level
-  retry can help with.
-- **`sameSet(stored, orderedIds)`** is the stale-drag guard all three reorder
-  mutations run: another tab inserting or deleting mid-drag leaves the order
-  describing a set that no longer exists, and the write is dropped rather than
-  applied.
-- **`byRank(rank)`** orders row ids by spine rank, sinking a beat whose row went
-  missing to the end rather than letting it claim the top of its plot.
-- **`slugify`** is `slug.ts` with the element type's `"type"` fallback baked in.
-  **`slug.ts` itself is deliberately separate and imports nothing**, because
-  `manuscript.ts` needs it and must keep reading no table; putting the rule in
-  `internal.ts` alone would drag `db` into a module whose whole point is that it
-  can be driven from `node` without one. Its three callers — a type's `slug`, a
-  backup's filename, a manuscript's filename — differ only in the fallback.
-
-**`spine.ts` is why the split is not purely by table.** Row ranks and
-`PlotItem.plotRowId` are written *only* there, making "never author `sortOrder`
-from an index" a module boundary rather than a comment someone can miss.
-`plots.ts` imports `syncPlotSortOrder` and `rowForNewPlotItem` from it;
-`spine.ts` imports nothing back.
-
-Two kinds of export:
-
-- **`store.observe*(…, callback)`** wraps Dexie `liveQuery` and returns a
-  `Subscription`. Never subscribe by hand in a `useEffect` — pass these to
-  `useObservable`, which owns subscribe/unsubscribe and re-subscribe on dep
-  change. Pages use them directly; Contexts do the same for shared state.
-- **`store.save*` / `store.delete*` / `store.apply*`** are plain async
-  mutations. Every read is a live query, so a mutation needs no manual refresh —
-  don't add local "optimistic" copies of saved data.
-
-Validation is deliberately **outside** the mutations: `validateElement`,
-`validateFields`, `validatePlotItem`, and `validateRelationship` are exported
-separately and called by the form before saving, so the thrown message can be
-rendered as the dialog's inline error. Follow that split for new entities.
-
-Shared conventions:
-
-- Ids are `crypto.randomUUID()`. Timestamps are **ISO strings**
-  (`new Date().toISOString()`), never `Date` objects — they are stored,
-  indexed, and sorted as strings.
-- Manual ordering is an integer `sortOrder` compacted by `applyOrder`
-  (`sortOrder = index`), called inside the transaction. **`plotItems` is the
-  one exception** — see the spine section.
+- **Reads are live queries.** Every `store.observe*(…, callback)` is an
+  `observe` call from `internal.ts`, which also decides that a live-query error
+  goes to the console and nowhere else. Pass them to `useObservable`; never
+  subscribe by hand in a `useEffect`. Because every read is live, a mutation
+  needs no manual refresh — don't keep local "optimistic" copies of saved data.
+- **Mutations** are plain async `store.save*` / `delete*` / `apply*`.
+- **Validation is outside the mutations.** The form calls `validateElement`,
+  `validateFields`, `validatePlotItem` or `validateRelationship` before saving,
+  so the thrown message renders as the dialog's inline error. Follow that split
+  for new entities.
+- **`required` is completeness, not validity.** Fields are edited one at a time,
+  so `validateElement` rejects only what cannot be stored (a nameless element, a
+  select value outside its list); `missingRequiredFields` reports the rest, shown
+  as a chip.
+- Ids are `crypto.randomUUID()`. Timestamps are **ISO strings**, never `Date`
+  objects — they are stored, indexed and sorted as strings.
+- Manual ordering is an integer `sortOrder` compacted by `applyOrder` inside the
+  transaction — except `plotItems` (see the spine). Every reorder runs `sameSet`
+  first and drops a drag whose set another tab has since changed.
 - Cascades run in `db.transaction("rw", …)` listing every table touched.
-  Deleting a tome clears all eight tables; deleting an Element also strips its
-  id from relationships and from every beat's `attachedElementIds` via the
-  multiEntry index (`detachElements`); deleting a WriteItem does the same via
-  `detachWriteItem`.
-- Reads out of `plotItems` go through `readPlotItem`, which defaults the two id
-  arrays — belt-and-braces over the migration, so a database that missed an
-  upgrade degrades to an empty list, not a blank page. It does **not** default
-  `plotRowId` (no sane stand-in for a row id); that leans on the v7 backfill,
-  and a beat lacking one sorts to the end of its plot rather than silently
-  claiming the top.
+  Deleting a tome clears the eight tome-owned tables and never `authors`.
+  Deleting an Element strips its id from relationships and every beat's
+  `attachedElementIds` (`detachElements`); deleting a WriteItem does the same
+  (`detachWriteItem`). Deleting an author un-credits every tome naming it and
+  touches their `updatedAt` so a sync carries the change.
+- A `Tome.authorId` naming a missing profile reads as uncredited everywhere.
+- Read `plotItems` through `readPlotItem`, which defaults the two id arrays. It
+  does **not** default `plotRowId`; a beat without one sorts to the end of its
+  plot (`byRank`).
 
-### The spine: `plotRows` is a tome-level axis, and `PlotItem.sortOrder` derives from it
+### The spine: row order is the truth
 
-A tome has **one ordered list of `PlotRow`s** — the spine. Every beat in every
-plot stands on one (`PlotItem.plotRowId`, required). Two beats on the same row
-are contemporaneous, which is what lets `PlotGrid` draw plots side by side with
-beats aligned. **A gap is the absence of a cell** — a plot with no beat on a row
-shows nothing there — hence a shared table rather than a number on each beat.
+A tome has **one ordered list of `PlotRow`s**, and every beat stands on one
+(`PlotItem.plotRowId`, required). Two beats on the same row are contemporaneous;
+a gap is the absence of a cell. **`PlotItem.sortOrder` is a cache of row rank**,
+kept only so the `[plotId+sortOrder]` index and single-plot readers keep working.
 
-The governing rule: **row order is the truth, and `PlotItem.sortOrder` is a
-cache of it.** `sortOrder` survives only so the `[plotId+sortOrder]` index and
-every single-plot reader keep working untouched. Every consequence below is
-load-bearing:
+- **Never write `plotItems.sortOrder` from an index.** End every mutation that
+  touches rows or row assignments with `syncPlotSortOrder(tomeId)` inside its
+  transaction; a no-op call costs one read and fires no live query.
+  `savePlotItem` calls it too.
+- `reorderPlotItems` permutes which beat stands on each row the plot already
+  occupies — it never renumbers, so no other plot loses alignment.
+- Inserting a row shifts the spine; every beat keeps its row id, so all plots
+  move together.
+- A plot holds at most one beat per row; `movePlotItemToRow` swaps when the
+  target cell is taken.
+- Deleting a beat leaves its row standing (that is the gap).
+  `removeEmptyPlotRows` drops rows that *no plot in the tome* occupies.
+- **`deletePlotRow` deletes every plot's beat on that row** — the one plot
+  mutation destructive beyond the plot on screen. `countPlotRowBeats` gives the
+  confirm dialog the cost.
 
-- **Never write `plotItems.sortOrder` from an index.** End any mutation touching
-  rows or row assignments with `syncPlotSortOrder(tomeId)`, inside its
-  transaction. It rewrites each beat's `sortOrder` from its row's rank and skips
-  rows already correct, so a no-op call costs one read and fires no live query.
-  `savePlotItem` calls it too: a beat created in a gap partway up the spine
-  belongs at that point in its plot, and numbering by insert index leaves the
-  grid and the plot's own column disagreeing about where it sits.
-- **`reorderPlotItems` permutes rows, it does not renumber.** Dragging within one
-  plot reassigns which of its beats stands on each row it *already occupies*, so
-  the occupied set is unchanged and no other plot loses alignment or gains a gap.
-- **Inserting a row shifts the whole spine**, and every beat keeps the row id it
-  already names — all plots move together and stay aligned.
-- **A plot holds at most one beat per row.** `movePlotItemToRow` enforces this by
-  swapping when the target cell is taken.
-- **Deleting a beat leaves its row standing** (that is the gap), so the spine only
-  grows. `removeEmptyPlotRows(tomeId)` drops rows *no plot in the tome* occupies —
-  "no plot", not "no visible column", so it can be a no-op while the screen is
-  full of gaps.
-- **`deletePlotRow` reaches across every plot**, taking each beat on that row —
-  the one plot mutation destructive beyond the plot you are looking at.
-  `countPlotRowBeats` tells the confirm dialog the cost.
+### Testing this layer
 
-`rowForNewPlotItem` picks a new beat's row: inserting between two beats opens a
-fresh row above the one displaced; appending reuses the next row the plot leaves
-empty and grows the spine only when there is none — so writing straight down one
-plot doesn't strand its beats below everyone else's.
+- `fake-indexeddb/auto` is installed in `setup.ts`. `db` is a module singleton,
+  so isolation is `db.delete()` then `db.open()` in `beforeEach` — replaying
+  every schema version — not re-importing the module.
+- **Assert `expectSpineIntact(tomeId)` (`helpers.ts`) after every mutation that
+  could touch rows or row assignments.** Write alignment expectations through
+  `columnOf(tomeId, plotId)`, which renders a plot as `["a1", null, "a2"]`.
+- **Test a migration by building an older database**: open a plain Dexie under
+  its own name with the old schema, seed it, close it, then open `MyTomeDB` over
+  it (its `name` parameter exists for this). Test a re-run backfill by calling
+  the exported function directly inside a transaction.
+- Don't test the `observe*` wrappers — that tests Dexie. Test the mutation and
+  read the table.
+- **Never assert an order that `updatedAt` alone decides**: two writes in one
+  millisecond share a timestamp, and the test flakes. Set `updatedAt`
+  explicitly, as `elements.test.ts > suggestRelationshipLabels` does.
 
-### `services/__tests__/` — how to test this layer
+### Backup and sync
 
-`fake-indexeddb/auto` is installed once, in `setup.ts`. Because `db` is a module
-singleton created at import time, **isolation means wiping the database, not
-re-importing the module**: `beforeEach` does `db.delete()` then `db.open()`,
-replaying every schema version so each test exercises the real schema.
+The backup file is the only copy of a library that survives a cleared browser,
+and Drive sync is a second *transport* for the same file — never a second
+format. Reasoning is in the `backup.ts`, `syncPlan.ts` and `drive.ts` headers.
 
-- **`expectSpineIntact(tomeId)` in `helpers.ts` is the important assertion.** It
-  checks the whole contract at once — every beat on a live row, at most one beat
-  per row per plot, and each plot's `sortOrder` values exactly the ranks of its
-  rows compacted from 0. Assert it after *every* mutation that could touch rows
-  or row assignments; a regression in any of the eight plot mutations trips it.
-  `columnOf(tomeId, plotId)` renders a plot against the spine as
-  `["a1", null, "a2"]` — what the grid draws — so write alignment expectations in
-  that shape.
-- **Migrations are tested by building an *older* database.** `migrations.test.ts`
-  opens a plain Dexie under its own name with the v4 or v6 schema, seeds it,
-  closes it, then opens `MyTomeDB` over the top — the only way to make Dexie
-  actually replay an `.upgrade()`. `MyTomeDB`'s `name` constructor parameter
-  exists for exactly this.
-- Re-running a backfill (rule 4's remedy) is tested by calling `backfillPlotRows`
-  directly inside a transaction, since Dexie never replays an upgrade for an
-  applied version — which is why the two backfill functions are exported from
-  `models/db.ts`.
-- **Don't test the `observe*` wrappers.** They are one-line `observe` calls now;
-  testing them tests Dexie. Test the mutation and read the table.
-- **Never assert an order that `updatedAt` alone decides.** Timestamps are ISO
-  strings at millisecond resolution and two writes in one tick share one, so
-  "newest first" is undefined between them and the assertion passes or fails on
-  how fast the machine ran. Stage the recency explicitly — write the rows, then
-  set their `updatedAt` to dates you chose — as
-  `elements.test.ts > suggestRelationshipLabels` does. This cost a flake that
-  appeared in roughly one run in six.
-
-### `storage.ts` — the database is evictable unless you ask
-
-IndexedDB defaults to a **best-effort** tier the browser may discard when space
-runs short. For an app whose only copy of a manuscript is that database, that is
-the wrong default, so `requestPersistentStorage()` asks for the durable tier via
-`navigator.storage.persist()`. Three things about it are deliberate:
-
-- **`TomesProvider` asks only once the library holds a tome**, not on mount.
-  Chrome decides silently from engagement; **Firefox raises a permission
-  prompt**, and putting that in front of someone who has not written a word yet
-  is both rude and likelier to be refused.
-- **The public entry point memoises its promise**, so `StrictMode`'s double
-  mount and every re-render cost one ask per page load. `persistStorage` is
-  exported unmemoised for the test, the way `db.ts` exports its backfills.
-- **A refusal is not an error.** Chrome denies a fresh origin outright — a
-  direct `persist()` call from the console returns `false` too — and nothing an
-  author could do would change that, so it is swallowed. Durability is an
-  upgrade, never a precondition: this does not reduce how much the backup file
-  below matters, and the terms page says so out loud.
-
-### `backup.ts` — the file format is the sync's format
-
-There is no backend, so the only copy of an author's work that survives a
-cleared browser is a file they hold. `backup.ts` owns that file: `exportBackup`
-(the whole library), `exportTomeBackup` (one tome), `summarizeBackup`,
-`restoreBackup`, plus the pure `parseBackup` and `backupFileName`, which sit
-beside the validators as named exports rather than on `store` because they are
-neither reads nor writes. `pages/BackupPage.tsx` is the transport half — the
-download and the file picker are the only parts that need the DOM.
-
-Four rules hold the format together, and each exists so that syncing through a
-Google Drive file later is a new *transport* rather than a second format:
-
-- **A one-tome file and a whole-library file are the same shape.** They differ
-  only in how many entries `tomes` holds, so `restoreBackup` never asks which
-  kind it was given, and a shared single tome merges exactly like a full backup.
-- **Ids are preserved exactly**, which is what makes restoring the same file
-  twice a no-op instead of a way to breed duplicate tomes. That idempotence is
-  the whole basis of "merge" between two browsers.
-- **`touchedAt` — the newest `updatedAt` anywhere in the tome — decides a
-  merge, not `Tome.updatedAt`.** Writing prose, moving a beat, and renaming an
-  element never touch the tome row, so comparing tome rows alone would call a
-  browser full of new writing "older" and silently discard it. Anything new that
-  compares two copies of a tome must use the same high-water mark.
-- **A merge replaces a tome whole, never row by row.** A tome is the smallest
-  unit anyone reasons about, and half-merging one could leave a beat standing on
-  a row the other browser wrote.
-- **Blobs travel as base64.** `ImageSource` of `kind: "local"` holds a `Blob`,
-  which `JSON.stringify` flattens to `{}`; `serializeImage`/`deserializeImage`
-  are the only reason cover art survives a round trip.
-- **Author profiles are the exception to "whole tome", and ride beside the
-  tomes in `authors`.** A byline is shared by every tome credited to it, so
-  replacing it along with any one of them would let one book's copy revert
-  another's. Profiles therefore merge **row by row, newest `updatedAt` wins**,
-  independent of what happened to the tomes in the same file — safe precisely
-  because a profile is one self-contained row with nothing spanning it, unlike a
-  beat on the spine. A whole-library file carries every profile; a one-tome file
-  carries the one its tome credits, so a book handed on arrives with its byline.
-  `touchedAt` does **not** include the profile — see `drive.ts` for why a
-  profile is its own unit of sync instead.
-
-A restore bypasses Dexie's upgrades entirely — rows are written straight into
-the current schema — so `restoreBackup` re-runs `backfillPlotRows` for any beat
-that arrives without a row and ends with `syncPlotSortOrder` for every tome it
-touched. Treat that as the standing rule: **a restore must leave the spine
-satisfying `expectSpineIntact`, whatever version wrote the file.** The same
-standing rule now covers elements: `writeTome` converts a plain-text
-`description` and derives both text mirrors, since a v1 file carries neither —
-and the tome itself, whose own description a v2 file still carries as text.
-
-**`backupFormatVersion` is 3, and the two prose migrations are why.**
-`Element.description` (v2, schema v9) and then `Tome.description` (v3, schema
-v10) each kept their name while their meaning changed from text to a document,
-so an older reader would restore the file without complaint and then show a
-paragraph of JSON — on every element card, and then on every library card. The
-version check refuses it instead. That is the test for a bump: not "did a field
-appear?" — an older reader ignores those — but "would an older reader mis*read*
-what it already knows?" Schema v11's profiles are the worked "no": `authors` and
-`Tome.authorId` are fields an older reader ignores, so the format stayed at 3.
-
-### `drive.ts` — transport, and the app's only network code
-
-Google Drive holds **one backup file per tome** in a `myTome` folder, so a typo
-in one book doesn't rewrite the library and a conflict is scoped to the book it
-happened in — **and one per author profile**, for the reason below. Every byte
-that moves is a `BackupFile`: `drive.ts` adds no format, no shape, no second
-serializer, and merges through the same `restoreBackup(file, "merge")` a
-hand-picked file goes through. A profile's file is simply one with no tomes and
-one entry in `authors`. Setup lives in `docs/google-drive-sync.md`.
-
-The split that keeps this testable: **`syncPlan.ts` decides, `drive.ts` moves.**
-`planSync(local, remote)` is pure, has its own node test, and encodes the rule
-that a sync compares one number per unit — a tome's `touchedAt` from
-`backup.ts`, a profile's own `updatedAt` — and never inspects contents. That is
-why a plan comes out of a Drive *listing*: the mark rides in each file's
-`appProperties`, so a sync with nothing to do transfers nothing.
-`store.tomeMarks()` and `store.authorMarks()` are the local halves.
-
-**A profile is its own unit because it is shared.** Carried only inside tome
-files, a bio edited in one browser would never reach a second browser holding
-newer prose in the same book: that browser pushes and never pulls, the first
-then pulls its tome and keeps its own newer bio, and both report "matched"
-while holding different bios — divergence, not merely last-writer-wins. With a
-file of its own the profile converges like anything else. `planSync` does not
-know which kind it is planning; `drive.ts` splits the listing on
-`appProperties` (`tomeId` or `authorId`) and plans each kind separately,
-profiles first so a tome arriving in the same sync finds its byline here. An
-older build's planner skips any file without a `tomeId`, so it ignores profile
-files rather than mistaking one for a tome.
-
-Load-bearing, in rough order of how badly it goes if ignored:
-
+- One-tome and whole-library files are the same shape. Ids are preserved
+  exactly, so restoring a file twice is a no-op.
+- **A merge compares `touchedAt`** (the newest `updatedAt` anywhere in a tome),
+  never `Tome.updatedAt`, **and replaces a tome whole**, never row by row.
+  Anything new that compares two copies of a tome must use `touchedAt`.
+- Author profiles are the exception: they merge row by row, newest `updatedAt`
+  wins, sync as their own Drive file, and are not part of `touchedAt`.
+- `Blob`s travel as base64 through `serializeImage`/`deserializeImage`.
+- **A restore bypasses Dexie's upgrades, so it must produce what the current
+  schema would**: the spine satisfying `expectSpineIntact` (backfilled rows,
+  then `syncPlotSortOrder`), and `writeTome` converting plain-text descriptions
+  and deriving every text mirror and `wordCount`. A new derived field gets added
+  there too.
+- **Bump `backupFormatVersion` (now 3) only when an older reader would
+  *misread* a field it already knows** — as happened when element and tome
+  descriptions became documents under unchanged names. Added fields don't
+  count; an older reader ignores them.
 - **A sync only ever merges.** `"replace"` stays a deliberate act on a file a
-  human picked, behind a confirm. Nothing automatic may wipe a library.
-- **The token lives in a module variable and nowhere else** — no `localStorage`,
-  no IndexedDB, no cookie. It expires in about an hour and there is no refresh
-  token; that short blast radius is the design, not a limitation to fix.
-- **`drive.file` is the only scope.** It grants access to files this OAuth
-  client created, which is both the minimum and — since the grant follows the
-  client, not the browser — the entire mechanism by which two browsers find the
-  same file. Never widen it to `drive` or `drive.readonly`.
-- **Nothing is ever deleted from Drive**, and no upload overwrites a file whose
-  `modifiedTime` moved since the plan was made. The race is narrowed, not
-  closed; a skipped write is reported so the next sync settles it.
-- **Sync has no tombstones.** A tome (or profile) deleted here comes back on the next sync,
-  because a listing can't distinguish "deleted" from "never seen here". The UI
-  says so out loud. Adding real deletion means adding tombstones to the format —
-  a `formatVersion` bump, not a patch.
-- **Google's script is injected on first connect**, never at page load, so a
-  user who ignores Drive never runs third-party code.
-- **The built page ships a CSP** from `vite.config.ts` (build-only — dev needs
-  `eval` and a websocket). Pages serves no headers we control, so it rides in a
-  `<meta>`. Any new remote host has to be added there or it is silently blocked
-  in production only — verify a production build in the browser, not just `dev`.
+  human picked, behind a confirm.
+- **The OAuth token lives in a module variable only** — never `localStorage`,
+  IndexedDB or a cookie. No refresh token; the short lifetime is the design.
+- **`drive.file` is the only scope.** Never widen it to `drive` or
+  `drive.readonly`.
+- Nothing is ever deleted from Drive, and no upload overwrites a file whose
+  `modifiedTime` moved since the plan. **Sync has no tombstones**, so a deleted
+  tome comes back on the next sync and the UI says so; real deletion means a
+  format-version bump.
+- Google's script is injected on first connect, never at page load.
+- `storage.ts` asks for persistent storage only once the library holds a tome,
+  at most once per page load, and swallows a refusal.
 
-Everything above the network line is tested; `drive.ts` itself is not, and can't
-usefully be under `node` — it is deliberately thin for that reason. Verify it by
-driving the built app.
+### Manuscript export
 
-### `manuscript.ts` — a manuscript is **one plot line**, and that is the design
-
-`buildManuscript` flattens a plot into the document it prints as: its beats in
-`sortOrder`, each beat's `writeItemIds` in the author's reading order, each
-text's content through `lexicalToBlocks`. **Every beat starts a new page; the
-sections inside one flow continuously.** The same split as `syncPlan`/`drive`
-applies — `manuscript.ts` decides, `manuscriptDocx.ts` and
-`components/ManuscriptPrint.tsx` move — so the whole decision is driven from
-`node` and neither writer holds an opinion about content.
-
-**The one-plot limit is not a first cut, it is the honest answer.** Two beats on
-the same spine row are *contemporaneous*, which is precisely the absence of a
-reading order, so interleaving several plots into one document means either
-guessing (plot `sortOrder` as a tiebreak — a global constant that cannot vary
-per row) or growing a second ordering axis on the spine. One column of the grid,
-read top to bottom, is already a total order with no ties, and that is what a
-manuscript is. Note that `storyKeys` in `services/storyOrder.ts` does **not**
-solve this either: it sorts `[plotOrder, beat.sortOrder, index]`, so tome-wide
-"story order" is plot-major concatenation — right for grouping a thread in a
-list, not a book. **If a whole tome needs exporting, the book is a plot**; the
-authoring answer is a "move this beat to another plot" gesture (`PlotGrid`
-already spans every column with one `DndContext` and blocks cross-column drops
-at `handleDragEnd`), not a cleverer exporter.
-
-Four rules the export keeps:
-
-- **Nothing is dropped silently.** Beats with no included text, texts excluded
-  by the type filter, and ids with no row behind them are all returned in
-  `skipped` and counted in the dialog before the download. A manuscript is the
-  last place for a quiet decision.
-- **A text composed into several beats is printed in every one of them**, and
-  its words counted every time. The composition is what the author authored, and
-  thinning it would make the export disagree with the beat manuscripts they
-  wrote it on. Such texts are named — with every beat they land in — in
-  `repeated`, which is a **note, not a skip**: only the author can tell a
-  deliberate refrain from an accidental double-compose, so the dialog shows them
-  where to look instead of deciding.
-- **A beat contributing nothing is skipped, not printed blank.** That includes a
-  beat whose every text the type filter removed.
-- **The default filter is `passage` + `chapter`.** Lore is background and a
-  snippet is scratch; both are toggleable, neither is the book.
-
-**The title page is decided here too, and both writers draw it.** It is on by
-default and a switch in the dialog, and `titlePage` carries only what exists —
-title always; subtitle, byline and cover only when there is one — so neither
-writer decides whether an empty string earns a line. The byline is the credited
-profile's **pen name, or the author's own name without one**, through
-`authorByline` in `models/Author.ts`, the one home of that rule. It is a page
-of its own, never a beat, and adds nothing to the word count. The two writers
-centre it differently and both are verified rather than assumed:
-
-- **Print uses `height: 100vh`**, because in print a viewport unit resolves
-  against the page's printable area — measured by printing the app's own print
-  DOM to PDF, where the box filled page 1 to its `@page` margins and the first
-  beat opened on page 2. The print call also awaits `printImagesReady()`, since
-  an uploaded cover only gets its object URL in a layout effect and a linked one
-  has a round trip ahead of it; the browser snapshots at `print()`. It waits on
-  `load`, never `decode()` — see the author page below for why.
-- **DOCX makes it a section with `verticalAlign: center`**, which is also what
-  keeps it free of the running header and lets the text restart at page 1.
-  Reading a cover's bytes and size needs the browser, so
-  `ManuscriptExportDialog` prepares a `DocxImage` (redrawing anything Word will
-  not embed — WebP, say — as PNG) and `manuscriptDocx.ts` stays pure. **A cover
-  pasted as a URL cannot go into the DOCX**: the app never fetches it and a
-  cross-origin image would taint the canvas. The dialog says so before the
-  download rather than dropping it quietly; the PDF shows it.
-
-**The author page is the title page's twin at the far end**: the credited
-profile's photo with its bio below it, centred both ways, after the last beat.
-Also on by default and a switch of its own, and it follows the same rules —
-decided in `buildManuscript` as `authorPage`, never a beat, no words counted,
-images prepared by the dialog. What differs, each for a reason:
-
-- **It can be absent while its switch is on.** An uncredited tome, or a
-  profile with neither a photo nor a word of bio, gets no page rather than a
-  blank one, and the dialog's caption says which of the two it was. A bio that
-  is only whitespace is carried as no blocks, so no empty paragraph is drawn.
-- **Print uses `minHeight: 100vh`, not `height`.** A bio is the author's own
-  prose and can outrun a page; the title page's fixed height with
-  `overflow: hidden` would cut it off silently. One that fits is centred
-  exactly as the title page is (checked by printing to PDF: three pages, the
-  third centred, no trailing blank). The last paragraph drops its bottom margin,
-  which would otherwise sit inside the centred box and lift the page.
-- **Its DOCX section carries an explicitly empty header.** Word gives a section
-  with no header of its own the previous one's, so without it the running title
-  and page number would print over the photo. Its lists number from the body's
-  `numbering`, and a paragraph with no alignment of its own is centred.
-- **Images are measured with `createImageBitmap` and awaited on `load`, never
-  `decode()`.** In a hidden tab `decode()` does not settle, so a download
-  started and then left behind sat at "Building…" forever. Found by driving the
-  export with the page hidden — the kind of thing the `node` suite cannot see.
-
-`manuscript.ts` reads no table — it takes rows the page already observes — so it
-is on neither `store` nor the barrel, like `validate.ts` and `parseBackup`.
-
-### `storyOrder.ts` — what the Write list shows, pulled out of the page
-
-`storyKeys` and `sortWriteItems` were `WriteListPage` locals, and moved for the
-reason `hooks/autosave.ts` and `lexical/blocks.ts` did: they are only data and
-comparisons, so under `node` they get real assertions while the page keeps a
-`useMemo` and a table header. Like `manuscript.ts` they read no table and sit on
-neither `store` nor the barrel. **Reach for this split whenever a page grows a
-sort, a filter or a key function worth being sure about** — it is cheaper than
-adding a DOM environment, and it is why "no component tests" has not meant "no
-tests for what components decide".
-
-Two things the tests pin that the old inline version left implicit: story order
-is **plot-major** (all of plot A precedes any of plot B, however deep the beat),
-and a text composed into several beats takes the **earliest**, so a passage
-reused later still sorts where it is first read.
-
-The list is a table, and each of its five columns sorts, so `WriteSort` names a
-**column** rather than one of three modes. Three rules hold that together:
-
-- **"Used in" *is* story order.** A text's place in the book is its earliest
-  composing beat, which is exactly what `storyKeys` ranks by — so the column
-  naming the beat and the sort putting the list in reading order are the same
-  thing, and the page has no sort control beyond its headers.
-- **Comparators are ascending by definition and `direction` flips them**, with
-  `defaultDirection` deciding which way a column opens on its first click.
-  Dates and word counts open at their largest; names at their first letter.
-- **The recency tiebreak never flips.** Reversing the column the author clicked
-  is the request; reversing which of two identically titled drafts comes first
-  is noise, so the tiebreak sits outside the sign.
-
-`writeItemUses` is the other half — every beat composing each text, in reading
-order, for the "Used in" cell. A text composed into several beats gets several
-entries: that reuse is the model working as designed, so it is reported rather
-than thinned, and only a beat whose *plot* has gone is dropped (there would be
-nothing to name it after).
-
-### There is no PDF library, and there should not be one
-
-DOCX is the `docx` package; **PDF is the browser's own print dialog.**
-`ManuscriptPrint` renders the manuscript through the same `StaticProse` and
-`manuscriptStyles` the editor uses, portals it to `<body>`, and a `@media print`
-block blanks every other body child. The browser already has a typesetter and a
-PDF writer, and the export is typographically the surface the author wrote on;
-`pdfmake` would cost ~2 MB on a static Pages bundle to reproduce it less well
-(and its blob worker would trip the CSP in production only).
-
-Three things about that arrangement are load-bearing:
-
-- **Paper is white in both colour modes.** `manuscriptSx` is written in theme
-  tokens, so printing from dark mode would put near-white text and a pale tan
-  link colour on a white page. `inkSx` restates every colour token in ink.
-  Verified by printing with the app in dark mode — if you add a colour to
-  `manuscriptSx`, add its ink override too.
-- **The print DOM is mounted only while printing**, via `flushSync` before
-  `window.print()` (an effect would fire twice under `StrictMode`) and taken
-  down on `afterprint`. A whole plot line is a lot of DOM to keep laid out for a
-  dialog nobody has printed from.
-- **`docx` is `import()`ed at the click**, not at page load — it is ~350 kB of
-  the bundle and splits cleanly into its own chunk. Keep it that way.
-
-Two things Word simply cannot express, handled in `manuscriptDocx.ts` rather
-than hidden: a check-list item becomes a `☐`/`☑` glyph on an indented paragraph,
-and **every ordered list gets its own numbering definition** so its `start`
-survives and two consecutive lists do not continue each other's count.
-
-**`docx` ships `@types/node` as a direct dependency**, which is why
-`hooks/autosave.ts` types its timers as `ReturnType<typeof setTimeout>`: with
-node types installed, `setTimeout` returns a `Timeout` rather than a `number`
-and the old annotation failed `tsc`. Annotate timer handles that way anywhere
-else they appear.
+- **A manuscript is one plot line, by design.** Two beats on one spine row have
+  no reading order. If a whole tome needs exporting, the book is a plot — don't
+  build a multi-plot exporter, and don't mistake `storyOrder.ts`'s plot-major
+  sort for one. See the `manuscript.ts` header.
+- `manuscript.ts` decides; `manuscriptDocx.ts` and `ManuscriptPrint.tsx` only
+  render. **Nothing is dropped silently**: skipped beats, texts and dangling ids
+  go in `skipped`, texts composed into several beats in `repeated`, and the
+  dialog shows both before the download.
+- A byline is always `authorByline` (`models/Author.ts`): the pen name, else the
+  name.
+- **There is no PDF library, and there should not be one.** PDF is the browser's
+  print dialog over `ManuscriptPrint`. `docx` is `import()`ed at the click and
+  must stay out of the main bundle.
+- **Printed paper is white in both colour modes**: any colour added to
+  `manuscriptSx` needs an ink override in `inkSx`.
+- Wait for images on `load`, never `decode()` — it never settles in a hidden
+  tab.
 
 ### Two vestigial things — don't build on them
 
-- **`Element.deletedAt` is never written.** `observeElements` filters
-  `!x.deletedAt`, but `deleteElement` hard-deletes the row. There is no soft
-  delete, trash, or restore. Wire it up deliberately or leave it — don't
-  half-assume it works.
-- **The `activities` table has no reader and no writer.** Declared in schema v2;
-  nothing outside `db.ts` (and the schema literal in `migrations.test.ts`)
-  touches it. There is no activity feed.
+- `Element.deletedAt` is filtered on but never written; `deleteElement`
+  hard-deletes. There is no trash or restore.
+- The `activities` table has no reader and no writer.
 
 ## Dexie schema changes — read before editing `models/db.ts`
 
-The database is `myTomeDB`, at **version 11**, running in users' browsers.
+The database is `myTomeDB`, currently at **version 11**. Each version's
+reasoning is commented beside it in `db.ts`.
 
-1. **Never edit a shipped `.version(n).stores({…})` block.** Add
-   `.version(n+1)`. Dexie replays versions in order to upgrade an existing
-   database; rewriting history desynchronizes anyone who already opened an
-   older one.
-2. **A new *table* needs no upgrade function** (v4 added `plots`/`plotItems`
-   with none). **A new *field* on an existing table usually does** — v5 added
-   `writeItemIds`, and both the `*writeItemIds` multiEntry index and every
-   reader require an array, never `undefined`.
-3. Make backfills **idempotent** (`item.writeItemIds ??= []`) so re-running them
-   is free.
-4. **v6 exists as a bug fix — understand it before repeating it.** v5 shipped
-   briefly without its `.upgrade()` attached, and Dexie never re-runs an upgrade
-   for an applied version, so those databases sit at v5 with un-backfilled rows
-   no later change would reach. v6 changes nothing and re-runs the same backfill
-   purely for them. That is the remedy for a missing or wrong upgrade: a new
-   no-op version carrying the corrected one.
-5. **v7 added the spine**, showing both halves of rule 2: `plotRows` is a new
-   table (no upgrade needed) but `plotRowId` is a new field on `plotItems`
-   (which is). `backfillPlotRows` gives each tome a spine as deep as its longest
-   plot and assigns beats by position — reproducing the implicit index-parity the
-   old side-by-side compare view drew, the only alignment pre-v7 data can
-   justify. It is resumable as well as idempotent: rows are topped up rather than
-   recreated, and a beat that already names a row is skipped.
-6. **v8 added `wordCount` to `writeItems`** — rule 2's second half again, and
-   the one backfill that has to **parse** rather than default: the count is
-   derived from the stored Lexical document via `countDocumentWords`. It skips
-   a row that already holds a number, so re-running it is nearly free. The field
-   is a cache of `content` in exactly the way `preview` is, and
-   `services/writeItems.ts` is its only writer — it counts the untruncated text
-   the editor hands over, so the save path never parses at all. **A restore
-   derives it too**, in `writeTome`, since a pre-v8 backup file carries no
-   count and a restore bypasses Dexie's upgrades. No index came with the bump:
-   the Write list sorts one tome's rows in memory, and an index Dexie would
-   maintain on every autosave keystroke would buy nothing.
-7. **v9 turned `Element.description` into a Lexical document** and added
-   `descriptionText` and `searchText` beside it. Rule 2 again, and the first
-   backfill that has to **convert** rather than parse-or-default: a pre-v9
-   description is plain text, which the editor cannot open at all.
-   `backfillElementProse` wraps it with `plainToLexical`, skipping anything
-   `isProseDocument` already recognises — that guard is what makes a re-run
-   free instead of burying the author's paragraph inside a document whose only
-   text is JSON. It reads `elementTypes` as well, because `searchText` spans the
-   custom fields. No index came with it, for v8's reason.
-8. **v10 did the same to `Tome.description`** and added `descriptionText`
-   beside it, when the overview became a page you read with every field edited
-   where it sits. `backfillTomeProse` is `backfillElementProse` minus the search
-   mirror — a tome has no custom fields to span, and the library filters on
-   title and subtitle — and it carries the same `isProseDocument` guard for the
-   same reason. What the pair do *not* share is where the conversion lives: the
-   tome's is `tomeDescription` in `models/Tome.ts`, so the upgrade, `saveTome`,
-   `updateTome` and a restore cannot drift. No index came with it, for v8's
-   reason.
-9. **v11 added author profiles** — rule 2's "usually", for once going the other
-   way on both halves. `authors` is a new table, so no upgrade; and
-   `Tome.authorId` is a new field that needs none either, because it is
-   **optional**: `undefined` is exactly what a tome nobody has credited should
-   read as, nothing indexes it, and nothing iterates it. Contrast v5, where
-   `writeItemIds` had to be an array. Every reader also treats an id naming a
-   missing profile as uncredited — a one-tome backup restored into a browser that
-   never saw its author is a real way to get one. `migrations.test.ts` checks
-   the upgrade leaves a v10 tome untouched and uncredited. It is also the one
-   table with no `tomeId`: **deleting a tome never touches `authors`**, and
-   deleting a profile un-credits every tome naming it, touching their
-   `updatedAt` so a sync carries the change.
+1. **Never edit a shipped `.version(n)` block.** Add `.version(n+1)`.
+2. **A new table needs no upgrade. A new field on an existing table needs one**
+   when readers or an index require a value (v5's `writeItemIds` must be an
+   array); an optional field for which `undefined` is the right reading needs
+   none (v11's `Tome.authorId`).
+3. **Backfills are idempotent and resumable**, and exported from `db.ts` so the
+   tests and `restoreBackup` can re-run them.
+4. **Fix a missing or wrong upgrade with a new no-op version that carries the
+   corrected one** (v6). Dexie never re-runs an upgrade for an applied version.
+5. A backfill converting text to a Lexical document must skip anything
+   `isProseDocument` already recognises, or a re-run buries the author's words
+   inside JSON.
+6. Don't index what is sorted or filtered in memory per tome; Dexie would
+   maintain it on every autosave keystroke.
 
-### Prose is a *kind* now, not just the description
+### Prose values
 
-`FieldKind` gained `prose` alongside `text` and `select`, so an author can give
-a type as many written sections as their world needs — a Character with
-Appearance and Backstory, a Place with History — instead of piling everything
-into one description. **This needed no schema change**: `attributes` is
-`Record<string, string>` and a serialized document is a string. Four
-consequences, all of which have bitten once already:
+`FieldKind` includes `prose`, and element, tome and author descriptions are
+Lexical documents too — each stored as a `JSON.stringify`ed string.
 
-- **An empty prose value is `""`, not an empty document.** A field nobody has
-  written in has no entry in `attributes`, and Lexical throws outright on
-  `JSON.parse("")`. Every read of a prose value goes through `asProseDocument`,
-  which also covers a field whose kind was changed from `text` and therefore
-  holds a line of plain text. `components/ProseField.tsx` does this at its
-  boundary; do the same anywhere else a stored value reaches an editor.
-- **Emptiness is a question about the text, not the string.** An empty document
-  is several hundred characters of JSON, so `required` would be satisfied by
-  every blank prose field. `isEmptyFieldValue` in `validate.ts` is the answer,
-  and `discardElementIfBlank` leans on it.
-- **Anything printing an attribute as text has to flatten it first.**
-  `fieldValueText` in `models/Element.ts`; the element cards simply skip prose
-  fields, since a card has room for a line.
-- **`searchText` is why the list can still filter per keystroke.** It is name +
-  description + every field's text, derived on save by `elements.ts` and by the
-  v9 backfill through the same `elementSearchText`, so a migrated row and a
-  saved one answer the same query.
-
-### `required` is completeness, not validity
-
-`validateElement` no longer throws for an empty required field. It could while
-an element was written by a form that submitted everything at once; with the
-element page editing one field at a time, that rule would reject the edit an
-author just made because some *other* field is empty — and an author sketching
-a character rarely knows its faction on the first day. What is still enforced is
-what genuinely cannot be stored: a nameless element, and a select value outside
-its own list. `missingRequiredFields` reports the rest, and the page shows it as
-a chip. Keep that split if a third kind of "should" appears.
+- **An empty prose value is `""`, not an empty document**, and Lexical throws on
+  `JSON.parse("")`. Every stored value reaching an editor goes through
+  `asProseDocument`, which also accepts plain text left by a field whose kind
+  changed from `text`.
+- Emptiness is a question about the text: use `isEmptyFieldValue`.
+- Anything printing an attribute as text flattens it with `fieldValueText`.
+- Derive `searchText` only through `elementSearchText`, and a tome's
+  description only through `tomeDescription` (`models/Tome.ts`), so saves,
+  upgrades and restores cannot drift.
 
 ## Naming — these are load-bearing
 
-- A book is a **Tome**, not a Story or a Project. The `:tomeId` route param and
-  the `tomes` table follow.
-- **`Plot`/`PlotItem`, never `Timeline`/`TimelineItem`** for records — `@mui/lab`
-  exports components under those names, and the collision would force an import
-  alias everywhere. Only components that *render* MUI timeline markup carry
-  timeline vocabulary.
-- **"Spine" means the tome's shared row axis — nothing else.** The vertical line
-  MUI draws down a timeline is the **track**; `PlotItem.name` (labelled "Beat
-  label" in the dialog) is the **beat label** beside it. All three were called
-  "spine" before `PlotRow` existed; don't reintroduce the collision.
-- **`WriteItem`** is the prose record; its `type` is a closed four-way union
-  (`snippet | lore | passage | chapter`), not a user-extensible registry the way
-  `ElementType` is.
-- `Element` is the app's own domain type and shadows the DOM's `Element`. That is
-  intentional and pervasive; import it explicitly rather than renaming.
-- **An `Author` is a byline, not a person** — "author profile" in the UI. One
-  writer with two pen names is two rows sharing a `name`; one pen name written
-  by two people (James S. A. Corey) is one row. What a title page prints is the
-  **byline** (`authorByline`): the `pseudonym`, or the `name` when there is
-  none. The shape came from how books are actually credited, and
-  `models/Author.ts` says so; don't "fix" it into a person with a list of pen
-  names, which would make a title page ask *which* one.
+- A book is a **Tome**, not a Story or a Project (`:tomeId`, `tomes`).
+- **`Plot`/`PlotItem`, never `Timeline`/`TimelineItem`** for records.
+  `@mui/lab` is no longer a dependency, but it exports components under exactly
+  those names, so records named that way would force an import alias everywhere
+  the moment it came back.
+- **"Spine" means the tome's shared row axis — nothing else.** The line
+  `PlotGrid` draws down each column is the **track**; `PlotItem.name` ("Beat
+  label") is the **beat label**.
+- **`WriteItem`** is the prose record; its `type` is a closed union
+  (`snippet | lore | passage | chapter`), not a user-extensible registry.
+- `Element` is the app's own type and shadows the DOM's. That is intentional;
+  import it explicitly rather than renaming.
+- **An `Author` is a byline, not a person** ("author profile" in the UI). One
+  writer with two pen names is two rows; one pen name shared by two writers is
+  one row. Don't "fix" it into a person with a list of pen names.
 
 ## Routes are the dialog state
 
-Dialogs and edit forms are **URL-addressable**, not `useState` booleans. The
-pattern: one page component mounted by several routes, taking a boolean prop.
-`/tomes`, `/tomes/new` and `/tomes/guide` all render `<TomeLibraryPage>`, the
-second with `creating` and the third with `guide`;
-`plots/:plotId/items/:itemId` and `elements/settings/new` work the same way. New create/edit UI gets a route, not
-a local open/closed flag — back, refresh, and deep links must work.
+Dialogs and edit forms are **URL-addressable**, not `useState` booleans: one
+page component mounted by several routes with a boolean prop (`/tomes`,
+`/tomes/new` → `creating`, `/tomes/guide` → `guide`). New create/edit UI gets a
+route so back, refresh and deep links work. Each route's reasoning is commented
+in `App.tsx`.
 
-**`/tomes/guide` is a route for a reason beyond the pattern.** The library page
-shows the guide in full while the shelf is empty and shrinks it to a dismissible
-strip afterwards, so without an address of its own the guide would be a page an
-author could destroy with one ✕. It is also the kind of thing someone sends to
-someone else. See `components/AGENTS.md` for the trio that renders it.
+- **The test for a non-route dialog is "can the URL rebuild it?"**, not "is it
+  transient?". The restore dialog on `/backup` is plain `useState` because its
+  state is a file the author picked.
+- **A page you read is edited where it sits, with no `edit` route**: the tome
+  (`dashboard`), an element (`elements/:typeId/:elementId`), an author profile
+  (`/authors/:authorId`). Which field is being edited stays out of the URL.
+  `TomeFormDialog` only creates; deleting a tome lives only on the dashboard.
+- **Rows created by a click have no `new` route**, because a create-on-mount
+  effect fires twice under `StrictMode`. `write/:writeItemId`,
+  `elements/:typeId/:elementId` and author profiles open on a real id created at
+  the click site, and are swept on unmount if untouched
+  (`discardWriteItemIfBlank`, `discardElementIfBlank`, `discardAuthorIfBlank`).
+- Composing *existing* text into a beat is a route (`…/items/:itemId/write/add`,
+  optional `/:index`) because it creates nothing. It is a **sibling** of
+  `…/write`, so `BeatManuscriptPage` stays mounted underneath — if it ever
+  remounts, an untouched draft is swept while the author is looking at it.
+- **`plots/:plotIds` is a comma-joined list, and it is the only plotting page.**
+  `PlotPage` canonicalises the list (drops unknown and repeated ids, falls back
+  to the tome's first plot). The first id is the **primary**: what rename,
+  delete, "Add item" and `export` act on. Don't give anything a second way to
+  name the plot.
+- **A beat's manuscript has one address**, `plots/:plotId/items/:itemId/write`,
+  never scoped to the columns on screen.
+- **Old links keep resolving**: `plots/compare/:plotIds[/*]`
+  (`PlotCompareRedirect`) and `plots/:plotIds/rows/:rowId` land on the current
+  shapes. Don't remove them without deciding those links may 404.
+- `/backup`, `/authors`, `/privacy` and `/terms` are library-level. Both writing
+  routes stay under `WorkspaceLayout`, so the workspace shows behind the
+  `FocusSurface` and `TomeWorkspaceContext` stays in scope.
 
-Two deliberate exceptions create a row at the click site instead of routing to a
-form, because a create-on-mount effect fires twice under `StrictMode` and would
-leave an orphan behind every click. **`write/:writeItemId` has no `write/new`
-sibling**, and **`elements/:typeId/:elementId` has no `elements/:typeId/new`** —
-both open on a real id, and both sweep the row on unmount if it was left
-untouched (`discardWriteItemIfBlank`, `discardElementIfBlank`). See
-`src/components/AGENTS.md` for the full autosave/discard story.
+**`/privacy` and `/terms` are claims about this repo**, and go stale silently:
 
-**An element's route is the element, not a form over it.** The old
-`elements/:typeId/:elementId/edit` is gone: `ElementPage` is a page you read,
-with every field editable where it sits, and `ElementListPage` is now only a
-list. Which field is being edited is **not** in the URL — the same call
-`ProseManuscript` makes about its active section. The test in this section is
-"can the URL rebuild it?", and while it technically could, a caret inside a
-field is not somewhere anyone deep-links, and every stray click would push a
-history entry.
+- **The privacy page's network list is the CSP in `vite.config.ts`, and its
+  storage list names every `localStorage` key** (colour mode, prose face, guide
+  dismissal, Drive's last-sync mark). A new host, scope or key makes it wrong
+  until it is edited.
+- **Terms clause 8 says the repo carries no licence.** Adding a `LICENSE` edits
+  that clause in the same commit.
+- Changing either page's text moves its "Last updated" line. Both render through
+  `components/PolicyProse.tsx`.
 
-**A tome's route is the tome, for the same reason.** `dashboard` has no `edit`
-sibling any more: `TomeDashboardPage` edits title, subtitle, status, cover and
-description where they sit, and `TomeFormDialog` — still mounted by
-`/tomes/new` — now only *creates*, which is the part a page cannot do because it
-happens before the tome exists (the two template pickers). The library card
-followed: it carries no Open, Edit or Delete buttons at all, just a
-`CardActionArea` to this page, and **deleting a tome now lives only here**,
-where the cost of it is on screen.
-
-Composing *existing* text into a beat follows the rule rather than the
-exception: `plots/:plotId/items/:itemId/write/add` and `…/write/add/:index` both
-mount `BeatManuscriptPage` with `adding`, and the picker is a dialog on top of
-the writing surface. The index is a position among the beat's **sections** and
-is optional — without one the picked texts are appended, the same way the
-compare view's insert route appends when it names no row. Nothing is created
-until the author picks something, so unlike `write/new` there is no draft row
-for a double-mounted effect to duplicate. Starting a *new* section at that same
-position stays route-less for exactly the `write/new` reason — it creates a
-draft row — and passes its position to `createDraftWriteItem` instead. Both routes are siblings of
-`…/write` rather than children of it, and React Router therefore keeps the same
-`BeatManuscriptPage` instance mounted across the change: the surface behind the
-picker holds its active section, its editor, and its unmount sweep. Verified by
-opening the picker with a section live and cancelling back onto it — if that
-ever remounts, an untouched draft would be swept while the author is looking at
-it.
-
-The other is the **restore dialog** on `/backup`, which is plain `useState`. Its
-state is a file the author picked out of their filesystem, which no URL can name
-— `#/backup?restoring=…` could only ever reopen an empty dialog. That is the
-test for a non-route dialog: not "is it transient?" but "can the URL rebuild
-it?". (`/backup` itself is a route, and a library-level one: the whole-library
-file is the point, and a browser with no tomes still needs somewhere to restore
-one from.)
-
-**`/authors` and `/authors/:authorId` are library-level for the reason the
-profiles are a library-level table**: a byline belongs to every tome credited to
-it, so it cannot live in one tome's workspace. They follow the element pair
-exactly — a list that finds, opens and creates, and a page you read with every
-field edited in place — including the exception: **there is no
-`/authors/new`**. A profile is created at the click site ("New author" on the
-list, or "New author…" in a tome's byline picker, which also credits it in the
-same write) and swept on unmount if left blank. The sweep ignores credits on
-purpose; see `components/AGENTS.md`.
-
-**`/privacy` and `/terms` are the other library-level routes, and they are
-claims about this repo.** `pages/PrivacyPolicyPage.tsx` and
-`pages/TermsOfUsePage.tsx` are static prose, both linked from the footer of the
-library page because that is the first screen anyone lands on, and each links to
-the other. They have no state and no store calls, but they are not inert:
-
-- Privacy says what is stored (the `models/db.ts` tables, plus every
-  `localStorage` key: the `colorMode` and prose-face keys in `context/`, the
-  guide dismissal in `components/GuideStrip.tsx`, and drive's last-sync mark),
-  what can leave the browser, and what Drive sync sends. **Its network list is
-  the CSP in `vite.config.ts`, in prose.** Widen that policy — a new host, a new
-  scope, a second remote dependency — and the page is wrong until it is edited
-  too. **A new `localStorage` key is the same kind of edit**, and cheaper to
-  forget: the storage list enumerates them, so adding one anywhere in `src/`
-  makes this page wrong until it is counted there and the "Last updated" line
-  moves.
-- Terms is "terms of *use*", not "of service", and the distinction is the point:
-  with no server, no accounts and nothing operated on anyone's behalf, there is
-  no service to suspend and no account to terminate, so the page is warranty,
-  liability, and the data-loss warning rather than the usual ToS machinery.
-  **Its clause 8 asserts the repo carries no licence.** Adding a `LICENSE` means
-  editing that clause in the same commit.
-
-Both carry a "Last updated" line that has to move when their text does. They
-render through `components/PolicyProse.tsx` — shared so the pair cannot drift
-apart visually, since two policy pages that look different read as one of them
-being stale.
-
-**Writing happens on an overlay, and both writing routes stay under
-`WorkspaceLayout`.** `write/:writeItemId` (one text) and
-`plots/:plotId/items/:itemId/write` (a beat's composed text as one manuscript)
-both render a `FocusSurface` — a MUI `Dialog` over the workspace with a dimmed
-scrim. Keeping them inside the layout is what leaves the app visible behind the
-backdrop, and it also keeps `TomeWorkspaceContext` in scope, which the editor
-needs for `types` (the mentions plugin). Below `sm` the same surface goes
-full-bleed, because at that width `SideNav` is already a horizontal strip and
-there is nothing worth dimming.
-
-**A beat's manuscript has exactly one address.** `plots/:plotId/items/:itemId/write`
-takes the beat's own `plotId`, never the list of columns that happened to be
-drawn when it was clicked — so a beat's writing is the same link whether one
-plot was on screen or four. Resist adding a columns-scoped twin; the route shape
-is already three deep.
-
-**`:plotIds` is a comma-joined list of one or more, and there is only one
-plotting page.** `plots/:plotIds` plus `/items/:itemId`, `/export`, and
-`/insert/:sidePlotId` with an optional `/:rowId`. A single plot
-is a list of length one, so drawing one plot and drawing four is the same
-address at different lengths — there is no compare page, no compare mode, and
-nothing to exit. Which plots are in the list is decided by the toggles in
-`PlotPicker`'s tabs.
-
-The list is canonical: `PlotPage` drops unknown and repeated ids and rewrites
-the URL, so a hand-edited or shared link resolves the same way, and an empty
-result falls back to the tome's first plot (creating one if the tome has none).
-The **primary** plot is the first id — the tab the strip marks selected, and
-what rename, delete, "Add item" and the export act on.
-
-The insert route names the plot *and* optionally the row, because with several
-columns neither alone identifies a cell; omitting the row appends and lets
-`rowForNewPlotItem` choose. There is no `insert/:index` any more — an index was
-only ever `items.length`.
-
-**A spine row is named in the gutter, so `rows/:rowId` no longer opens anything.**
-It stays mounted purely as the landing for `compare/:plotIds/rows/:rowId`, and
-`PlotPage` replaces it with the plot's own address — a link that lands nowhere is
-worse than one that lands on the row it was about. Which field is being edited
-stays out of the URL, the same call the element page makes.
-
-**`plots/compare/:plotIds` and `plots/compare/:plotIds/*` still resolve**, as
-`PlotCompareRedirect`. Comparing was a page of its own, and its columns were in
-the URL precisely so a comparison could be sent to someone — which is exactly
-why those links have to keep working. Every one of its routes maps to the new
-shape by deleting the `compare` segment, which is what the splat carries. The
-static segment outranks `:plotIds`, so these win over the routes above; the bare
-word (`plots/compare`, no ids) falls through to `plots/:plotIds` and resolves to
-no plots, which the fallback turns into the first plot. Don't remove these
-without deciding those links may 404.
-
-**`plots/:plotIds/export` mounts `PlotPage` with `exporting`**, following the
-rule rather than the backup page's exception: the dialog's whole state is two
-toggles and a plot id, all of which a URL can rebuild. **A manuscript is one
-plot line** — for the reason set out under `services/manuscript.ts` — so with
-several columns drawn it exports the *primary*, and reaching another one's
-manuscript is a tab click. Resist growing it a `:plotId` of its own: two ways to
-say which plot is the plot would undo the point of a primary.
-
-`StrictMode` is on in `main.tsx`. Assume every effect mounts, cleans up, and
-mounts again in dev, and write effects that survive it.
+`StrictMode` is on in `main.tsx`. Assume every effect mounts, cleans up and
+mounts again in dev.
 
 ## UI rules (summary — details in `src/components/AGENTS.md`)
 
 - React 19 function components with hooks. No class components, no web
-  components. The app was Lit until `89c4d13`; no `CustomEvent` bubbling, no
-  `dispatchEvent`, and no `request-confirm` pattern remains. Pass callbacks as
-  props, or use Context.
-- **MUI for everything.** There are zero `.css` files in the repo and it should
-  stay that way — style with `sx` / `styled()` and theme tokens. Never hardcode a
-  hex color (the permanently-dark `SideNav` is the one sanctioned exception), and
-  never hand-write an inline `<svg>` icon; use `@mui/icons-material`.
+  components, no `CustomEvent`/`dispatchEvent` (the app was Lit until
+  `89c4d13`). Pass callbacks as props, or use Context.
+- **MUI for everything.** Zero `.css` files — style with `sx` / `styled()` and
+  theme tokens. Never hardcode a hex colour (the permanently-dark `SideNav` is
+  the one exception), and never hand-write an inline `<svg>` icon; use
+  `@mui/icons-material`.
 - Anything destructive goes through `useConfirm()`'s `confirmAction`.
 - State: Context for what is shared (`TomesContext`, `TomeWorkspaceContext`,
   `ConfirmContext`, `ColorModeContext`), plain `useState` for page-local UI. No
   Redux, no Zustand.
 
-When you learn something durable and non-obvious about this codebase, add it to
-the relevant AGENTS.md — root for data, build, and routing; `src/components/`
-for UI.
+## Keeping this file small
+
+Put a module's reasoning in its header comment, where the next reader of that
+module will see it. Add to an AGENTS.md — root for data, build and routing;
+`src/components/` for UI — only a rule that spans files, or one someone would
+break without opening the file that explains it. Record how something was
+verified in the commit message, not here.

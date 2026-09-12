@@ -206,7 +206,9 @@ function SortablePlotTab({
  * columns is just the set of tabs switched on, and it lives in the URL.
  *
  * It also handles create, rename and delete, all of which act on the **primary**
- * plot: `columns[0]`, the one the tablist marks selected.
+ * plot: the URL's first id (`selected[0]` in `PlotPage`), passed in as
+ * `primary` — the one the tablist marks selected. Not `columns[0]`, which is
+ * whichever drawn plot sorts first.
  */
 export function PlotPicker({
   tome,
