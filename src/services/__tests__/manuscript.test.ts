@@ -88,7 +88,7 @@ const build = (
   options: Partial<ManuscriptOptions> = {},
 ) =>
   buildManuscript({
-    tomeTitle: "The Long Road",
+    tome: { title: "The Long Road" },
     plot: { id: "p", name: "Main plot" },
     beats,
     writeItems,
@@ -275,6 +275,61 @@ describe("buildManuscript", () => {
 
     expect(manuscript.beats).toEqual([]);
     expect(manuscript.words).toBe(0);
+  });
+});
+
+describe("buildManuscript — the title page", () => {
+  const beats = [beat("b1", 0, ["w1"])];
+  const items = [text("w1", "Scene", "passage", ["one two"])];
+  const cover = { kind: "url" as const, url: "https://example.com/cover.png" };
+
+  const titled = (
+    tome: { title: string; subtitle?: string; coverImage?: typeof cover },
+    author?: { name: string; pseudonym?: string },
+    options: Partial<ManuscriptOptions> = {},
+  ) =>
+    buildManuscript({
+      tome,
+      author,
+      plot: { id: "p", name: "Main plot" },
+      beats,
+      writeItems: items,
+      options: { ...defaultManuscriptOptions, ...options },
+    });
+
+  it("opens on one by default, carrying the cover, title, subtitle and pen name", () => {
+    const manuscript = titled(
+      { title: "Naked in Death", subtitle: "An In Death novel", coverImage: cover },
+      { name: "Nora Roberts", pseudonym: "J.D. Robb" },
+    );
+
+    expect(manuscript.titlePage).toEqual({
+      title: "Naked in Death",
+      subtitle: "An In Death novel",
+      byline: "J.D. Robb",
+      cover,
+    });
+  });
+
+  it("puts the author's own name on it when they write under no pen name", () => {
+    expect(titled({ title: "T" }, { name: "Nora Roberts" }).titlePage?.byline).toBe(
+      "Nora Roberts",
+    );
+  });
+
+  it("carries only what is there — no blank subtitle, byline or cover", () => {
+    expect(titled({ title: "T", subtitle: "   " }).titlePage).toEqual({ title: "T" });
+  });
+
+  it("has none when the author switches it off", () => {
+    expect(titled({ title: "T" }, undefined, { titlePage: false }).titlePage).toBeUndefined();
+  });
+
+  it("is not a beat, and adds nothing to the word count", () => {
+    const manuscript = titled({ title: "T", subtitle: "Three more words" });
+
+    expect(manuscript.beats).toHaveLength(1);
+    expect(manuscript.words).toBe(2);
   });
 });
 

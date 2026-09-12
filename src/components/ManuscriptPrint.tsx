@@ -1,6 +1,7 @@
 import { Box, GlobalStyles, Portal, Typography } from "@mui/material";
-import type { Manuscript } from "../services/manuscript";
+import type { Manuscript, ManuscriptTitlePage } from "../services/manuscript";
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
+import { useImageSrc } from "../hooks/useObjectUrl";
 import { StaticProse } from "./StaticProse";
 import { manuscriptSx, proseFontFamily, type ProseFace } from "./manuscriptStyles";
 
@@ -60,6 +61,78 @@ const inkSx = {
     },
 } as const;
 
+/**
+ * Resolves once every image in the print document has decoded — in practice,
+ * the cover on the title page. The browser snapshots the page when `print()`
+ * is called, and an image still loading at that moment prints as a blank box:
+ * an uploaded cover is only given its object URL in a layout effect, and a
+ * linked one has a network round trip ahead of it. A cover that fails to load
+ * does not hold the print up; it prints as whatever the browser draws for it.
+ */
+export const printImagesReady = () =>
+  Promise.all(
+    Array.from(document.querySelectorAll<HTMLImageElement>(`.${PRINT_ROOT} img`)).map(
+      (image) => image.decode().catch(() => undefined),
+    ),
+  );
+
+/**
+ * The title page: cover, title, subtitle and byline, centred on the page both
+ * ways. `100vh` is what makes that work on paper — in print a viewport unit
+ * resolves against the page's printable area, so the box is exactly one page
+ * tall inside the `@page` margins, whatever size of paper is chosen. Measured
+ * by printing to PDF, not assumed: the box filled the first page to its
+ * margins and the first beat opened on the second.
+ */
+function TitlePage({ page, face }: { page: ManuscriptTitlePage; face: ProseFace }) {
+  const cover = useImageSrc(page.cover);
+  return (
+    <Box
+      component="section"
+      sx={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        breakAfter: "page",
+        breakInside: "avoid",
+        overflow: "hidden",
+        fontFamily: proseFontFamily(face),
+        color: "#000",
+      }}
+    >
+      {cover && (
+        <Box
+          component="img"
+          src={cover}
+          alt=""
+          sx={{ maxWidth: "70%", maxHeight: "45vh", objectFit: "contain", mb: 5 }}
+        />
+      )}
+      <Typography
+        component="h1"
+        sx={{ fontFamily: "inherit", fontSize: "28pt", fontWeight: 700, lineHeight: 1.2 }}
+      >
+        {page.title}
+      </Typography>
+      {page.subtitle && (
+        <Typography
+          sx={{ fontFamily: "inherit", fontSize: "16pt", fontStyle: "italic", mt: 1.5 }}
+        >
+          {page.subtitle}
+        </Typography>
+      )}
+      {page.byline && (
+        <Typography sx={{ fontFamily: "inherit", fontSize: "15pt", mt: 5 }}>
+          {page.byline}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
 export function ManuscriptPrint({
   manuscript,
   face,
@@ -82,13 +155,15 @@ export function ManuscriptPrint({
         }}
       />
       <Box className={PRINT_ROOT} sx={{ background: "#fff" }}>
+        {manuscript.titlePage && <TitlePage page={manuscript.titlePage} face={face} />}
         {manuscript.beats.map((beat, index) => (
           <Box
             key={beat.beatId}
             component="section"
             sx={{
               // The first beat must not break, or the document opens on a blank
-              // page. Every later one does — that is the whole shape of this.
+              // page — the title page, when there is one, already breaks after
+              // itself. Every later one does; that is the whole shape of this.
               breakBefore: index === 0 ? "auto" : "page",
               ...(manuscriptSx(face) as object),
               fontSize: "12pt",

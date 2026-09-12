@@ -4,17 +4,20 @@ import {
   ExternalHyperlink,
   Header,
   HeadingLevel,
+  ImageRun,
   LevelFormat,
   PageNumber,
   Packer,
   Paragraph,
   TextRun,
+  VerticalAlignSection,
   type ILevelsOptions,
   type IParagraphOptions,
   type IRunOptions,
+  type ISectionOptions,
 } from "docx";
 import type { Align, Block, Inline, InlineFormat, ListEntry } from "../lexical/blocks";
-import type { Manuscript, ManuscriptBeat } from "./manuscript";
+import type { Manuscript, ManuscriptBeat, ManuscriptTitlePage } from "./manuscript";
 
 /**
  * A `Manuscript` as a Word document. Transport, not decision: `manuscript.ts`
@@ -278,13 +281,86 @@ export function manuscriptParagraphs(beats: ManuscriptBeat[]) {
   return { children, numbering };
 }
 
+/**
+ * The cover as bytes Word can embed, prepared by the caller. Reading a `Blob`
+ * and measuring an image both need the browser, so `ManuscriptExportDialog`
+ * does it and this module stays pure; `width`/`height` are the image's natural
+ * pixels, and only their ratio is used.
+ */
+export type DocxCover = {
+  data: Uint8Array;
+  type: "png" | "jpg" | "gif" | "bmp";
+  width: number;
+  height: number;
+};
+
+/**
+ * The largest the cover is drawn, in the pixels `docx` measures images in (96
+ * to the inch): four inches by four and a half, which leaves the title, the
+ * subtitle and the byline room on a page with one-inch margins.
+ */
+const COVER_BOX = { width: 384, height: 432 };
+
+const margins = { top: INCH, right: INCH, bottom: INCH, left: INCH };
+
+/**
+ * The title page as a section of its own, centred on the page by the section's
+ * `verticalAlign` — Word's own vertical centring, so it holds whatever paper
+ * size the reader prints on. Being a section is also what keeps it clear of
+ * the running header, and what lets the body restart its page count at 1.
+ *
+ * A cover that arrives as a web link has no bytes here to embed (the app never
+ * fetches one — see the root AGENTS.md), so the page goes without it and the
+ * dialog says so before the download.
+ */
+export function titlePageSection(page: ManuscriptTitlePage, cover?: DocxCover): ISectionOptions {
+  const children: Paragraph[] = [];
+  if (cover && cover.width > 0 && cover.height > 0) {
+    const scale = Math.min(COVER_BOX.width / cover.width, COVER_BOX.height / cover.height, 1);
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 480 },
+        children: [
+          new ImageRun({
+            type: cover.type,
+            data: cover.data,
+            transformation: {
+              width: Math.round(cover.width * scale),
+              height: Math.round(cover.height * scale),
+            },
+          }),
+        ],
+      }),
+    );
+  }
+  const line = (text: string, run: IRunOptions, after: number) =>
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { line: 276, after },
+      children: [new TextRun({ text, ...run })],
+    });
+  children.push(line(page.title, { size: 52, bold: true }, page.subtitle ? 160 : 480));
+  if (page.subtitle) children.push(line(page.subtitle, { size: 32, italics: true }, 480));
+  if (page.byline) children.push(line(page.byline, { size: 30 }, 0));
+  return {
+    properties: {
+      page: { margin: margins },
+      verticalAlign: VerticalAlignSection.CENTER,
+    },
+    children,
+  };
+}
+
 /** The document, ready to pack. Pure — nothing here touches the DOM. */
-export function manuscriptDocument(manuscript: Manuscript): Document {
+export function manuscriptDocument(manuscript: Manuscript, cover?: DocxCover): Document {
   const { children, numbering } = manuscriptParagraphs(manuscript.beats);
   const running = [manuscript.tomeTitle, manuscript.plotName].filter(Boolean).join(" — ");
+  const titlePage = manuscript.titlePage;
 
   return new Document({
     title: running,
+    ...(titlePage?.byline ? { creator: titlePage.byline } : {}),
     description: "Manuscript exported from myTome",
     styles: {
       default: {
@@ -309,9 +385,14 @@ export function manuscriptDocument(manuscript: Manuscript): Document {
     },
     numbering: { config: numbering },
     sections: [
+      ...(titlePage ? [titlePageSection(titlePage, cover)] : []),
       {
         properties: {
-          page: { margin: { top: INCH, right: INCH, bottom: INCH, left: INCH } },
+          page: {
+            margin: margins,
+            // A title page is unnumbered, so the text starts at page 1 behind it.
+            ...(titlePage ? { pageNumbers: { start: 1 } } : {}),
+          },
         },
         headers: {
           default: new Header({
@@ -334,5 +415,5 @@ export function manuscriptDocument(manuscript: Manuscript): Document {
 }
 
 /** The `.docx` bytes. The only impure step, and deliberately the last one. */
-export const manuscriptDocxBlob = (manuscript: Manuscript): Promise<Blob> =>
-  Packer.toBlob(manuscriptDocument(manuscript));
+export const manuscriptDocxBlob = (manuscript: Manuscript, cover?: DocxCover): Promise<Blob> =>
+  Packer.toBlob(manuscriptDocument(manuscript, cover));

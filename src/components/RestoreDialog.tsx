@@ -61,6 +61,9 @@ export function RestoreDialog({
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 2.5 }}>
           {count(summary.tomes.length, "tome")}
+          {summary.authors.length
+            ? ` and ${count(summary.authors.length, "author profile")}`
+            : ""}
           {made && !Number.isNaN(made.valueOf())
             ? `, backed up ${made.toLocaleString()}`
             : ""}
@@ -93,6 +96,29 @@ export function RestoreDialog({
               <MergeChip action={tome.mergeAction} mode={mode} />
             </Box>
           ))}
+          {/* Profiles get a line each rather than a card: one row, one name,
+              and a verdict of their own — they merge by their own date, not
+              with the tomes above. */}
+          {summary.authors.map((author) => (
+            <Box
+              key={author.id}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1.5,
+                px: 1.5,
+              }}
+            >
+              <Typography variant="body2" noWrap>
+                Author profile ·{" "}
+                <Box component="span" sx={{ fontWeight: 600 }}>
+                  {author.byline || "Unnamed"}
+                </Box>
+              </Typography>
+              <MergeChip action={author.mergeAction} mode={mode} />
+            </Box>
+          ))}
         </Stack>
 
         <RadioGroup
@@ -108,8 +134,9 @@ export function RestoreDialog({
                   Merge — keep whichever copy is newer
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Tomes you already have are only overwritten when the file holds
-                  newer work. Nothing else in this browser is touched.
+                  Tomes and author profiles you already have are only overwritten
+                  when the file holds a newer copy. Nothing else in this browser is
+                  touched.
                 </Typography>
               </Box>
             }
@@ -123,8 +150,8 @@ export function RestoreDialog({
                   Replace everything in this browser
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Deletes every tome here first, then loads the file exactly as it
-                  was backed up.
+                  Deletes every tome and author profile here first, then loads the
+                  file exactly as it was backed up.
                 </Typography>
               </Box>
             }
@@ -148,8 +175,8 @@ export function RestoreDialog({
         ) : null}
         {mode === "replace" ? (
           <Alert severity="warning" sx={{ mt: 2 }}>
-            Everything currently in this browser is deleted, including tomes this
-            file does not contain.
+            Everything currently in this browser is deleted, including tomes and
+            author profiles this file does not contain.
           </Alert>
         ) : null}
       </DialogContent>

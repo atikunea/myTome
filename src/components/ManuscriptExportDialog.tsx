@@ -16,18 +16,23 @@ import {
 } from "@mui/material";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
+import type { Author } from "../models/Author";
 import type { Plot, PlotItem } from "../models/Plot";
+import type { ImageSource, Tome } from "../models/Tome";
 import type { WriteItem } from "../models/WriteItem";
 import { writeItemTypeLabels, writeItemTypes } from "../models/WriteItem";
-import type { ManuscriptOptions } from "../services/manuscript";
+import type { ManuscriptOptions, ManuscriptTitlePage } from "../services/manuscript";
 import {
   buildManuscript,
   defaultManuscriptOptions,
   manuscriptFileName,
   summarizeSkips,
 } from "../services/manuscript";
+import type { DocxCover } from "../services/manuscriptDocx";
+import { store } from "../services/store";
 import { useProseFace } from "../context/ProseFaceContext";
-import { ManuscriptPrint } from "./ManuscriptPrint";
+import { useObservable } from "../hooks/useObservable";
+import { ManuscriptPrint, printImagesReady } from "./ManuscriptPrint";
 
 /**
  * Turns one plot line into a manuscript file.
@@ -53,14 +58,72 @@ function formatBeatNames(names: string[]) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
+/** The mime types `docx` embeds as they are. Anything else is redrawn as PNG. */
+const docxImageTypes: Record<string, DocxCover["type"]> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/bmp": "bmp",
+};
+
+/**
+ * An uploaded cover as bytes Word can embed, measured. It needs the browser —
+ * a `Blob`'s bytes, an image's natural size, a canvas for a format Word will
+ * not take (a WebP cover, say) — which is why it lives here, with the other
+ * transport, and `manuscriptDocx.ts` stays pure.
+ *
+ * A linked cover returns nothing: the app never fetches (the one fetch lives in
+ * `services/drive.ts`), and a cross-origin image would taint the canvas anyway.
+ * The dialog says so rather than dropping it quietly.
+ *
+ * The object URL lives for this one action and is revoked in it, the same
+ * create-and-revoke-together rule the download below follows.
+ */
+async function coverForDocx(image?: ImageSource): Promise<DocxCover | undefined> {
+  if (image?.kind !== "local") return undefined;
+  const url = URL.createObjectURL(image.blob);
+  try {
+    const element = new Image();
+    element.src = url;
+    await element.decode();
+    const { naturalWidth: width, naturalHeight: height } = element;
+    if (!width || !height) return undefined;
+    const type = docxImageTypes[image.blob.type];
+    if (type) return { data: new Uint8Array(await image.blob.arrayBuffer()), type, width, height };
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d")?.drawImage(element, 0, 0);
+    const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!png) return undefined;
+    return { data: new Uint8Array(await png.arrayBuffer()), type: "png", width, height };
+  } catch {
+    return undefined;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** "Cover, title, subtitle and J.D. Robb" — what the title page will carry, in words. */
+function describeTitlePage(page: ManuscriptTitlePage) {
+  const parts = [
+    page.cover ? "cover" : "",
+    "title",
+    page.subtitle ? "subtitle" : "",
+    page.byline ?? "",
+  ].filter(Boolean);
+  const text = formatBeatNames(parts);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function ManuscriptExportDialog({
-  tomeTitle,
+  tome,
   plot,
   beats,
   writeItems,
   onClose,
 }: {
-  tomeTitle: string;
+  tome: Tome;
   plot: Plot;
   beats: PlotItem[];
   writeItems: WriteItem[];
@@ -71,11 +134,27 @@ export function ManuscriptExportDialog({
   const [printing, setPrinting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  // `null` for an uncredited tome and for one whose profile has since gone —
+  // either way the title page simply has no byline.
+  const author = useObservable<Author | null>(
+    (cb) => store.observeAuthor(tome.authorId ?? "", cb),
+    [tome.authorId],
+  );
 
   const manuscript = useMemo(
-    () => buildManuscript({ tomeTitle, plot, beats, writeItems, options }),
-    [tomeTitle, plot, beats, writeItems, options],
+    () =>
+      buildManuscript({
+        tome,
+        author: author ?? undefined,
+        plot,
+        beats,
+        writeItems,
+        options,
+      }),
+    [tome, author, plot, beats, writeItems, options],
   );
+  const titlePage = manuscript.titlePage;
   const skips = summarizeSkips(manuscript.skipped);
   const empty = manuscript.beats.length === 0;
 
@@ -100,16 +179,19 @@ export function ManuscriptExportDialog({
         : [...current.types, type],
     }));
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     setError("");
     // The pages have to be in the DOM before `print()` is called, and React
     // would otherwise batch the state change until after it.
     flushSync(() => setPrinting(true));
+    // And the cover has to have loaded, or it prints as an empty box.
+    await printImagesReady();
     window.print();
   };
 
   const handleDownload = async () => {
     setError("");
+    setNote("");
     setBusy(true);
     try {
       // `docx` is half a megabyte and is the only thing in this app that needs
@@ -117,7 +199,12 @@ export function ManuscriptExportDialog({
       // shipped to everyone who opens a tome. This is also why the PDF goes
       // through the browser's own printer: nothing to download at all.
       const { manuscriptDocxBlob } = await import("../services/manuscriptDocx");
-      const blob = await manuscriptDocxBlob(manuscript);
+      const cover = titlePage?.cover ? await coverForDocx(titlePage.cover) : undefined;
+      // A linked cover is warned about before the click; an uploaded one that
+      // would not decode is only found out here, and is said aloud all the same.
+      if (titlePage?.cover?.kind === "local" && !cover)
+        setNote("The cover image could not be read, so the .docx title page goes without it.");
+      const blob = await manuscriptDocxBlob(manuscript, cover);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -175,6 +262,51 @@ export function ManuscriptExportDialog({
               }
               label="Open each beat with its title as a heading"
             />
+
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={options.titlePage}
+                    onChange={(event) =>
+                      setOptions((current) => ({
+                        ...current,
+                        titlePage: event.target.checked,
+                      }))
+                    }
+                  />
+                }
+                label="Begin with a title page"
+                // `Stack` zeroes the margin of its direct children, which is
+                // where the switch above sits; this one is inside a `Box`, so
+                // it drops MUI's -11px itself to line up with it.
+                sx={{ ml: 0 }}
+              />
+              {/* Under the label, past the switch's 58px. */}
+              {titlePage && (
+                <Stack spacing={0.25} sx={{ pl: "58px" }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {describeTitlePage(titlePage)}, centred on a page of its own.
+                  </Typography>
+                  {/* Said here rather than discovered on paper: the page is the
+                      tome's overview, one click away, and a title page with no
+                      name on it is the omission an author most wants to catch. */}
+                  {!titlePage.byline && (
+                    <Typography variant="caption" color="text.secondary">
+                      No author is credited — choose one on the tome’s overview to put
+                      a name on it.
+                    </Typography>
+                  )}
+                  {titlePage.cover?.kind === "url" && (
+                    <Typography variant="caption" color="warning.main">
+                      The cover is a web link, so the PDF shows it but the .docx
+                      goes without — upload the image on the overview to include
+                      it in both.
+                    </Typography>
+                  )}
+                </Stack>
+              )}
+            </Box>
 
             <Box>
               <Typography variant="body2">
@@ -246,6 +378,11 @@ export function ManuscriptExportDialog({
             )}
 
             {error && <Alert severity="error">{error}</Alert>}
+            {note && (
+              <Alert severity="warning" onClose={() => setNote("")}>
+                {note}
+              </Alert>
+            )}
 
             <Typography variant="caption" color="text.secondary">
               PDF goes through your browser’s print dialog — choose “Save as PDF”
@@ -256,7 +393,7 @@ export function ManuscriptExportDialog({
         <DialogActions>
           <Button onClick={onClose}>Close</Button>
           <Button
-            onClick={handlePrint}
+            onClick={() => void handlePrint()}
             disabled={empty}
             startIcon={<PictureAsPdfOutlinedIcon />}
           >

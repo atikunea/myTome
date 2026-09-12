@@ -16,10 +16,14 @@ import {
   Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import type { ImageSource, TomeStatus } from "../models/Tome";
+import type { Author } from "../models/Author";
+import { authorByline } from "../models/Author";
+import type { ImageSource, Tome, TomeStatus } from "../models/Tome";
 import { defaultTomeTemplateId, tomeTemplateById, tomeTemplates } from "../models/TomeTemplate";
 import { defaultPlotTemplateId, noPlotTemplateId } from "../models/PlotTemplate";
 import { store } from "../services/store";
+import { useTomes } from "../context/TomesContext";
+import { useObservable } from "../hooks/useObservable";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 import { ImagePicker } from "./ImagePicker";
 import { PlotTemplatePicker } from "./PlotTemplatePicker";
@@ -34,12 +38,31 @@ import { PlotTemplatePicker } from "./PlotTemplatePicker";
  * that it is a Lexical document. What is left here is the part a page cannot
  * do, because it happens before the tome exists: the two template pickers.
  */
+/**
+ * Which profile a new tome starts credited to: the one on the book most
+ * recently worked on, since the next book is most often the next in a series or
+ * at least under the same name — or the only profile, if there is just one.
+ * Several profiles and no credits yet is a genuine question, so it stays blank.
+ */
+function suggestedAuthor(tomes: Tome[], authors: Author[]) {
+  const live = new Set(authors.map((author) => author.id));
+  // `useTomes` is newest first, so the first live credit is the latest one.
+  const latest = tomes.find((tome) => tome.authorId && live.has(tome.authorId));
+  return latest?.authorId ?? (authors.length === 1 ? authors[0].id : "");
+}
+
 export function TomeFormDialog({ open }: { open: boolean }) {
   const navigate = useNavigate();
+  const tomes = useTomes();
+  const authors = useObservable<Author[]>((cb) => store.observeAuthors(cb), []) ?? [];
   const [error, setError] = useState("");
   const [coverImage, setCoverImage] = useState<ImageSource | undefined>();
   const [templateId, setTemplateId] = useState(defaultTomeTemplateId);
   const [plotTemplateId, setPlotTemplateId] = useState(defaultPlotTemplateId);
+  // `null` until the author picks, so the suggestion can follow the profiles
+  // as they load rather than freezing on the empty list of the first render.
+  const [authorId, setAuthorId] = useState<string | null>(null);
+  const chosenAuthor = authorId ?? suggestedAuthor(tomes, authors);
   const template = tomeTemplateById(templateId);
 
   const close = () => navigate("/tomes");
@@ -55,6 +78,7 @@ export function TomeFormDialog({ open }: { open: boolean }) {
         description: String(data.get("description") ?? ""),
         status: data.get("status") as TomeStatus,
         coverImage,
+        authorId: chosenAuthor,
       });
       await store.applyTomeTemplate(saved.id, templateId);
       // "No plot line" writes nothing at all: PlotPage's ensureDefaultPlot
@@ -91,6 +115,26 @@ export function TomeFormDialog({ open }: { open: boolean }) {
             </Stack>
             <TextField name="title" label="Title" required fullWidth />
             <TextField name="subtitle" label="Subtitle" fullWidth />
+            {/* Only once there is a profile to choose: before that the question
+                has no answers, and the overview offers "New author…" anyway. */}
+            {authors.length ? (
+              <TextField
+                select
+                label="Author"
+                value={chosenAuthor}
+                onChange={(event) => setAuthorId(event.target.value)}
+                fullWidth
+              >
+                <MenuItem value="">
+                  <Typography color="text.secondary">No author</Typography>
+                </MenuItem>
+                {authors.map((author) => (
+                  <MenuItem key={author.id} value={author.id}>
+                    {authorByline(author)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : null}
             {/*
               Plain text, wrapped into a document by `saveTome`. A first line
               about the book is worth asking for while the author is already

@@ -1,7 +1,8 @@
+import { authorByline } from "../models/Author";
 import { parseBackup, store } from "./store";
-import type { BackupFile } from "./store";
+import type { BackupFile, RestoreResult } from "./store";
 import { planSync } from "./syncPlan";
-import type { LocalTome, RemoteTome, SyncPlan } from "./syncPlan";
+import type { LocalCopy, RemoteCopy, SyncPlan } from "./syncPlan";
 
 /**
  * Google Drive as a place to keep the backup files — the app's one and only
@@ -11,7 +12,9 @@ import type { LocalTome, RemoteTome, SyncPlan } from "./syncPlan";
  * from `backup.ts`, arriving through the same `parseBackup` a hand-picked file
  * goes through, and merging through the same `restoreBackup(file, "merge")`.
  * Drive holds one file per tome, so a typo in one book does not rewrite the
- * library, and a conflict is scoped to the book it happened in.
+ * library, and a conflict is scoped to the book it happened in — and one file
+ * per author profile, because a byline is shared by every tome crediting it
+ * and so cannot be settled inside any one of them (see `syncPlan.ts`).
  *
  * Rules this module is built around, all of them security-shaped:
  *
@@ -219,30 +222,46 @@ const folder = async () => {
   return made.id;
 };
 
+/** The two kinds of file in the folder. Each is planned on its own. */
+type Kind = "tome" | "author";
+
+/**
+ * Which `appProperties` key names the unit a file holds. A tome file has
+ * carried `tomeId` since sync shipped; a profile file carries `authorId`
+ * instead, which is also what keeps an older build — whose planner skips any
+ * file without a `tomeId` — from mistaking one for a tome.
+ */
+const idKey = { tome: "tomeId", author: "authorId" } as const;
+
 interface DriveFile {
   id: string;
   name: string;
   modifiedTime: string;
-  appProperties?: { tomeId?: string; touchedAt?: string };
+  appProperties?: { tomeId?: string; authorId?: string; touchedAt?: string };
 }
 
 /**
- * What is in the folder, and which tome each file holds — read from
+ * What is in the folder, and which tome or profile each file holds — read from
  * `appProperties`, Drive's private-to-the-app metadata, so a plan can be made
  * without downloading a single manuscript.
  */
-const listRemote = async (folderId: string): Promise<RemoteTome[]> => {
+const listRemote = async (folderId: string): Promise<Record<Kind, RemoteCopy[]>> => {
   const query = `'${folderId}' in parents and trashed = false`;
   const listed = await json<{ files: DriveFile[] }>(
     `${apiRoot}/files?q=${encodeURIComponent(query)}` +
       "&fields=files(id,name,modifiedTime,appProperties)&spaces=drive&pageSize=1000",
   );
-  return (listed.files ?? []).map((file) => ({
-    fileId: file.id,
-    tomeId: file.appProperties?.tomeId ?? "",
-    touchedAt: file.appProperties?.touchedAt ?? "",
-    modifiedTime: file.modifiedTime,
-  }));
+  const copies: Record<Kind, RemoteCopy[]> = { tome: [], author: [] };
+  for (const file of listed.files ?? []) {
+    const kind: Kind = file.appProperties?.authorId ? "author" : "tome";
+    copies[kind].push({
+      fileId: file.id,
+      id: file.appProperties?.[idKey[kind]] ?? "",
+      touchedAt: file.appProperties?.touchedAt ?? "",
+      modifiedTime: file.modifiedTime,
+    });
+  }
+  return copies;
 };
 
 const download = async (fileId: string) =>
@@ -267,25 +286,29 @@ const multipart = (metadata: object, body: string) => {
   };
 };
 
-const fileNameFor = (title: string) =>
-  `${title.trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 80) || "tome"}.mytome.json`;
+/** `The Long Road.mytome.json`, or `J.D. Robb.author.mytome.json` for a profile. */
+const fileNameFor = (kind: Kind, title: string) => {
+  const base = title.trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 80) || kind;
+  return `${base}${kind === "author" ? ".author" : ""}.mytome.json`;
+};
 
 /**
- * Writes one tome's file. When it already exists the file's `modifiedTime` is
- * re-read first and the write is abandoned if Drive moved underneath the plan —
- * a read-modify-write with a check, which narrows the race rather than closing
- * it. The next sync sees the newer file and pulls it.
+ * Writes one tome's or profile's file. When it already exists the file's
+ * `modifiedTime` is re-read first and the write is abandoned if Drive moved
+ * underneath the plan — a read-modify-write with a check, which narrows the
+ * race rather than closing it. The next sync sees the newer file and pulls it.
  */
 const upload = async (
   folderId: string,
+  kind: Kind,
   file: BackupFile,
-  tome: LocalTome,
-  existing?: RemoteTome,
+  copy: LocalCopy,
+  existing?: RemoteCopy,
 ) => {
   const metadata: Record<string, unknown> = {
-    name: fileNameFor(tome.title),
+    name: fileNameFor(kind, copy.title),
     mimeType: "application/json",
-    appProperties: { tomeId: tome.id, touchedAt: tome.touchedAt },
+    appProperties: { [idKey[kind]]: copy.id, touchedAt: copy.touchedAt },
   };
   if (existing) {
     const current = await json<DriveFile>(
@@ -307,61 +330,100 @@ const upload = async (
   return true;
 };
 
-export interface SyncReport {
+/** What moved, by name. A profile is named by its byline. */
+export interface SyncMoves {
   pulled: string[];
   pushed: string[];
-  matched: number;
-  /** Tomes skipped because Drive changed mid-sync; run again to settle them. */
+  /** Skipped because Drive changed mid-sync; run again to settle them. */
   raced: string[];
+}
+
+export interface SyncReport {
+  tomes: SyncMoves;
+  authors: SyncMoves;
+  /** Tomes and profiles alike that already matched. */
+  matched: number;
   duplicates: number;
   at: string;
 }
 
 /**
- * One round trip: list, plan, then move only what the plan names.
+ * Carries out one kind's plan. The two kinds differ only in how a copy is
+ * exported and how a merged file is read back, which is all `unit` supplies.
  *
- * Pulls run before pushes so that a tome newer in Drive is merged in before its
- * own high-water mark is compared again — and because a pull is the half that
- * can lose work if it goes wrong, it is the half that runs while the local copy
- * is still untouched.
+ * Pulls run before pushes so that a unit newer in Drive is merged in before its
+ * own mark is compared again — and because a pull is the half that can lose
+ * work if it goes wrong, it is the half that runs while the local copy is still
+ * untouched.
+ */
+const carryOut = async (
+  folderId: string,
+  kind: Kind,
+  plan: SyncPlan,
+  remote: RemoteCopy[],
+  local: LocalCopy[],
+  unit: {
+    exportCopy: (id: string) => Promise<BackupFile>;
+    /** The name a pulled file goes by, and whether its copy was the one kept. */
+    merged: (file: BackupFile, result: RestoreResult) => { name?: string; kept: boolean };
+  },
+): Promise<SyncMoves> => {
+  const moves: SyncMoves = { pulled: [], pushed: [], raced: [] };
+  const byId = new Map(remote.map((file) => [file.id, file]));
+  const nameOf = new Map(local.map((copy) => [copy.id, copy.title]));
+
+  for (const file of plan.pull) {
+    const backup = parseBackup(await download(file.fileId));
+    const { name, kept } = unit.merged(backup, await store.restoreBackup(backup, "merge"));
+    const title = name ?? nameOf.get(file.id) ?? (kind === "tome" ? "A tome" : "A profile");
+    // `kept` means the local copy turned out to be newer after all — the file
+    // was stale by the time it landed. Nothing was lost; the push below sends
+    // this browser's copy up instead.
+    (kept ? moves.raced : moves.pulled).push(title);
+  }
+
+  for (const copy of plan.push) {
+    const file = await unit.exportCopy(copy.id);
+    const written = await upload(folderId, kind, file, copy, byId.get(copy.id));
+    (written ? moves.pushed : moves.raced).push(copy.title);
+  }
+  return moves;
+};
+
+/**
+ * One round trip: list, plan, then move only what the plan names — profiles
+ * first, so a tome arriving in the same sync already has its byline here.
  */
 export const syncNow = async (): Promise<SyncReport> => {
   await authorize();
   const folderId = await folder();
   const remote = await listRemote(folderId);
-  const local = await store.tomeMarks();
-  const plan: SyncPlan = planSync(local, remote);
-  const byTome = new Map(remote.map((file) => [file.tomeId, file]));
-  const titleOf = new Map(local.map((tome) => [tome.id, tome.title]));
-  const report: SyncReport = {
-    pulled: [],
-    pushed: [],
-    matched: plan.matched.length,
-    raced: [],
-    duplicates: plan.duplicates.length,
-    at: new Date().toISOString(),
+  const localAuthors = await store.authorMarks();
+  const localTomes = await store.tomeMarks();
+  const authorPlan = planSync(localAuthors, remote.author);
+  const tomePlan = planSync(localTomes, remote.tome);
+  const at = new Date().toISOString();
+
+  const authors = await carryOut(folderId, "author", authorPlan, remote.author, localAuthors, {
+    exportCopy: (id) => store.exportAuthorBackup(id),
+    merged: (file, result) => ({
+      name: file.authors[0] && authorByline(file.authors[0]),
+      kept: result.authors.kept > 0,
+    }),
+  });
+  const tomes = await carryOut(folderId, "tome", tomePlan, remote.tome, localTomes, {
+    exportCopy: (id) => store.exportTomeBackup(id),
+    merged: (file, result) => ({ name: file.tomes[0]?.tome.title, kept: result.kept > 0 }),
+  });
+
+  rememberSync(at);
+  return {
+    tomes,
+    authors,
+    matched: tomePlan.matched.length + authorPlan.matched.length,
+    duplicates: tomePlan.duplicates.length + authorPlan.duplicates.length,
+    at,
   };
-
-  for (const file of plan.pull) {
-    const backup = parseBackup(await download(file.fileId));
-    const result = await store.restoreBackup(backup, "merge");
-    const title = backup.tomes[0]?.tome.title ?? titleOf.get(file.tomeId) ?? "A tome";
-    // `kept` means the local copy turned out to be newer after all — the file
-    // was stale by the time it landed. Nothing was lost; the push below sends
-    // this browser's copy up instead.
-    if (result.kept) report.raced.push(title);
-    else report.pulled.push(title);
-  }
-
-  for (const tome of plan.push) {
-    const file = await store.exportTomeBackup(tome.id);
-    const written = await upload(folderId, file, tome, byTome.get(tome.id));
-    if (written) report.pushed.push(tome.title);
-    else report.raced.push(tome.title);
-  }
-
-  rememberSync(report.at);
-  return report;
 };
 
 /**

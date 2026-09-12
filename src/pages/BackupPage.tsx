@@ -96,11 +96,15 @@ export function BackupPage() {
     setError("");
     try {
       const result = await store.restoreBackup(picked.file, mode);
+      const profiles = result.authors.added + result.authors.replaced;
       setPicked(null);
       setNotice(
-        mode === "replace"
+        (mode === "replace"
           ? `Restored ${result.added === 1 ? "1 tome" : `${result.added} tomes`} from ${picked.name}.`
-          : `Merged ${picked.name}: ${result.added} added, ${result.replaced} updated, ${result.kept} left alone.`,
+          : `Merged ${picked.name}: ${result.added} added, ${result.replaced} updated, ${result.kept} left alone.`) +
+          (profiles
+            ? ` ${profiles === 1 ? "1 author profile" : `${profiles} author profiles`} came in with it.`
+            : ""),
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The restore did not finish.");
@@ -156,8 +160,8 @@ export function BackupPage() {
             Back up everything
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Every tome in this browser — elements, plots, beats and prose — in one
-            file.
+            Every tome in this browser — elements, plots, beats and prose — and
+            every author profile, in one file.
           </Typography>
           <Button
             startIcon={<DownloadIcon />}
@@ -203,7 +207,8 @@ export function BackupPage() {
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
             A single-tome file restores the same way, so this is also how you hand
-            one book to another browser without carrying the rest.
+            one book to another browser without carrying the rest. It brings the
+            book’s author profile with it.
           </Typography>
           {tomes.length ? (
             <Stack divider={<Divider />}>

@@ -25,13 +25,13 @@ export function PrivacyPolicyPage() {
     <PolicyPage
       title="Privacy"
       lede="myTome has no server, no accounts, and no analytics. Your writing stays in this browser unless you deliberately move it somewhere else."
-      updated="6 September 2026"
+      updated="12 September 2026"
       sibling={{ to: "/terms", label: "Terms of use" }}
     >
       <PolicySection title="The short version">
         <PolicyParagraph>
-          Everything you write — tomes, element types, elements, relationships,
-          plots, beats and prose — is saved by your own browser, on your own
+          Everything you write — tomes, author profiles, element types, elements,
+          relationships, plots, beats and prose — is saved by your own browser, on your own
           machine. None of it is sent to us, because there is nowhere to send it:
           myTome is a static site with no backend, nothing for you to sign up for,
           and no database of yours that anyone else holds.
@@ -46,8 +46,8 @@ export function PrivacyPolicyPage() {
         <PolicyParagraph>All of it lives in this browser, for this site only:</PolicyParagraph>
         <PolicyBullets
           items={[
-            "Your work — tomes, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
-            "Cover and element images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
+            "Your work — tomes, author profiles, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
+            "Cover, element and author images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
             "Three small preferences: light or dark mode, your prose typeface, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
           ]}
         />
@@ -84,20 +84,20 @@ export function PrivacyPolicyPage() {
 
       <PolicySection title="Google Drive sync (optional)">
         <PolicyParagraph>
-          If you connect Google Drive, myTome keeps one backup file per tome in a
-          myTome folder in your own Drive, so a second browser signed in as you
-          finds the same books. The sync runs entirely in this tab, between you
+          If you connect Google Drive, myTome keeps one backup file per tome, and
+          one per author profile, in a myTome folder in your own Drive, so a
+          second browser signed in as you finds the same books. The sync runs entirely in this tab, between you
           and Google. It stays off until you click Connect, and a build without a
           configured Google client id cannot do it at all.
         </PolicyParagraph>
         <PolicyBullets
           items={[
-            "What is sent: the contents of the tomes being synced, as the same backup files you could download by hand. Nothing else about you or your machine is included.",
+            "What is sent: the contents of the tomes and author profiles being synced, as the same backup files you could download by hand. Nothing else about you or your machine is included.",
             "Who receives it: Google, into your own Drive account. What happens to it there is governed by Google's privacy policy and your Drive settings; we never see it and have no access to it.",
             "What access is asked for: per-file access to files this app created itself. It cannot see, list, or touch anything else in your Drive.",
             "The sign-in token is held in memory, in this tab only. It is never written to disk, expires after about an hour, and closing the tab ends it.",
             "Google's sign-in script is loaded the first time you connect — never on an ordinary page load — so ignoring Drive means never running Google's code.",
-            "Sync never deletes anything from Drive. A tome you delete here stays in your Drive until you delete that file yourself, and will come back on the next sync.",
+            "Sync never deletes anything from Drive. A tome or author profile you delete here stays in your Drive until you delete that file yourself, and will come back on the next sync.",
           ]}
         />
       </PolicySection>
@@ -115,7 +115,8 @@ export function PrivacyPolicyPage() {
       <PolicySection title="Deleting your data">
         <PolicyParagraph>
           Deleting a tome in the app removes it and everything in it from this
-          browser immediately. To remove everything at once, clear this site's
+          browser immediately, and deleting an author profile does the same for
+          the profile. To remove everything at once, clear this site's
           data in your browser settings — that erases the database and the
           preferences with it, and there is no copy elsewhere for anyone to hold.
         </PolicyParagraph>

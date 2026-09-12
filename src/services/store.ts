@@ -1,3 +1,4 @@
+import { authorStore } from "./authors";
 import { backupStore } from "./backup";
 import { elementStore } from "./elements";
 import { elementTypeStore } from "./elementTypes";
@@ -29,6 +30,7 @@ import { writeItemStore } from "./writeItems";
  */
 export const store = {
   ...tomeStore,
+  ...authorStore,
   ...templateStore,
   ...elementTypeStore,
   ...elementStore,
@@ -43,6 +45,7 @@ export const store = {
 // before a mutation, not reads or writes of their own.
 export { backupFileName, parseBackup } from "./backup";
 export type {
+  BackupAuthorSummary,
   BackupFile,
   BackupSummary,
   BackupTomeSummary,

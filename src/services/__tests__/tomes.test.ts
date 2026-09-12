@@ -167,4 +167,36 @@ describe("updateTome", () => {
       /no longer exists/,
     );
   });
+
+  it("credits an author, and clears the credit on a blank", async () => {
+    const tome = await draft();
+    const author = await store.createDraftAuthor();
+
+    const credited = await store.updateTome(tome.id, { authorId: author.id });
+    const cleared = await store.updateTome(tome.id, { authorId: "" });
+
+    expect(credited.authorId).toBe(author.id);
+    expect(cleared.authorId).toBeUndefined();
+  });
+
+  it("refuses to credit a profile that is gone, leaving the credit as it was", async () => {
+    const tome = await draft();
+    const author = await store.createDraftAuthor();
+    await store.updateTome(tome.id, { authorId: author.id });
+
+    await expect(store.updateTome(tome.id, { authorId: "gone" })).rejects.toThrow(
+      /author no longer exists/,
+    );
+    expect((await db.tomes.get(tome.id))!.authorId).toBe(author.id);
+  });
+
+  it("keeps the credit across an edit to anything else", async () => {
+    const tome = await draft();
+    const author = await store.createDraftAuthor();
+    await store.updateTome(tome.id, { authorId: author.id });
+
+    const renamed = await store.updateTome(tome.id, { title: "The Longer Road" });
+
+    expect(renamed.authorId).toBe(author.id);
+  });
 });

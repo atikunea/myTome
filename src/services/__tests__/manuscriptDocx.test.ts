@@ -1,8 +1,9 @@
-import { Packer } from "docx";
+import { Packer, VerticalAlignSection } from "docx";
 import { describe, expect, it } from "vitest";
 import type { Block } from "../../lexical/blocks";
-import type { Manuscript, ManuscriptBeat } from "../manuscript";
-import { manuscriptDocument, manuscriptParagraphs } from "../manuscriptDocx";
+import type { Manuscript, ManuscriptBeat, ManuscriptTitlePage } from "../manuscript";
+import type { DocxCover } from "../manuscriptDocx";
+import { manuscriptDocument, manuscriptParagraphs, titlePageSection } from "../manuscriptDocx";
 
 /**
  * The Word mapping, tested where it is ours: which paragraph opens a page, and
@@ -206,5 +207,74 @@ describe("manuscriptDocument", () => {
 
   it("packs an empty manuscript rather than throwing", async () => {
     await expect(Packer.toBuffer(manuscriptDocument(manuscript([])))).resolves.toBeTruthy();
+  });
+
+  it("packs a title page with an embedded cover", async () => {
+    // Eight bytes of PNG signature: `docx` embeds what it is given, and the
+    // test is that the section and the image relationship are coherent enough
+    // to pack, not that Word can decode a picture.
+    const cover: DocxCover = {
+      data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      type: "png",
+      width: 600,
+      height: 900,
+    };
+    const document = manuscriptDocument(
+      { ...manuscript([beat("b1", [para("one")])]), titlePage: titlePage },
+      cover,
+    );
+    const bytes = await Packer.toBuffer(document);
+    expect(String.fromCharCode(bytes[0], bytes[1])).toBe("PK");
+  });
+});
+
+const titlePage: ManuscriptTitlePage = {
+  title: "Naked in Death",
+  subtitle: "An In Death novel",
+  byline: "J.D. Robb",
+};
+
+describe("titlePageSection", () => {
+  const paragraphs = (cover?: DocxCover, page = titlePage) =>
+    (titlePageSection(page, cover).children as unknown[]).map(textOf);
+
+  it("centres the page vertically, as a section of its own", () => {
+    const section = titlePageSection(titlePage);
+
+    expect(section.properties?.verticalAlign).toBe(VerticalAlignSection.CENTER);
+    // No header: the running title and page number belong to the text.
+    expect(section.headers).toBeUndefined();
+  });
+
+  it("writes the title, subtitle and byline in that order", () => {
+    expect(paragraphs()).toEqual(["Naked in Death", "An In Death novel", "J.D. Robb"]);
+  });
+
+  it("writes only the lines there is something for", () => {
+    expect(paragraphs(undefined, { title: "Untold" })).toEqual(["Untold"]);
+  });
+
+  it("puts the cover above the title, scaled into its box by its own proportions", () => {
+    const section = titlePageSection(titlePage, {
+      data: new Uint8Array([1]),
+      type: "png",
+      width: 1200,
+      height: 1800,
+    });
+    const first = (section.children as unknown[])[0];
+
+    expect(keys(first as Node)).toContain("w:drawing");
+    expect(paragraphs().length + 1).toBe((section.children as unknown[]).length);
+  });
+
+  it("goes without a cover it could not measure rather than drawing it at no size", () => {
+    const section = titlePageSection(titlePage, {
+      data: new Uint8Array([1]),
+      type: "png",
+      width: 0,
+      height: 0,
+    });
+
+    expect((section.children as unknown[]).map(textOf)).toEqual(paragraphs());
   });
 });

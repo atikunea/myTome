@@ -1,4 +1,7 @@
+import type { Author } from "../models/Author";
+import { authorByline } from "../models/Author";
 import type { Plot, PlotItem } from "../models/Plot";
+import type { ImageSource, Tome } from "../models/Tome";
 import type { WriteItem, WriteItemType } from "../models/WriteItem";
 import { untitledWriteItem } from "../models/WriteItem";
 import type { Block } from "../lexical/blocks";
@@ -29,12 +32,15 @@ export type ManuscriptOptions = {
   types: WriteItemType[];
   /** Whether each beat opens with its title as a heading. */
   beatHeadings: boolean;
+  /** Whether the document opens on a title page — see `ManuscriptTitlePage`. */
+  titlePage: boolean;
 };
 
 export const defaultManuscriptOptions: ManuscriptOptions = {
   // Lore is background material and a snippet is scratch; neither is the book.
   types: ["passage", "chapter"],
   beatHeadings: true,
+  titlePage: true,
 };
 
 export type ManuscriptSection = {
@@ -84,9 +90,31 @@ export type ManuscriptRepeat = {
   beatNames: string[];
 };
 
+/**
+ * The page a manuscript opens on: the book's cover, title, subtitle and byline,
+ * centred on the page both ways, and nothing else on it.
+ *
+ * Only what is actually there is carried — a blank subtitle, an uncredited tome
+ * or a book with no cover simply has no entry, so neither writer has to decide
+ * whether an empty string deserves a line. The byline is the credited profile's
+ * pen name, or the author's own name when they have none: that is what a title
+ * page says, and `authorByline` is the one place the rule lives.
+ *
+ * It is a page of its own rather than a heading on the first beat, so it is
+ * never counted as a beat and adds nothing to the word count.
+ */
+export type ManuscriptTitlePage = {
+  title: string;
+  subtitle?: string;
+  byline?: string;
+  cover?: ImageSource;
+};
+
 export type Manuscript = {
   tomeTitle: string;
   plotName: string;
+  /** Present only when `options.titlePage` asked for one. */
+  titlePage?: ManuscriptTitlePage;
   beats: ManuscriptBeat[];
   words: number;
   repeated: ManuscriptRepeat[];
@@ -124,13 +152,16 @@ const itemTitle = (item: WriteItem) => item.title.trim() || untitledWriteItem;
  * an accidental double-compose is visible without being decided for them.
  */
 export function buildManuscript({
-  tomeTitle,
+  tome,
+  author,
   plot,
   beats,
   writeItems,
   options,
 }: {
-  tomeTitle: string;
+  tome: Pick<Tome, "title" | "subtitle" | "coverImage">;
+  /** The profile the tome credits, if it credits one that still exists. */
+  author?: Pick<Author, "name" | "pseudonym">;
   plot: Pick<Plot, "id" | "name">;
   beats: PlotItem[];
   writeItems: WriteItem[];
@@ -205,9 +236,21 @@ export function buildManuscript({
     if (seen.beatNames.length > 1)
       repeated.push({ writeItemId, title: seen.title, beatNames: seen.beatNames });
 
+  const subtitle = tome.subtitle?.trim();
+  const byline = author && authorByline(author);
   return {
-    tomeTitle,
+    tomeTitle: tome.title,
     plotName: plot.name,
+    ...(options.titlePage
+      ? {
+          titlePage: {
+            title: tome.title.trim(),
+            ...(subtitle ? { subtitle } : {}),
+            ...(byline ? { byline } : {}),
+            ...(tome.coverImage ? { cover: tome.coverImage } : {}),
+          },
+        }
+      : {}),
     beats: built,
     words: built.reduce((total, beat) => total + beat.words, 0),
     repeated,

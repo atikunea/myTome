@@ -41,6 +41,7 @@ export const tomeStore = {
       ...tomeDescription(input.description),
       status: input.status,
       coverImage: input.coverImage,
+      authorId: input.authorId || undefined,
       createdAt: existing?.createdAt ?? time,
       updatedAt: time,
       archivedAt:
@@ -67,12 +68,19 @@ export const tomeStore = {
   async updateTome(
     id: string,
     patch: Partial<
-      Pick<Tome, "title" | "subtitle" | "description" | "status" | "coverImage">
+      Pick<
+        Tome,
+        "title" | "subtitle" | "description" | "status" | "coverImage" | "authorId"
+      >
     >,
   ) {
-    return db.transaction("rw", db.tomes, async () => {
+    return db.transaction("rw", db.tomes, db.authors, async () => {
       const existing = await db.tomes.get(id);
       if (!existing) throw new Error("That tome no longer exists.");
+      // Checked rather than trusted: the picker offers only live profiles, but
+      // another tab can delete one between the render and the click.
+      if (patch.authorId && !(await db.authors.get(patch.authorId)))
+        throw new Error("That author no longer exists.");
       const merged = { ...existing, ...patch };
       const time = now();
       const tome: Tome = {
@@ -80,6 +88,8 @@ export const tomeStore = {
         title: merged.title.trim(),
         subtitle: merged.subtitle?.trim() || undefined,
         ...tomeDescription(merged.description),
+        // Blank is "no author", and has one representation.
+        authorId: merged.authorId || undefined,
         updatedAt: time,
         archivedAt:
           merged.status === "Archived" ? (existing.archivedAt ?? time) : undefined,

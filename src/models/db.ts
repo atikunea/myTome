@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable, type Transaction } from "dexie";
+import type { Author } from "./Author";
 import type { Tome } from "./Tome";
 import type { Element } from "./Element";
 import type { ElementType } from "./ElementType";
@@ -154,6 +155,7 @@ export class MyTomeDB extends Dexie {
   plotRows!: EntityTable<PlotRow, "id">;
   plotItems!: EntityTable<PlotItem, "id">;
   writeItems!: EntityTable<WriteItem, "id">;
+  authors!: EntityTable<Author, "id">;
   constructor(name = "myTomeDB") {
     super(name);
     this.version(2).stores({
@@ -252,6 +254,14 @@ export class MyTomeDB extends Dexie {
         tomes: "id, status, updatedAt, title",
       })
       .upgrade(backfillTomeProse);
+    // v11 adds author profiles: `authors` is a new table (no upgrade — rule 2),
+    // and `Tome.authorId` is a new field that needs none either, because it is
+    // optional and `undefined` is exactly right for a tome nobody has credited
+    // yet. Nothing reads it as an array or indexes it; the cascade on deleting
+    // an author scans the tomes table, which is one row per book.
+    this.version(11).stores({
+      authors: "id, name",
+    });
   }
 }
 export const db = new MyTomeDB();

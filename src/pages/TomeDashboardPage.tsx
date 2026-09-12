@@ -18,6 +18,7 @@ import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useProseFace } from "../context/ProseFaceContext";
+import { AuthorPicker } from "../components/AuthorPicker";
 import { ImagePicker } from "../components/ImagePicker";
 import { InlineTextField } from "../components/InlineTextField";
 import { ProseField } from "../components/ProseField";
@@ -189,6 +190,11 @@ function TomeOverview({ tome }: { tome: Tome }) {
           onFocus={() => setActive(null)}
           sx={{ fontSize: "1.3rem", lineHeight: 1.3 }}
         />
+      </Box>
+      {/* The byline sits under the title and subtitle because that is where a
+          title page puts it — and the title page is what it decides. */}
+      <Box sx={{ mt: 0.5 }}>
+        <AuthorPicker tome={tome} onChange={(authorId) => void patch({ authorId })} />
       </Box>
 
       <Box sx={{ mt: 3 }}>

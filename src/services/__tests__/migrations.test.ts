@@ -92,14 +92,14 @@ const names: string[] = [];
 
 /** Opens a database stamped at an old version, seeds it, and closes it again. */
 const seedLegacy = async (
-  version: 4 | 6 | 7 | 8 | 9,
+  version: 4 | 6 | 7 | 8 | 9 | 10,
   seed: (write: (table: string, rows: unknown[]) => Promise<unknown>) => Promise<void>,
 ) => {
   const name = `myTomeDB-test-${crypto.randomUUID()}`;
   names.push(name);
   const old = new Dexie(name);
-  // v8 and v9 added fields, not indexes, so both are stamped over v7's stores.
-  const stores = { 4: v4Stores, 6: v6Stores, 7: v7Stores, 8: v7Stores, 9: v7Stores }[version];
+  // v8, v9 and v10 added fields, not indexes, so all three are stamped over v7's stores.
+  const stores = { 4: v4Stores, 6: v6Stores, 7: v7Stores, 8: v7Stores, 9: v7Stores, 10: v7Stores }[version];
   old.version(version).stores(stores);
   await old.open();
   await seed((table, rows) => old.table(table).bulkAdd(rows));
@@ -111,7 +111,7 @@ const seedLegacy = async (
 const upgrade = async (name: string) => {
   const db = new MyTomeDB(name);
   await db.open();
-  expect(db.verno).toBe(10);
+  expect(db.verno).toBe(11);
   const items = await db.plotItems.toArray();
   const rows = await db.plotRows.toArray();
   db.close();
@@ -370,7 +370,7 @@ describe("v9 — backfillElementProse", () => {
   const upgradeElements = async (name: string) => {
     const db = new MyTomeDB(name);
     await db.open();
-    expect(db.verno).toBe(10);
+    expect(db.verno).toBe(11);
     const elements = await db.elements.toArray();
     db.close();
     return elements;
@@ -446,7 +446,7 @@ describe("v10 — backfillTomeProse", () => {
   const upgradeTomes = async (name: string) => {
     const db = new MyTomeDB(name);
     await db.open();
-    expect(db.verno).toBe(10);
+    expect(db.verno).toBe(11);
     const tomes = await db.tomes.toArray();
     db.close();
     return tomes;
@@ -490,5 +490,35 @@ describe("v10 — backfillTomeProse", () => {
     // text is JSON — the failure `isProseDocument` exists to prevent.
     expect(after!.description).toBe(before);
     expect(after!.descriptionText).toBe("A war.");
+  });
+});
+
+describe("v11 — author profiles", () => {
+  it("adds the authors table without touching a tome, which is left uncredited", async () => {
+    const name = await seedLegacy(10, async (write) => {
+      await write("tomes", [
+        {
+          id: "t1",
+          title: "The Long Road",
+          description: "",
+          descriptionText: "",
+          status: "Draft",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          updatedAt: "2024-01-01T00:00:00.000Z",
+        },
+      ]);
+    });
+
+    const db = new MyTomeDB(name);
+    await db.open();
+    const tome = await db.tomes.get("t1");
+    const authors = await db.authors.toArray();
+    db.close();
+
+    // No upgrade function: `authorId` is optional, and absent is exactly what a
+    // tome nobody has credited should read as.
+    expect(tome?.updatedAt).toBe("2024-01-01T00:00:00.000Z");
+    expect(tome?.authorId).toBeUndefined();
+    expect(authors).toEqual([]);
   });
 });
