@@ -7,7 +7,12 @@ import type {
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
 import { useImageSrc } from "../hooks/useObjectUrl";
 import { StaticProse } from "./StaticProse";
-import { manuscriptSx, proseFontFamily, type ProseFace } from "./manuscriptStyles";
+import {
+  firstLineIndentSx,
+  manuscriptSx,
+  proseFontFamily,
+  type ProseFace,
+} from "./manuscriptStyles";
 
 /**
  * The manuscript as printed paper — which is also how the PDF is made.
@@ -202,9 +207,12 @@ function AuthorPage({ page, face }: { page: ManuscriptAuthorPage; face: ProseFac
 export function ManuscriptPrint({
   manuscript,
   face,
+  firstLineIndent = false,
 }: {
   manuscript: Manuscript;
   face: ProseFace;
+  /** Indents the text's paragraphs, never the title or author page. */
+  firstLineIndent?: boolean;
 }) {
   return (
     <Portal>
@@ -234,6 +242,7 @@ export function ManuscriptPrint({
               ...(manuscriptSx(face) as object),
               fontSize: "12pt",
               ...inkSx,
+              ...(firstLineIndent ? firstLineIndentSx : {}),
             }}
           >
             {beat.heading !== undefined && (

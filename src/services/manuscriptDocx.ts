@@ -9,6 +9,7 @@ import {
   PageNumber,
   Packer,
   Paragraph,
+  Tab,
   TextRun,
   VerticalAlignSection,
   type ILevelsOptions,
@@ -54,6 +55,16 @@ const INCH = 1440;
 /** Matched to `manuscriptStyles.ts`: one indent step is Lexical's 40px default. */
 const INDENT_STEP = Math.round(INCH * 0.42);
 
+/**
+ * The first-line indent: half an inch, the manuscript convention and the
+ * distance to Word's first default tab stop — so, as on screen, a tabbed
+ * paragraph and an auto-indented one line up.
+ */
+const FIRST_LINE = INCH / 2;
+
+/** How the author set out the text, beyond what the blocks say. */
+export type DocxLayout = { firstLineIndent?: boolean };
+
 const alignments: Partial<Record<Align, (typeof AlignmentType)[keyof typeof AlignmentType]>> = {
   left: AlignmentType.LEFT,
   center: AlignmentType.CENTER,
@@ -72,10 +83,29 @@ const headingLevels = {
   h6: HeadingLevel.HEADING_6,
 } as const;
 
-const frame = (align: Align, indent: number): IParagraphOptions => ({
-  ...(alignments[align] ? { alignment: alignments[align] } : {}),
-  ...(indent > 0 ? { indent: { left: indent * INDENT_STEP } } : {}),
-});
+const frame = (align: Align, indent: number, firstLine = false): IParagraphOptions => {
+  // As on screen: a centred or right-aligned paragraph is not indented.
+  const first = firstLine && align !== "center" && align !== "right" && align !== "end";
+  return {
+    ...(alignments[align] ? { alignment: alignments[align] } : {}),
+    ...(indent > 0 || first
+      ? {
+          indent: {
+            ...(indent > 0 ? { left: indent * INDENT_STEP } : {}),
+            ...(first ? { firstLine: FIRST_LINE } : {}),
+          },
+        }
+      : {}),
+  };
+};
+
+/**
+ * A run's text with each tab as a real Word tab. In OOXML a tab is a `w:tab`
+ * element, not a `\t` inside `w:t`, and readers differ on what they make of
+ * the character — so the text is split around them.
+ */
+const withTabs = (text: string): (string | Tab)[] =>
+  text.split("\t").flatMap((part, index) => (index === 0 ? [part] : [new Tab(), part]));
 
 /** Our `InlineFormat` set as Word run properties. */
 function runOptions(formats: InlineFormat[]): IRunOptions {
@@ -111,7 +141,12 @@ function toRuns(inlines: Inline[]): (TextRun | ExternalHyperlink)[] {
       runs.push(new ExternalHyperlink({ children, link: inline.url }));
       continue;
     }
-    runs.push(new TextRun({ text: inline.text, ...runOptions(inline.formats) }));
+    const options = runOptions(inline.formats);
+    runs.push(
+      inline.text.includes("\t")
+        ? new TextRun({ children: withTabs(inline.text), ...options })
+        : new TextRun({ text: inline.text, ...options }),
+    );
   }
   return runs;
 }
@@ -205,12 +240,15 @@ function blockParagraphs(
   numbering: Numbering,
   level = 0,
   breakBefore = false,
+  firstLineIndent = false,
 ): Paragraph[] {
   switch (block.kind) {
     case "paragraph":
       return [
         new Paragraph({
-          ...frame(block.align, block.indent + level),
+          // Only a paragraph of the text itself: not a heading, a quote, a list
+          // item or a paragraph continuing one.
+          ...frame(block.align, block.indent + level, firstLineIndent && level === 0),
           ...breaking(breakBefore),
           children: toRuns(block.content),
         }),
@@ -246,7 +284,7 @@ function blockParagraphs(
  * paragraph of its own, so a beat never starts with a stray empty line — and the
  * first beat carries none, so the document does not open on a blank page.
  */
-export function manuscriptParagraphs(beats: ManuscriptBeat[]) {
+export function manuscriptParagraphs(beats: ManuscriptBeat[], layout: DocxLayout = {}) {
   const numbering: Numbering = [];
   const children: Paragraph[] = [];
 
@@ -272,7 +310,7 @@ export function manuscriptParagraphs(beats: ManuscriptBeat[]) {
     let drew = beat.heading !== undefined;
     for (const section of beat.sections)
       for (const block of section.blocks) {
-        const made = blockParagraphs(block, numbering, 0, pending);
+        const made = blockParagraphs(block, numbering, 0, pending, layout.firstLineIndent);
         if (!made.length) continue;
         children.push(...made);
         pending = false;
@@ -415,8 +453,12 @@ export function authorPageSection(
 }
 
 /** The document, ready to pack. Pure — nothing here touches the DOM. */
-export function manuscriptDocument(manuscript: Manuscript, images: DocxImages = {}): Document {
-  const { children, numbering } = manuscriptParagraphs(manuscript.beats);
+export function manuscriptDocument(
+  manuscript: Manuscript,
+  images: DocxImages = {},
+  layout: DocxLayout = {},
+): Document {
+  const { children, numbering } = manuscriptParagraphs(manuscript.beats, layout);
   const running = [manuscript.tomeTitle, manuscript.plotName].filter(Boolean).join(" — ");
   const titlePage = manuscript.titlePage;
   // Built before the `Document`, since its lists add to `numbering`.
@@ -432,8 +474,8 @@ export function manuscriptDocument(manuscript: Manuscript, images: DocxImages = 
         document: {
           run: { font: "Georgia", size: 24 },
           // Matched to the app's own manuscript: 1.75 leading and a blank line
-          // between paragraphs rather than a first-line indent, so the export
-          // reads as the surface the author wrote on.
+          // between paragraphs, plus a first-line indent only if the author
+          // writes with one, so the export reads as the surface they wrote on.
           paragraph: { spacing: { line: 420, after: 240 } },
         },
       },
@@ -481,5 +523,8 @@ export function manuscriptDocument(manuscript: Manuscript, images: DocxImages = 
 }
 
 /** The `.docx` bytes. The only impure step, and deliberately the last one. */
-export const manuscriptDocxBlob = (manuscript: Manuscript, images: DocxImages = {}): Promise<Blob> =>
-  Packer.toBlob(manuscriptDocument(manuscript, images));
+export const manuscriptDocxBlob = (
+  manuscript: Manuscript,
+  images: DocxImages = {},
+  layout: DocxLayout = {},
+): Promise<Blob> => Packer.toBlob(manuscriptDocument(manuscript, images, layout));

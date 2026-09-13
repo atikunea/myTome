@@ -133,7 +133,9 @@ export function ManuscriptExportDialog({
   writeItems: WriteItem[];
   onClose: () => void;
 }) {
-  const { face } = useProseFace();
+  // The export follows the writing surface: a manuscript written in mono with
+  // indented paragraphs prints that way.
+  const { face, firstLineIndent } = useProseFace();
   const [options, setOptions] = useState<ManuscriptOptions>(defaultManuscriptOptions);
   const [printing, setPrinting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -216,7 +218,7 @@ export function ManuscriptExportDialog({
         setNote(
           `The ${unread.join(" and ")} could not be read, so the .docx goes without ${unread.length === 1 ? "it" : "them"}.`,
         );
-      const blob = await manuscriptDocxBlob(manuscript, { cover, photo });
+      const blob = await manuscriptDocxBlob(manuscript, { cover, photo }, { firstLineIndent });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -471,7 +473,9 @@ export function ManuscriptExportDialog({
           </Button>
         </DialogActions>
       </Dialog>
-      {printing && <ManuscriptPrint manuscript={manuscript} face={face} />}
+      {printing && (
+        <ManuscriptPrint manuscript={manuscript} face={face} firstLineIndent={firstLineIndent} />
+      )}
     </>
   );
 }

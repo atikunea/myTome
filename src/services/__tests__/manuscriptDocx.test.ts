@@ -173,6 +173,35 @@ describe("manuscriptParagraphs", () => {
     ]);
   });
 
+  it("writes a tab as a Word tab rather than a character inside the text", () => {
+    const { children } = manuscriptParagraphs([beat("b1", [para("\tIt began.\tAgain.")])]);
+    const found = keys(children[0] as unknown as Node);
+
+    expect(found.filter((key) => key === "w:tab")).toHaveLength(2);
+    expect(textOf(children[0])).toBe("It began.Again.");
+  });
+
+  it("indents first lines only when asked, and only the text's own paragraphs", () => {
+    const centred: Block = {
+      kind: "paragraph",
+      align: "center",
+      indent: 0,
+      content: [{ kind: "text", text: "* * *", formats: [] }],
+    };
+    const quote: Block = { kind: "quote", align: "", indent: 0, content: [] };
+    const blocks = [para("indented"), centred, quote, list(1, "item")];
+    const indents = (firstLineIndent: boolean) =>
+      manuscriptParagraphs([beat("b1", blocks)], { firstLineIndent }).children.map((p) =>
+        keys(p as unknown as Node).includes("w:ind"),
+      );
+
+    expect(indents(false)).toEqual([false, false, false, false]);
+    // A scene break stays centred, and neither a quote nor a list item is a
+    // paragraph of the text. (A numbered item's indent comes from its
+    // numbering definition, not from the paragraph.)
+    expect(indents(true)).toEqual([true, false, false, false]);
+  });
+
   it("writes a check item as a box glyph, which Word has no control for", () => {
     const checks: Block = {
       kind: "list",
@@ -207,6 +236,16 @@ describe("manuscriptDocument", () => {
     const bytes = await Packer.toBuffer(document);
     // A `.docx` is a zip, and every zip starts "PK".
     expect(bytes.length).toBeGreaterThan(1000);
+    expect(String.fromCharCode(bytes[0], bytes[1])).toBe("PK");
+  });
+
+  it("packs a document with tabs and first-line indents", async () => {
+    const document = manuscriptDocument(
+      manuscript([beat("b1", [para("\tone"), { ...para("two"), indent: 1 }])]),
+      {},
+      { firstLineIndent: true },
+    );
+    const bytes = await Packer.toBuffer(document);
     expect(String.fromCharCode(bytes[0], bytes[1])).toBe("PK");
   });
 

@@ -23,6 +23,7 @@ import { MentionNode } from "../lexical/MentionNode";
 import { MentionsPlugin } from "../lexical/MentionsPlugin";
 import { ProseToolbarPlugin } from "../lexical/ProseToolbarPlugin";
 import { CaretAtPointPlugin, type CaretPoint } from "../lexical/CaretAtPointPlugin";
+import { TabKeyPlugin } from "../lexical/TabKeyPlugin";
 import { manuscriptSx, proseTextTheme, type ProseFace } from "./manuscriptStyles";
 
 /** What the manuscript learns each time the author types into a section. */
@@ -179,6 +180,7 @@ export function ProseEditor({
         <ListPlugin />
         <CheckListPlugin />
         <LinkPlugin />
+        <TabKeyPlugin />
         <OnChangePlugin onChange={handleChange} />
         <MentionsPlugin elements={elements} types={types} />
         <ProseToolbarPlugin />

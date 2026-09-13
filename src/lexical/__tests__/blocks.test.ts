@@ -252,6 +252,22 @@ describe("inline content", () => {
     });
   });
 
+  it("reads a tab as the text run it is, and not as a word", () => {
+    // `TabNode` extends `TextNode` and stores a single `\t`, so the static
+    // render draws it as text and `pre-wrap` keeps its width — the same as
+    // Lexical's own span.
+    const content = doc(
+      paragraph({ ...text("\t"), type: "tab", detail: 2 }, text("It began.")),
+    );
+    expect(lexicalToBlocks(content)[0]).toMatchObject({
+      content: [
+        { kind: "text", text: "\t", formats: [] },
+        { kind: "text", text: "It began." },
+      ],
+    });
+    expect(countDocumentWords(content)).toBe(2);
+  });
+
   it("unwraps an unknown inline wrapper rather than dropping what it holds", () => {
     const blocks = lexicalToBlocks(
       doc(paragraph({ type: "someFutureMark", version: 1, children: [text("kept")] })),

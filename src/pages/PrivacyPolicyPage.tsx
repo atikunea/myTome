@@ -14,7 +14,7 @@ import {
  * the sort of URL someone expects to be able to send to someone else.
  *
  * Everything here is a claim about the code, so it has to be re-read whenever
- * the code moves: the storage list mirrors `models/db.ts` plus the two
+ * the code moves: the storage list mirrors `models/db.ts` plus the three
  * `localStorage` keys in `context/`, the guide dismissal in `GuideStrip`, the
  * line width in `FocusSurface` and the sync mark in `services/drive.ts`,
  * and the network list mirrors the CSP in `vite.config.ts` — which is the
@@ -49,7 +49,7 @@ export function PrivacyPolicyPage() {
           items={[
             "Your work — tomes, author profiles, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
             "Cover, element and author images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
-            "Four small preferences: light or dark mode, your prose typeface, the line width of the writing view, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
+            "Five small preferences: light or dark mode, your prose typeface, the line width of the writing view, whether its paragraphs indent their first line, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
           ]}
         />
         <PolicyParagraph>

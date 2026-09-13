@@ -20,6 +20,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import { useProseFace } from "../context/ProseFaceContext";
 import {
   defaultProseMeasure,
+  firstLineIndentSx,
   proseFaces,
   proseFontFamily,
   proseMeasures,
@@ -91,7 +92,7 @@ export function FocusSurface({
 }) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
-  const { face, setFace } = useProseFace();
+  const { face, setFace, firstLineIndent, setFirstLineIndent } = useProseFace();
   const [measure, setMeasure] = useState(initialMeasure);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   // Chrome recedes on the first keystroke and comes back the moment the author
@@ -226,6 +227,20 @@ export function FocusSurface({
             <ListItemText>{measureLabels[option]}</ListItemText>
           </MenuItem>
         ))}
+        <Divider />
+        {menuHeading("Paragraphs")}
+        <MenuItem
+          dense
+          role="menuitemcheckbox"
+          aria-checked={firstLineIndent}
+          onClick={() => {
+            setFirstLineIndent(!firstLineIndent);
+            closeMenu();
+          }}
+        >
+          <ListItemIcon>{firstLineIndent ? <CheckIcon fontSize="small" /> : null}</ListItemIcon>
+          <ListItemText>Indent first lines</ListItemText>
+        </MenuItem>
         {menu ? <Divider /> : null}
         {menu?.(closeMenu)}
       </Menu>
@@ -247,6 +262,9 @@ export function FocusSurface({
             maxWidth: proseMeasureWidth(measure),
             pt: { xs: 1, sm: 2 },
             pb: 10,
+            // Set here, on the column holding every section, so the static and
+            // the live render pick it up together.
+            ...(firstLineIndent ? firstLineIndentSx : {}),
           }}
         >
           {children}

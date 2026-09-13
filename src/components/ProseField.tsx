@@ -161,6 +161,9 @@ export function ProseField({
  * It carries no `MentionsPlugin`. Mentions are prose-to-element links that are
  * deliberately not cascade-maintained, and an element description is where
  * `Relationship` already does that job properly.
+ *
+ * Nor a `TabKeyPlugin`: this field sits among others on its page, so Tab moves
+ * to the next one. A pasted tab still shows, since it is only a character.
  */
 function ProseFieldEditor({
   value,

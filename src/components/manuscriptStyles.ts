@@ -55,6 +55,25 @@ export const defaultProseMeasure: ProseMeasure = "medium";
 export const proseMeasureWidth = (measure: ProseMeasure) =>
   ({ narrow: "52ch", medium: "66ch", wide: "84ch", full: "none" })[measure];
 
+/**
+ * One indent, for both ways a paragraph gets one: the width of a typed tab
+ * (the Tab key inserts one on the writing surface — see `TabKeyPlugin`) and
+ * the automatic first-line indent. Using the same value makes a tabbed
+ * paragraph and an auto-indented one look alike. Unlike the measure, this `ch`
+ * resolves in the manuscript face, so it is exactly four characters in mono.
+ */
+export const proseIndent = "4ch";
+
+/**
+ * Set on an ancestor to turn the first-line indent on; `manuscriptSx` reads it.
+ * A variable rather than a second style object, so the one rule in
+ * `manuscriptSx` reaches the static and the live render alike and the two
+ * cannot disagree — the focus surface sets it on the column holding both.
+ */
+export const firstLineIndentVar = "--mytome-first-line-indent";
+
+export const firstLineIndentSx = { [firstLineIndentVar]: proseIndent };
+
 const sansStack = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 const monoStack =
@@ -81,8 +100,16 @@ export function manuscriptSx(face: ProseFace): SxProps<Theme> {
     // spaces too (`xml:space="preserve"`), so print now agrees with it.
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
+    // The browser default is eight spaces, which buries a tabbed paragraph.
+    tabSize: proseIndent,
 
     "& p": { m: 0, mb: 2 },
+    // The first-line indent, off unless an ancestor sets the variable. A
+    // centred or right-aligned paragraph — a scene break, an epigraph — stays
+    // where the author put it. Lexical and `StaticProse` both write alignment as
+    // an inline `text-align`, so one selector matches both renders.
+    '& p:not([style*="text-align: center"]):not([style*="text-align: right"]):not([style*="text-align: end"])':
+      { textIndent: `var(${firstLineIndentVar}, 0)` },
     "& h1, & h2, & h3, & h4, & h5, & h6": {
       fontFamily: "inherit",
       mt: 3,
