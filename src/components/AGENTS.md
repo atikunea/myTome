@@ -117,7 +117,10 @@ the swap, so the caret lands on the clicked word only if nothing moved. So:
   height active or not, the active mark is a gutter `::before` (never a border),
   the insert-`+` strip is zero-height, and a field wrapper's padding and margins
   match in both states. That is also why a prose field doesn't look like a
-  `TextField`.
+  `TextField`. **Both renders must contain their blocks' margins**: the static
+  body does it with padding, `ProseEditor` with `flow-root`. If either lets the
+  last paragraph's margin escape, sections change height as they swap, and
+  everything below the swapped one moves.
 - `InlineTextField` deliberately doesn't swap: a one-line value has no caret to
   place, so it is always live, looks like text at rest, and flushes on blur.
   Selects save on change.

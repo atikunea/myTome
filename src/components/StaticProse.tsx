@@ -10,7 +10,9 @@ import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
  * **It reproduces Lexical's own DOM, tag for tag and class for class**, because
  * clicking a section replaces this markup with a live editor in place. Same
  * tags, same theme classes (`proseTextTheme`), same `padding-inline-start`
- * expression for indent, same `<br>` inside an empty block. Where this file
+ * expression for indent, same `<br>` inside an empty block — and, through
+ * `manuscriptSx`, the root's `white-space: pre-wrap`, so runs of spaces are
+ * kept rather than collapsed. Where this file
  * guesses, the page twitches on click; where it agrees, the swap is invisible
  * and the click point still resolves to the word under the cursor.
  *

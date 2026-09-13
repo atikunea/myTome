@@ -73,6 +73,14 @@ export function manuscriptSx(face: ProseFace): SxProps<Theme> {
     fontSize: proseFontSize(face),
     lineHeight: 1.75,
     color: "text.primary",
+    // What Lexical sets inline on its editable root (`setRootElement`), copied
+    // so the static render wraps the same text the same way. Without
+    // `pre-wrap` a static section collapses two spaces after a full stop into
+    // one, and every line after it shifts when the section is clicked into —
+    // a whole character per sentence in the mono face. The DOCX keeps both
+    // spaces too (`xml:space="preserve"`), so print now agrees with it.
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
 
     "& p": { m: 0, mb: 2 },
     "& h1, & h2, & h3, & h4, & h5, & h6": {

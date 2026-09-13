@@ -144,7 +144,19 @@ export function ProseEditor({
 
   return (
     <LexicalComposer initialConfig={initialConfig}>
-      <Box sx={{ position: "relative", ...manuscriptSx(face) }}>
+      <Box
+        sx={{
+          position: "relative",
+          // Contains the blocks' margins, as the static body's padding does in
+          // `ProseManuscript`. Without it the last paragraph's bottom margin
+          // collapses out of a live section and into the gap below, so a section
+          // is 16px shorter live than static — and entering a later section,
+          // which turns an earlier one static, moves the clicked text down under
+          // the cursor before the caret is placed.
+          display: "flow-root",
+          ...manuscriptSx(face),
+        }}
+      >
         <RichTextPlugin
           contentEditable={<Box component={ContentEditable} sx={{ outline: "none" }} />}
           placeholder={
