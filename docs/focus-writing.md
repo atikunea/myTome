@@ -89,8 +89,8 @@ must remember to switch on, which most never will.
 
 | Question | Decision |
 | --- | --- |
-| Measure | **Fixed at ~66ch.** Not a setting: 60–75 characters is a defensible right answer and a slider invites fiddling. Because `ch` is font-relative it stays ~66 *characters* across faces. |
-| Prose typeface | **Author-settable**, defaulting to `brandFontFamily`. Stored in `localStorage`, following `ColorModeContext`'s precedent — app-wide, not per tome. |
+| Measure | **Four presets, default ~66ch** — narrow (52ch), medium (66ch), wide (84ch), full width. Originally fixed at 66ch; made settable on 2026-09-12. Presets, not a slider: 60–75 characters is still the default answer, and a slider invites fiddling. The `ch` resolves against the UI font, not the face, so a preset is a fixed width and characters per line vary a little by face (medium: ~64 serif, ~59 mono) — see `proseMeasureWidth`. Stored in `localStorage`, read by `FocusSurface` only. |
+| Prose typeface | **Author-settable** — serif (`brandFontFamily`, the default), sans or mono. Stored in `localStorage`, following `ColorModeContext`'s precedent — app-wide, not per tome. |
 | Toolbar | **Floating on selection** on pointer devices. Nothing occupies the page while writing, and it belongs to whichever section is mounted, so it cannot cause layout shift. (Touch: see Mobile.) |
 | Chrome behaviour | **Fades while typing**, returns on pointer movement. Lets `SaveStatus` stay permanently mounted without competing with the prose. |
 | Destructive actions | **Both, named differently**, in a section's overflow menu: "Remove from this beat" (detach) and "Delete text permanently" (behind `confirmAction`, worded with where else the text is used). |
@@ -260,7 +260,7 @@ chrome behind to dim.
 | --- | --- |
 | Presentation | **Full-bleed below `sm`**, inset card with a scrim at `sm` and up — MUI's own `fullScreen` Dialog pattern via `useMediaQuery(theme.breakpoints.down("sm"))`. Matches the codebase's single breakpoint. |
 | Formatting | **A horizontally scrolling strip docked above the keyboard**, rather than the floating pill. A floating selection toolbar fires on the same gesture as iOS/Android's own copy-paste callout and would collide; the OS bubble's position cannot be measured. Costs a `VisualViewport` listener to track keyboard height. |
-| Measure | Nothing to do. `66ch` is a *max-width*, so a narrow viewport binds first — a 390px phone gets ~350px after padding, about 37 characters, a normal mobile reading measure. It never forces horizontal overflow. |
+| Measure | Nothing to do. Every preset is a *max-width*, so a narrow viewport binds first — a 390px phone gets ~350px after padding, about 37 characters, a normal mobile reading measure. It never forces horizontal overflow. |
 
 ---
 
@@ -299,3 +299,4 @@ Load-bearing in the existing code.
 | 2026-08-29 | **Prose face is author-settable** (`localStorage`, default serif); **measure fixed at 66ch**. | The face is a genuine preference; line length has a right answer, and `ch` keeps it constant across faces. |
 | 2026-08-29 | **Full-bleed below `sm`.** | At `xs` the SideNav is a top strip, so there is nothing meaningful to dim and an inset card wastes a seventh of the screen. |
 | 2026-08-29 | **Chrome fades while typing**; **Esc closes**; **live word count**; no typewriter scrolling or paragraph highlight in v1. | The first three are cheap and expected; the last two are riskier and can be added once the manuscript's own focus cues are settled. |
+| 2026-09-12 | **A mono face**, and **the measure becomes four presets** (narrow, medium, wide, full width), medium staying 66ch. | Authors asked for both. Presets keep the default a good measure while letting a writer draft narrower or wider; the width applies to the focus surface only. |

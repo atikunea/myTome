@@ -17,7 +17,9 @@ import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
  * editor on top; anything that affects layout or metrics belongs here.
  */
 
-export type ProseFace = "serif" | "sans";
+export type ProseFace = "serif" | "sans" | "mono";
+
+export const proseFaces: readonly ProseFace[] = ["serif", "sans", "mono"];
 
 /**
  * Re-exported so the editor and this stylesheet reach it from one place. It is
@@ -27,21 +29,43 @@ export type ProseFace = "serif" | "sans";
 export { proseTextTheme } from "../lexical/blocks";
 
 /**
- * The measure, fixed rather than settable. 60–75 characters is the answer for
- * prose, and `ch` is font-relative, so this stays ~66 *characters* when the
- * author switches face instead of jumping width. It is a `max-width`, so a
- * narrow viewport binds first and a phone simply gets its own width.
+ * The measure: how wide a line of prose may run. A handful of presets rather
+ * than a slider, because 60–75 characters is the answer for most prose and a
+ * slider invites fiddling; the presets bracket it for authors who draft
+ * narrower or wider. "Full" lifts the cap to the surface's own width.
+ *
+ * The `ch` resolves against the surface's UI font, not the manuscript face:
+ * the column that takes it sits outside `manuscriptSx`. So a preset is in
+ * effect a fixed width, and switching face changes the characters per line a
+ * little (at medium, about 64 in serif and 59 in mono) rather than the width.
+ * That is the better trade: `ch` in the face is the width of its "0", wider
+ * than an average letter of a proportional face, and would run serif past 80.
+ * Each is a `max-width`, so a narrow viewport binds first and a phone simply
+ * gets its own width.
+ *
+ * Only the focus surface's column takes this. The static and live sections sit
+ * inside that one column, so a change reflows both alike.
  */
-export const proseMeasure = "66ch";
+export type ProseMeasure = "narrow" | "medium" | "wide" | "full";
+
+export const proseMeasures: readonly ProseMeasure[] = ["narrow", "medium", "wide", "full"];
+
+export const defaultProseMeasure: ProseMeasure = "medium";
+
+export const proseMeasureWidth = (measure: ProseMeasure) =>
+  ({ narrow: "52ch", medium: "66ch", wide: "84ch", full: "none" })[measure];
 
 const sansStack = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
 
-export const proseFontFamily = (face: ProseFace) =>
-  face === "serif" ? brandFontFamily : sansStack;
+const monoStack =
+  "ui-monospace, 'Cascadia Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 
-/** Sized so the two faces sit at a comparable x-height rather than a comparable em. */
+export const proseFontFamily = (face: ProseFace) =>
+  ({ serif: brandFontFamily, sans: sansStack, mono: monoStack })[face];
+
+/** Sized so the faces sit at a comparable x-height rather than a comparable em. */
 export const proseFontSize = (face: ProseFace) =>
-  face === "serif" ? "1.1875rem" : "1.0625rem";
+  ({ serif: "1.1875rem", sans: "1.0625rem", mono: "1rem" })[face];
 
 export function manuscriptSx(face: ProseFace): SxProps<Theme> {
   return {
@@ -127,7 +151,7 @@ export function manuscriptSx(face: ProseFace): SxProps<Theme> {
 
     "& a": { color: "primary.main", textDecoration: "underline" },
     "& code": {
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontFamily: monoStack,
       fontSize: "0.88em",
       bgcolor: "action.hover",
       px: 0.5,

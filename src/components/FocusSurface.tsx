@@ -18,7 +18,40 @@ import CloseIcon from "@mui/icons-material/Close";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import CheckIcon from "@mui/icons-material/Check";
 import { useProseFace } from "../context/ProseFaceContext";
-import { proseMeasure } from "./manuscriptStyles";
+import {
+  defaultProseMeasure,
+  proseFaces,
+  proseFontFamily,
+  proseMeasures,
+  proseMeasureWidth,
+  type ProseFace,
+  type ProseMeasure,
+} from "./manuscriptStyles";
+
+const faceLabels: Record<ProseFace, string> = { serif: "Serif", sans: "Sans", mono: "Mono" };
+
+const measureLabels: Record<ProseMeasure, string> = {
+  narrow: "Narrow",
+  medium: "Medium",
+  wide: "Wide",
+  full: "Full width",
+};
+
+/**
+ * The measure is a preference of this browser, like the face, but only this
+ * surface reads it — so it keeps its own `localStorage` key here instead of a
+ * context. The privacy page's storage list names it.
+ */
+const MEASURE_KEY = "mytome:prose-measure";
+
+function initialMeasure(): ProseMeasure {
+  try {
+    const stored = localStorage.getItem(MEASURE_KEY);
+    return proseMeasures.find((measure) => measure === stored) ?? defaultProseMeasure;
+  } catch {
+    return defaultProseMeasure;
+  }
+}
 
 /**
  * The writing surface: an overlay above the workspace, with the app dimmed
@@ -49,7 +82,7 @@ export function FocusSurface({
   context?: ReactNode;
   /** The autosave indicator. There is no Save button, so this is the only report. */
   status?: ReactNode;
-  /** Page-specific overflow items, below the typography choice this surface owns. */
+  /** Page-specific overflow items, below the typography choices this surface owns. */
   menu?: (close: () => void) => ReactNode;
   /** Quiet line along the bottom — word count and the like. */
   footer?: ReactNode;
@@ -59,6 +92,7 @@ export function FocusSurface({
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
   const { face, setFace } = useProseFace();
+  const [measure, setMeasure] = useState(initialMeasure);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   // Chrome recedes on the first keystroke and comes back the moment the author
   // reaches for the mouse. Nothing is removed from the layout, so nothing moves.
@@ -70,6 +104,25 @@ export function FocusSurface({
   };
 
   const closeMenu = () => setAnchor(null);
+
+  const chooseMeasure = (option: ProseMeasure) => {
+    setMeasure(option);
+    try {
+      localStorage.setItem(MEASURE_KEY, option);
+    } catch {
+      // Storage refused: the width still holds for this visit.
+    }
+  };
+
+  const menuHeading = (label: string) => (
+    <Typography
+      variant="overline"
+      color="text.secondary"
+      sx={{ px: 2, display: "block", lineHeight: 2.2 }}
+    >
+      {label}
+    </Typography>
+  );
 
   return (
     <Dialog
@@ -136,14 +189,8 @@ export function FocusSurface({
       </Stack>
 
       <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={closeMenu}>
-        <Typography
-          variant="overline"
-          color="text.secondary"
-          sx={{ px: 2, display: "block", lineHeight: 2.2 }}
-        >
-          Manuscript face
-        </Typography>
-        {(["serif", "sans"] as const).map((option) => (
+        {menuHeading("Manuscript face")}
+        {proseFaces.map((option) => (
           <MenuItem
             key={option}
             dense
@@ -155,14 +202,28 @@ export function FocusSurface({
           >
             <ListItemIcon>{face === option ? <CheckIcon fontSize="small" /> : null}</ListItemIcon>
             <ListItemText
-              slotProps={{
-                primary: {
-                  sx: { fontFamily: option === "serif" ? "Georgia, serif" : undefined },
-                },
-              }}
+              slotProps={{ primary: { sx: { fontFamily: proseFontFamily(option) } } }}
             >
-              {option === "serif" ? "Serif" : "Sans"}
+              {faceLabels[option]}
             </ListItemText>
+          </MenuItem>
+        ))}
+        <Divider />
+        {menuHeading("Line width")}
+        {proseMeasures.map((option) => (
+          <MenuItem
+            key={option}
+            dense
+            selected={measure === option}
+            onClick={() => {
+              chooseMeasure(option);
+              closeMenu();
+            }}
+          >
+            <ListItemIcon>
+              {measure === option ? <CheckIcon fontSize="small" /> : null}
+            </ListItemIcon>
+            <ListItemText>{measureLabels[option]}</ListItemText>
           </MenuItem>
         ))}
         {menu ? <Divider /> : null}
@@ -180,7 +241,14 @@ export function FocusSurface({
           px: { xs: 2.5, sm: 4 },
         }}
       >
-        <Box sx={{ width: "100%", maxWidth: proseMeasure, pt: { xs: 1, sm: 2 }, pb: 10 }}>
+        <Box
+          sx={{
+            width: "100%",
+            maxWidth: proseMeasureWidth(measure),
+            pt: { xs: 1, sm: 2 },
+            pb: 10,
+          }}
+        >
           {children}
         </Box>
       </Box>

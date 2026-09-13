@@ -15,7 +15,8 @@ import {
  *
  * Everything here is a claim about the code, so it has to be re-read whenever
  * the code moves: the storage list mirrors `models/db.ts` plus the two
- * `localStorage` keys in `context/` and the sync mark in `services/drive.ts`,
+ * `localStorage` keys in `context/`, the guide dismissal in `GuideStrip`, the
+ * line width in `FocusSurface` and the sync mark in `services/drive.ts`,
  * and the network list mirrors the CSP in `vite.config.ts` — which is the
  * exhaustive answer to "where can this app talk to", and is what this page
  * should be checked against.
@@ -48,7 +49,7 @@ export function PrivacyPolicyPage() {
           items={[
             "Your work — tomes, author profiles, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
             "Cover, element and author images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
-            "Three small preferences: light or dark mode, your prose typeface, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
+            "Four small preferences: light or dark mode, your prose typeface, the line width of the writing view, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
           ]}
         />
         <PolicyParagraph>

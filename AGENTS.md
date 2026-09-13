@@ -379,9 +379,9 @@ in `App.tsx`.
 **`/privacy` and `/terms` are claims about this repo**, and go stale silently:
 
 - **The privacy page's network list is the CSP in `vite.config.ts`, and its
-  storage list names every `localStorage` key** (colour mode, prose face, guide
-  dismissal, Drive's last-sync mark). A new host, scope or key makes it wrong
-  until it is edited.
+  storage list names every `localStorage` key** (colour mode, prose face, prose
+  line width, guide dismissal, Drive's last-sync mark). A new host, scope or key
+  makes it wrong until it is edited.
 - **Terms clause 8 says the repo carries no licence.** Adding a `LICENSE` edits
   that clause in the same commit.
 - Changing either page's text moves its "Last updated" line. Both render through
