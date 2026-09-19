@@ -336,6 +336,47 @@ export const calendarWeeks = (
   return weeks;
 };
 
+/**
+ * How many week columns fit in `width` pixels, where each column is `cell` wide
+ * and columns are `gap` apart. Never less than one, so a calendar squeezed to
+ * nothing still shows the week it is about.
+ */
+export const weeksThatFit = (width: number, cell: number, gap: number) =>
+  Math.max(1, Math.floor((width + gap) / (cell + gap)));
+
+/**
+ * The first day a calendar of `weeks` columns ending in `to`'s week should
+ * draw: the Sunday `weeks − 1` weeks before `to`'s own. Starting on a Sunday is
+ * what lets the calendar fill every column with no leading gap.
+ */
+export const calendarStart = (to: string, weeks: number) =>
+  shiftDay(to, -weekdayOf(to) - 7 * (Math.max(1, weeks) - 1));
+
+/**
+ * Which columns carry a month label, as the month's index (`0`–`11`), or `null`
+ * for a column with none.
+ *
+ * A label goes over the first column of each month. A label is wider than a
+ * column, though, so two rules keep them from colliding or being cut off: the
+ * first column gives up its label when the second starts a new month (the two
+ * would overlap), and the last column never takes one (it would run past the
+ * edge of the calendar).
+ */
+export const calendarMonthLabels = (weeks: readonly (CalendarCell | null)[][]) => {
+  const monthOf = (week: readonly (CalendarCell | null)[] | undefined) => {
+    const first = week?.find((cell) => cell !== null);
+    return first ? parseDay(first.date).getMonth() : undefined;
+  };
+  const labels = weeks.map((week, index) => {
+    const month = monthOf(week);
+    if (month === undefined) return null;
+    return index === 0 || monthOf(weeks[index - 1]) !== month ? month : null;
+  });
+  if (labels.length > 1 && labels[1] !== null) labels[0] = null;
+  if (labels.length > 1) labels[labels.length - 1] = null;
+  return labels;
+};
+
 /** Days in the record, newest first — the order the day table reads them. */
 export const recentDays = (days: readonly WritingDay[], limit?: number) => {
   const sorted = [...days].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));

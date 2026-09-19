@@ -4,6 +4,8 @@ import { everyDay, weekdays } from "../../models/Activity";
 import {
   IDLE_MS,
   bookProgress,
+  calendarMonthLabels,
+  calendarStart,
   calendarWeeks,
   continuesSession,
   countedDayAfter,
@@ -24,6 +26,7 @@ import {
   signedWords,
   totalNet,
   weekOf,
+  weeksThatFit,
 } from "../activityStats";
 
 /**
@@ -347,5 +350,67 @@ describe("calendarWeeks", () => {
 
   it("is empty when the range runs backwards", () => {
     expect(calendarWeeks(fortnight, goals, "2026-09-18", "2026-09-07")).toEqual([]);
+  });
+});
+
+describe("fitting the calendar to its width", () => {
+  // The calendar's own geometry: 13px squares, 3px apart.
+  const CELL = 13;
+  const GAP = 3;
+
+  it("counts the columns that fit, with no gap after the last", () => {
+    // n columns take n·13 + (n−1)·3 px, so 16 columns need exactly 253.
+    expect(weeksThatFit(253, CELL, GAP)).toBe(16);
+    expect(weeksThatFit(252, CELL, GAP)).toBe(15);
+    // A wide workspace holds a year and more.
+    expect(weeksThatFit(900, CELL, GAP)).toBe(56);
+  });
+
+  it("never fits fewer than one week, however narrow", () => {
+    expect(weeksThatFit(0, CELL, GAP)).toBe(1);
+    expect(weeksThatFit(5, CELL, GAP)).toBe(1);
+  });
+
+  it("starts on the Sunday that makes the columns end in today's week", () => {
+    // Friday 18 September's own week began on Sunday the 13th.
+    expect(calendarStart("2026-09-18", 1)).toBe("2026-09-13");
+    expect(calendarStart("2026-09-18", 3)).toBe("2026-08-30");
+    expect(weekOf("2026-09-18")[0]).toBe(calendarStart("2026-09-18", 1));
+  });
+
+  it("draws exactly the number of columns it was fitted to", () => {
+    for (const count of [1, 4, 17, 52]) {
+      const from = calendarStart("2026-09-18", count);
+      expect(calendarWeeks(fortnight, goalsOf(), from, "2026-09-18")).toHaveLength(count);
+    }
+  });
+});
+
+describe("calendarMonthLabels", () => {
+  const goals = goalsOf();
+  const labelsFor = (weeks: number, to = "2026-09-18") =>
+    calendarMonthLabels(calendarWeeks(fortnight, goals, calendarStart(to, weeks), to));
+
+  it("labels the first column of each month", () => {
+    // 8 weeks back from 18 Sep starts on Sunday 26 July. August begins in the
+    // second column (2 Aug) and runs through the week of 30 Aug; September
+    // begins at 6 Sep. July's lone first column gives way to August beside it.
+    expect(labelsFor(8)).toEqual([null, 7, null, null, null, null, 8, null]);
+  });
+
+  it("drops the first column's label when the second would sit on top of it", () => {
+    // 3 weeks back starts on Sunday 30 August — August for one column only,
+    // with September's label right beside it.
+    expect(labelsFor(3)).toEqual([null, 8, null]);
+  });
+
+  it("never labels the last column, which would run off the edge", () => {
+    // Ending in the week of Sunday 4 October puts October in the last column.
+    const labels = labelsFor(4, "2026-10-05");
+    expect(labels[labels.length - 1]).toBeNull();
+  });
+
+  it("keeps the label on a calendar of one week, which has nowhere to spill", () => {
+    expect(labelsFor(1)).toEqual([8]);
   });
 });

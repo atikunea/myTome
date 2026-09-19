@@ -36,7 +36,7 @@ import {
 } from "../services/activityStats";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
-import { ActivityCalendar, calendarRange } from "../components/ActivityCalendar";
+import { ActivityCalendar } from "../components/ActivityCalendar";
 import { ActivityStat } from "../components/ActivityStat";
 import { EmptyState } from "../components/EmptyState";
 import { TomeTargetsDialog } from "../components/TomeTargetsDialog";
@@ -110,7 +110,6 @@ function TomeActivity({ tome, editing }: { tome: Tome; editing?: boolean }) {
     goals,
     today,
   });
-  const range = calendarRange(days, today);
   const closeDialog = () => navigate(`/tomes/${tomeId}/activity`);
 
   return (
@@ -213,14 +212,13 @@ function TomeActivity({ tome, editing }: { tome: Tome; editing?: boolean }) {
           variant="overline"
           sx={{ color: "text.secondary", fontWeight: 800, letterSpacing: "0.1em" }}
         >
-          Every day of this book
+          Recent weeks
         </Typography>
         <Box sx={{ mt: 1 }}>
           <ActivityCalendar
             days={days}
             goals={goals}
-            from={range.from}
-            to={range.to}
+            to={today}
             selected={selected}
             onSelect={setSelected}
           />

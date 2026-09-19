@@ -7,8 +7,8 @@ tell what was considered from what was overlooked.
 Three things landed differently from the plan, each noted in its section:
 creating a blank draft records **nothing** (there is no difference to record, and
 a sitting opened by a click that typed nothing would be a lie); deleting a text
-may join an open sitting but never starts one; and the calendar's weekday labels
-and key sit outside its scroller, because the strip opens scrolled to today.
+may join an open sitting but never starts one; and the calendar draws only as
+many weeks as fit its width, ending at today, and never scrolls.
 
 Mockups: the design canvas published alongside this doc —
 <https://claude.ai/artifact/4WDT8kwtzD44RaSkr9WpLu> — carries the three
@@ -393,3 +393,4 @@ Each is wrong the moment this ships, and nothing fails a build over it.
 | 2026-09-18 | **No live counter in the focus surface** in v1. | Ruled out with the placement; a strip there must not change size as sections swap, which is the hardest constraint in the app. |
 | 2026-09-18 | **Creating a blank draft records nothing**, and a delete joins an open sitting but never starts one. | A fresh draft holds no words, so there is no difference to record and no sitting to open; clearing out the Write list is not writing, but the book still got shorter. |
 | 2026-09-18 | **The calendar opens scrolled to today**, with its weekday labels and key outside the scroller. | A year of weeks is wider than the workspace and the week that matters is the last one — labels that slid off with last autumn would never be seen again. |
+| 2026-09-19 | **The calendar fits its width instead of scrolling** — as many whole weeks as fit, ending at today: about four months on a phone, a year or more on a wide screen. Supersedes the row above. | A scrollbar was a second control on a panel meant to be read at a glance. Weeks the calendar leaves out are still recorded, still in the backup, and still count toward streaks and pace — they are only not drawn. |
