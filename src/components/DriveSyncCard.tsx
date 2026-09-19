@@ -185,7 +185,11 @@ export function DriveSyncCard() {
           {report ? (
             <Alert
               severity={
-                report.tomes.raced.length || report.authors.raced.length ? "warning" : "success"
+                report.tomes.raced.length ||
+                report.authors.raced.length ||
+                report.goals.raced.length
+                  ? "warning"
+                  : "success"
               }
               sx={{ mt: 1.5 }}
               onClose={() => setReport(null)}
@@ -203,12 +207,25 @@ export function DriveSyncCard() {
  * Titles and bylines together, as one list. A byline reads as "the J.D. Robb
  * profile" so it is not taken for a book; past two names it becomes a count.
  */
-const list = ({ tomes, authors }: { tomes: string[]; authors: string[] }) => {
-  const names = [...tomes, ...authors.map((byline) => `the ${byline} profile`)];
+const list = ({
+  tomes,
+  authors,
+  goals,
+}: {
+  tomes: string[];
+  authors: string[];
+  goals: string[];
+}) => {
+  const names = [
+    ...tomes,
+    ...authors.map((byline) => `the ${byline} profile`),
+    ...goals.map(() => "your writing goals"),
+  ];
   if (names.length <= 2) return names.join(" and ");
   const counts = [
     tomes.length ? `${tomes.length} tome${tomes.length === 1 ? "" : "s"}` : "",
     authors.length ? `${authors.length} author profile${authors.length === 1 ? "" : "s"}` : "",
+    goals.length ? "your writing goals" : "",
   ];
   return counts.filter(Boolean).join(" and ");
 };
@@ -218,9 +235,10 @@ const describe = (report: SyncReport) => {
   const moved = (key: "pulled" | "pushed" | "raced") => ({
     tomes: report.tomes[key],
     authors: report.authors[key],
+    goals: report.goals[key],
   });
   const count = (key: "pulled" | "pushed" | "raced") =>
-    report.tomes[key].length + report.authors[key].length;
+    report.tomes[key].length + report.authors[key].length + report.goals[key].length;
   const parts: string[] = [];
   if (count("pulled")) parts.push(`brought down ${list(moved("pulled"))}`);
   if (count("pushed")) parts.push(`sent up ${list(moved("pushed"))}`);

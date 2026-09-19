@@ -14,7 +14,10 @@ import type { LocalCopy, RemoteCopy, SyncPlan } from "./syncPlan";
  * Drive holds one file per tome, so a typo in one book does not rewrite the
  * library, and a conflict is scoped to the book it happened in — and one file
  * per author profile, because a byline is shared by every tome crediting it
- * and so cannot be settled inside any one of them (see `syncPlan.ts`).
+ * and so cannot be settled inside any one of them (see `syncPlan.ts`). The
+ * library's writing goals are a third unit for exactly that reason: one row
+ * every book's activity page reads, so carried inside tome files a goal changed
+ * in one browser would never reach another that happened to hold newer prose.
  *
  * Rules this module is built around, all of them security-shaped:
  *
@@ -222,22 +225,28 @@ const folder = async () => {
   return made.id;
 };
 
-/** The two kinds of file in the folder. Each is planned on its own. */
-type Kind = "tome" | "author";
+/** The three kinds of file in the folder. Each is planned on its own. */
+type Kind = "tome" | "author" | "goals";
 
 /**
  * Which `appProperties` key names the unit a file holds. A tome file has
  * carried `tomeId` since sync shipped; a profile file carries `authorId`
- * instead, which is also what keeps an older build — whose planner skips any
- * file without a `tomeId` — from mistaking one for a tome.
+ * instead, and the writing goals carry `goalsId`, which is also what keeps an
+ * older build — whose planner skips any file without a `tomeId` — from
+ * mistaking either for a tome.
  */
-const idKey = { tome: "tomeId", author: "authorId" } as const;
+const idKey = { tome: "tomeId", author: "authorId", goals: "goalsId" } as const;
 
 interface DriveFile {
   id: string;
   name: string;
   modifiedTime: string;
-  appProperties?: { tomeId?: string; authorId?: string; touchedAt?: string };
+  appProperties?: {
+    tomeId?: string;
+    authorId?: string;
+    goalsId?: string;
+    touchedAt?: string;
+  };
 }
 
 /**
@@ -251,9 +260,13 @@ const listRemote = async (folderId: string): Promise<Record<Kind, RemoteCopy[]>>
     `${apiRoot}/files?q=${encodeURIComponent(query)}` +
       "&fields=files(id,name,modifiedTime,appProperties)&spaces=drive&pageSize=1000",
   );
-  const copies: Record<Kind, RemoteCopy[]> = { tome: [], author: [] };
+  const copies: Record<Kind, RemoteCopy[]> = { tome: [], author: [], goals: [] };
   for (const file of listed.files ?? []) {
-    const kind: Kind = file.appProperties?.authorId ? "author" : "tome";
+    const kind: Kind = file.appProperties?.authorId
+      ? "author"
+      : file.appProperties?.goalsId
+        ? "goals"
+        : "tome";
     copies[kind].push({
       fileId: file.id,
       id: file.appProperties?.[idKey[kind]] ?? "",
@@ -286,10 +299,14 @@ const multipart = (metadata: object, body: string) => {
   };
 };
 
-/** `The Long Road.mytome.json`, or `J.D. Robb.author.mytome.json` for a profile. */
+/**
+ * `The Long Road.mytome.json`, `J.D. Robb.author.mytome.json` for a profile, or
+ * `Writing goals.goals.mytome.json` for the goals.
+ */
+const suffixFor = { tome: "", author: ".author", goals: ".goals" } as const;
 const fileNameFor = (kind: Kind, title: string) => {
   const base = title.trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 80) || kind;
-  return `${base}${kind === "author" ? ".author" : ""}.mytome.json`;
+  return `${base}${suffixFor[kind]}.mytome.json`;
 };
 
 /**
@@ -341,7 +358,9 @@ export interface SyncMoves {
 export interface SyncReport {
   tomes: SyncMoves;
   authors: SyncMoves;
-  /** Tomes and profiles alike that already matched. */
+  /** The library's writing goals — at most one thing, moving or not. */
+  goals: SyncMoves;
+  /** Tomes, profiles and goals alike that already matched. */
   matched: number;
   duplicates: number;
   at: string;
@@ -375,7 +394,10 @@ const carryOut = async (
   for (const file of plan.pull) {
     const backup = parseBackup(await download(file.fileId));
     const { name, kept } = unit.merged(backup, await store.restoreBackup(backup, "merge"));
-    const title = name ?? nameOf.get(file.id) ?? (kind === "tome" ? "A tome" : "A profile");
+    const title =
+      name ??
+      nameOf.get(file.id) ??
+      { tome: "A tome", author: "A profile", goals: "Writing goals" }[kind];
     // `kept` means the local copy turned out to be newer after all — the file
     // was stale by the time it landed. Nothing was lost; the push below sends
     // this browser's copy up instead.
@@ -400,8 +422,10 @@ export const syncNow = async (): Promise<SyncReport> => {
   const remote = await listRemote(folderId);
   const localAuthors = await store.authorMarks();
   const localTomes = await store.tomeMarks();
+  const localGoals = await store.goalsMarks();
   const authorPlan = planSync(localAuthors, remote.author);
   const tomePlan = planSync(localTomes, remote.tome);
+  const goalsPlan = planSync(localGoals, remote.goals);
   const at = new Date().toISOString();
 
   const authors = await carryOut(folderId, "author", authorPlan, remote.author, localAuthors, {
@@ -410,6 +434,13 @@ export const syncNow = async (): Promise<SyncReport> => {
       name: file.authors[0] && authorByline(file.authors[0]),
       kept: result.authors.kept > 0,
     }),
+  });
+  // The goals travel with the profiles, before any tome: they are one row that
+  // every book's page reads, so a pulled goal should already be here when the
+  // tomes that will be measured against it arrive.
+  const goals = await carryOut(folderId, "goals", goalsPlan, remote.goals, localGoals, {
+    exportCopy: () => store.exportGoalsBackup(),
+    merged: (_file, result) => ({ name: "Writing goals", kept: result.goals === "keep" }),
   });
   const tomes = await carryOut(folderId, "tome", tomePlan, remote.tome, localTomes, {
     exportCopy: (id) => store.exportTomeBackup(id),
@@ -420,8 +451,13 @@ export const syncNow = async (): Promise<SyncReport> => {
   return {
     tomes,
     authors,
-    matched: tomePlan.matched.length + authorPlan.matched.length,
-    duplicates: tomePlan.duplicates.length + authorPlan.duplicates.length,
+    goals,
+    matched:
+      tomePlan.matched.length + authorPlan.matched.length + goalsPlan.matched.length,
+    duplicates:
+      tomePlan.duplicates.length +
+      authorPlan.duplicates.length +
+      goalsPlan.duplicates.length,
     at,
   };
 };

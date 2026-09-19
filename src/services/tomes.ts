@@ -1,15 +1,17 @@
 import { db } from "../models/db";
 import type { Tome } from "../models/Tome";
 import { tomeDescription } from "../models/Tome";
+import { clearTomeActivity } from "./activity";
 import { now, observe, uid } from "./internal";
 
 /**
- * Deletes every row belonging to the tome, across all eight tables. Call inside
+ * Deletes every row belonging to the tome, across all ten tables. Call inside
  * a transaction that includes them — `deleteTome` opens one, and `restoreBackup`
  * calls this inside its own to clear a tome it is about to overwrite, so the
  * cascade is written once and cannot drift between the two.
  */
 export const clearTome = async (id: string) => {
+  await clearTomeActivity(id);
   await db.writeItems.where("tomeId").equals(id).delete();
   await db.plotItems.where("tomeId").equals(id).delete();
   await db.plotRows.where("tomeId").equals(id).delete();
@@ -42,6 +44,10 @@ export const tomeStore = {
       status: input.status,
       coverImage: input.coverImage,
       authorId: input.authorId || undefined,
+      // Set on the activity page rather than in any create form, so they are
+      // carried through from the stored row rather than read off the input.
+      wordTarget: input.wordTarget ?? existing?.wordTarget,
+      deadline: input.deadline ?? existing?.deadline,
       createdAt: existing?.createdAt ?? time,
       updatedAt: time,
       archivedAt:
@@ -70,7 +76,14 @@ export const tomeStore = {
     patch: Partial<
       Pick<
         Tome,
-        "title" | "subtitle" | "description" | "status" | "coverImage" | "authorId"
+        | "title"
+        | "subtitle"
+        | "description"
+        | "status"
+        | "coverImage"
+        | "authorId"
+        | "wordTarget"
+        | "deadline"
       >
     >,
   ) {
@@ -88,8 +101,12 @@ export const tomeStore = {
         title: merged.title.trim(),
         subtitle: merged.subtitle?.trim() || undefined,
         ...tomeDescription(merged.description),
-        // Blank is "no author", and has one representation.
+        // Blank is "no author", and has one representation. A cleared target or
+        // deadline is normalized the same way, so "no target" is never stored
+        // as a zero the progress bar would try to divide by.
         authorId: merged.authorId || undefined,
+        wordTarget: merged.wordTarget || undefined,
+        deadline: merged.deadline || undefined,
         updatedAt: time,
         archivedAt:
           merged.status === "Archived" ? (existing.archivedAt ?? time) : undefined,
@@ -99,7 +116,7 @@ export const tomeStore = {
       return tome;
     });
   },
-  /** Clears all eight tables of everything belonging to the tome. */
+  /** Clears all ten tables of everything belonging to the tome. */
   async deleteTome(id: string) {
     await db.transaction(
       "rw",
@@ -112,6 +129,8 @@ export const tomeStore = {
         db.plotRows,
         db.plotItems,
         db.writeItems,
+        db.writingDays,
+        db.writingSessions,
       ],
       () => clearTome(id),
     );

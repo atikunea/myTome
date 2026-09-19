@@ -119,6 +119,26 @@ export function RestoreDialog({
               <MergeChip action={author.mergeAction} mode={mode} />
             </Box>
           ))}
+          {/* And the writing goals, on a line of their own for the same reason:
+              one library-level row, merged by its own date. */}
+          {summary.goals ? (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1.5,
+                px: 1.5,
+              }}
+            >
+              <Typography variant="body2" noWrap>
+                <Box component="span" sx={{ fontWeight: 600 }}>
+                  Writing goals
+                </Box>
+              </Typography>
+              <MergeChip action={summary.goals} mode={mode} />
+            </Box>
+          ) : null}
         </Stack>
 
         <RadioGroup

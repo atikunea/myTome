@@ -7,6 +7,7 @@ import {
   untitledWriteItem,
 } from "../models/WriteItem";
 import { countWords } from "../lexical/blocks";
+import { recordWordChange } from "./activity";
 import { detachWriteItem, now, observe, readPlotItem, uid } from "./internal";
 
 /**
@@ -58,6 +59,10 @@ export const writeItemStore = {
    * so autosave has somewhere to write and the URL names something real; an
    * untouched draft is cleaned up again by `discardWriteItemIfBlank`.
    *
+   * Nothing is recorded for the activity tracker here: a fresh draft holds no
+   * words, so there is no difference to record, and opening a sitting for a
+   * click that typed nothing would put an empty session on the day.
+   *
    * When `plotItemId` is given the new item joins that beat's text: at `at` in
    * its reading order, or appended when that is omitted or out of range. The
    * position is applied inside the same transaction as the create, so a section
@@ -96,21 +101,42 @@ export const writeItemStore = {
    * The autosave target. Deliberately unvalidated — a blank title has to be
    * allowed to persist mid-typing; the list falls back to "Untitled" for
    * display.
+   *
+   * It re-reads the row inside the transaction for the count it is replacing,
+   * because the activity tracker records a *difference* and there is nowhere
+   * else that difference exists. Recording in the same transaction is the whole
+   * guarantee: the day's figure and the word count it describes commit together
+   * or not at all.
    */
   async saveWriteItem(
     input: Pick<WriteItem, "id" | "title" | "type" | "content" | "preview">,
   ) {
-    await db.writeItems.update(input.id, {
-      title: input.title,
-      type: input.type,
-      content: input.content,
-      preview: input.preview.slice(0, previewLength),
-      // Counted from the *untruncated* text the editor sent, before `preview`
-      // is cut to its 240 characters: the caller hands over the whole document
-      // as plain text already, so the count costs a split rather than a parse.
-      wordCount: countWords(input.preview),
-      updatedAt: now(),
-    });
+    const time = now();
+    // Counted from the *untruncated* text the editor sent, before `preview` is
+    // cut to its 240 characters: the caller hands over the whole document as
+    // plain text already, so the count costs a split rather than a parse.
+    const wordCount = countWords(input.preview);
+    await db.transaction(
+      "rw",
+      db.writeItems,
+      db.writingDays,
+      db.writingSessions,
+      async () => {
+        const before = await db.writeItems.get(input.id);
+        if (!before) return;
+        await db.writeItems.update(input.id, {
+          title: input.title,
+          type: input.type,
+          content: input.content,
+          preview: input.preview.slice(0, previewLength),
+          wordCount,
+          updatedAt: time,
+        });
+        await recordWordChange(before.tomeId, wordCount - (before.wordCount ?? 0), {
+          at: time,
+        });
+      },
+    );
   },
   /**
    * Drops a draft the author opened but never typed into, so abandoning "New"
@@ -125,10 +151,23 @@ export const writeItemStore = {
       await db.writeItems.delete(id);
     });
   },
+  /**
+   * Deleting a text takes its whole word count off the day, because the day's
+   * figure is a claim about how long the book is and the book did get shorter.
+   * It does **not** open a sitting: clearing out the Write list is not writing,
+   * so the loss joins a sitting already in progress or stands alone on the day.
+   */
   async deleteWriteItem(id: string) {
-    await db.transaction("rw", db.writeItems, db.plotItems, async () => {
-      await detachWriteItem(id);
-      await db.writeItems.delete(id);
-    });
+    await db.transaction(
+      "rw",
+      [db.writeItems, db.plotItems, db.writingDays, db.writingSessions],
+      async () => {
+        const item = await db.writeItems.get(id);
+        await detachWriteItem(id);
+        await db.writeItems.delete(id);
+        if (item?.wordCount)
+          await recordWordChange(item.tomeId, -item.wordCount, { opensSession: false });
+      },
+    );
   },
 };

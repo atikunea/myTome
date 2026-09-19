@@ -15,6 +15,8 @@ import { PlotCompareRedirect } from "./pages/PlotCompareRedirect";
 import { WriteListPage } from "./pages/WriteListPage";
 import { WriteEditorPage } from "./pages/WriteEditorPage";
 import { BeatManuscriptPage } from "./pages/BeatManuscriptPage";
+import { ActivityPage } from "./pages/ActivityPage";
+import { LibraryActivityPage } from "./pages/LibraryActivityPage";
 import { AuthorPage } from "./pages/AuthorPage";
 import { AuthorsPage } from "./pages/AuthorsPage";
 import { BackupPage } from "./pages/BackupPage";
@@ -63,6 +65,16 @@ export default function App() {
                   a profile is created at the click site and opened on its id,
                   so a StrictMode double mount cannot leave an orphan.
                 */}
+                {/*
+                  Writing activity across the shelf. Library-level because the
+                  daily goal is one row every book is measured against — one
+                  habit, one streak — so it belongs to no single workspace, the
+                  same reason backup and author profiles sit out here. The goals
+                  dialog is a route rather than a `useState` flag because the
+                  URL can rebuild it, which is the test.
+                */}
+                <Route path="/activity" element={<LibraryActivityPage />} />
+                <Route path="/activity/goals" element={<LibraryActivityPage editing />} />
                 <Route path="/authors" element={<AuthorsPage />} />
                 <Route path="/authors/:authorId" element={<AuthorPage />} />
                 <Route path="/tomes/:tomeId" element={<WorkspaceLayout />}>
@@ -159,6 +171,17 @@ export default function App() {
                     refresh or back never lands on a route that would create a
                     second draft.
                   */}
+                  {/*
+                    This book's writing, measured. A tome-level page even though
+                    the daily goal above is not: what is drawn here — the
+                    calendar of this book's days, its sittings, its distance
+                    from its own target — is a question about one manuscript.
+                    `targets` is the same page with a boolean prop, exactly like
+                    `/tomes/new`, and edits the two fields that live on the tome
+                    itself rather than on the library's goals.
+                  */}
+                  <Route path="activity" element={<ActivityPage />} />
+                  <Route path="activity/targets" element={<ActivityPage editing />} />
                   <Route path="write" element={<WriteListPage />} />
                   <Route path="write/:writeItemId" element={<WriteEditorPage />} />
                   <Route path="elements/:typeId" element={<ElementListPage />} />

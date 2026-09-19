@@ -92,6 +92,43 @@ export function validatePlotItem(title: string) {
   if (!title.trim()) throw new Error("Every plot item needs a title.");
 }
 
+/**
+ * What the goals dialog must not be allowed to store. A goal of zero is valid
+ * and means "no daily goal" — what cannot be stored is a negative one, or a
+ * goal that applies to no day of the week, which would make every streak
+ * silently zero with nothing on screen to explain it.
+ */
+export function validateWritingGoals(input: {
+  dailyWords: number;
+  countedDays: number[];
+  sessionWords?: number;
+  sessionMinutes?: number;
+}) {
+  for (const [label, value] of [
+    ["daily goal", input.dailyWords],
+    ["session word target", input.sessionWords ?? 0],
+    ["session time target", input.sessionMinutes ?? 0],
+  ] as const)
+    if (!Number.isInteger(value) || value < 0)
+      throw new Error(`The ${label} must be a whole number of 0 or more.`);
+  if (input.dailyWords > 0 && !input.countedDays.length)
+    throw new Error("Pick at least one day for the daily goal to apply to.");
+}
+
+/**
+ * What a book's own targets must hold. Both are optional — clearing either is
+ * how an author says there isn't one — so only a value that was actually given
+ * is checked.
+ */
+export function validateTomeTargets(input: { wordTarget?: number; deadline?: string }) {
+  if (input.wordTarget !== undefined) {
+    if (!Number.isInteger(input.wordTarget) || input.wordTarget < 0)
+      throw new Error("The word target must be a whole number of 0 or more.");
+  }
+  if (input.deadline !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(input.deadline))
+    throw new Error("Give the deadline as a date, or leave it empty.");
+}
+
 export function validateRelationship(fromElementId: string, toElementId: string, label: string) {
   if (!label.trim()) throw new Error("Every relationship needs a description.");
   if (fromElementId === toElementId)

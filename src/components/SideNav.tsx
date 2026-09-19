@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { Box, ListItemButton, ListItemText, Typography } from "@mui/material";
 import EditNoteIcon from "@mui/icons-material/EditNote";
+import InsightsIcon from "@mui/icons-material/Insights";
 import SettingsIcon from "@mui/icons-material/Settings";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import type { Plot } from "../models/Plot";
@@ -104,6 +105,16 @@ export function SideNav() {
       >
         <EditNoteIcon fontSize="small" sx={{ mr: 1 }} />
         <ListItemText primary="Write" />
+      </ListItemButton>
+      {/* Beside Write rather than under the book's own heading: it is about
+          the writing, and it is where an author goes straight after a session. */}
+      <ListItemButton
+        component={NavLink}
+        to={`/tomes/${tome.id}/activity`}
+        sx={navItemSx}
+      >
+        <InsightsIcon fontSize="small" sx={{ mr: 1 }} />
+        <ListItemText primary="Activity" />
       </ListItemButton>
       <NavLabel>ELEMENTS</NavLabel>
       {types.map((type) => (

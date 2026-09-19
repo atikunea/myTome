@@ -26,14 +26,14 @@ export function PrivacyPolicyPage() {
     <PolicyPage
       title="Privacy"
       lede="myTome has no server, no accounts, and no analytics. Your writing stays in this browser unless you deliberately move it somewhere else."
-      updated="12 September 2026"
+      updated="18 September 2026"
       sibling={{ to: "/terms", label: "Terms of use" }}
     >
       <PolicySection title="The short version">
         <PolicyParagraph>
           Everything you write — tomes, author profiles, element types, elements,
-          relationships, plots, beats and prose — is saved by your own browser, on your own
-          machine. None of it is sent to us, because there is nowhere to send it:
+          relationships, plots, beats, prose and your writing activity — is saved by your
+          own browser, on your own machine. None of it is sent to us, because there is nowhere to send it:
           myTome is a static site with no backend, nothing for you to sign up for,
           and no database of yours that anyone else holds.
         </PolicyParagraph>
@@ -48,6 +48,7 @@ export function PrivacyPolicyPage() {
         <PolicyBullets
           items={[
             "Your work — tomes, author profiles, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
+            "How much you wrote and when: a running total of words for each day you write, the sittings those days were made of, and the goals and targets you set. All of it is counted from your own prose as you save it, and it is kept in that same database.",
             "Cover, element and author images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
             "Five small preferences: light or dark mode, your prose typeface, the line width of the writing view, whether its paragraphs indent their first line, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
           ]}
@@ -85,9 +86,10 @@ export function PrivacyPolicyPage() {
 
       <PolicySection title="Google Drive sync (optional)">
         <PolicyParagraph>
-          If you connect Google Drive, myTome keeps one backup file per tome, and
-          one per author profile, in a myTome folder in your own Drive, so a
-          second browser signed in as you finds the same books. The sync runs entirely in this tab, between you
+          If you connect Google Drive, myTome keeps one backup file per tome,
+          one per author profile, and one for your writing goals, in a myTome
+          folder in your own Drive, so a second browser signed in as you finds
+          the same books. The sync runs entirely in this tab, between you
           and Google. It stays off until you click Connect, and a build without a
           configured Google client id cannot do it at all.
         </PolicyParagraph>

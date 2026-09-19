@@ -76,6 +76,10 @@ thin to need a test. Existing instances:
   `IS_BOLD`/`IS_ITALIC`/… exports, never hardcoded bits.
 - `services/syncPlan.ts`, `manuscript.ts`, `storyOrder.ts`, `slug.ts` — pure,
   read no table.
+- `services/activityStats.ts` — when a sitting becomes the next, what a streak
+  survives, where a deadline lands. Days are local `YYYY-MM-DD` keys built and
+  read through `dayKey`/`parseDay`, never `new Date(key)`, which is UTC midnight
+  and so the day before across most of the world.
 
 **A green suite is not a run.** Layout, timing, focus, stacking and hit-testing
 bugs are invisible under `node`, and jsdom would not help. For UI behavior, run
@@ -129,9 +133,9 @@ services/
   store.ts           The barrel.
   internal.ts        uid/now/slugify, observe, sameSet, byRank, range queries, detach*, applyOrder.
   slug.ts            The one slug rule. Imports nothing, so pure modules can use it without db.
-  validate.ts        The four validators, plus the completeness helpers.
+  validate.ts        The six validators, plus the completeness helpers.
   images.ts          imageHref / imageFrom. Neither allocates an object URL.
-  tomes.ts           Tomes + the eight-table delete cascade. Sole writer of the tome text mirror.
+  tomes.ts           Tomes + the ten-table delete cascade. Sole writer of the tome text mirror.
   authors.ts         Author profiles — the one table no tome owns. Sole writer of its mirror.
   templates.ts       applyTomeTemplate, createPlotFromTemplate. Create-time only.
   elementTypes.ts    Types, field definitions, the count* helpers.
@@ -139,6 +143,8 @@ services/
   spine.ts           The shared row axis. Sole writer of row ranks and PlotItem.plotRowId.
   plots.ts           Plots and beats. Imports ordering from spine.ts; spine.ts imports nothing back.
   writeItems.ts      Prose rows + both sides of the beat↔text link. Sole writer of wordCount.
+  activity.ts        Writing days, sittings, goals. Sole writer of all three; recordWordChange is not on `store`.
+  activityStats.ts   Pure: sittings, streaks, pace, the calendar. Reads no table. Not on `store`.
   backup.ts          The backup file format, export, restore/merge.
   syncPlan.ts        Pure: what a sync should move.
   drive.ts           The only network code. Optional, gated, untested — verify in the built app.
@@ -171,7 +177,8 @@ Conventions:
   transaction — except `plotItems` (see the spine). Every reorder runs `sameSet`
   first and drops a drag whose set another tab has since changed.
 - Cascades run in `db.transaction("rw", …)` listing every table touched.
-  Deleting a tome clears the eight tome-owned tables and never `authors`.
+  Deleting a tome clears the ten tome-owned tables and never `authors` or
+  `writingGoals`.
   Deleting an Element strips its id from relationships and every beat's
   `attachedElementIds` (`detachElements`); deleting a WriteItem does the same
   (`detachWriteItem`). Deleting an author un-credits every tome naming it and
@@ -235,6 +242,13 @@ format. Reasoning is in the `backup.ts`, `syncPlan.ts` and `drive.ts` headers.
   Anything new that compares two copies of a tome must use `touchedAt`.
 - Author profiles are the exception: they merge row by row, newest `updatedAt`
   wins, sync as their own Drive file, and are not part of `touchedAt`.
+- **The library's `writingGoals` row is the second exception**, and follows the
+  profile rule exactly: its own `updatedAt`, its own Drive file, and out of
+  `touchedAt`. It rides in a whole-library file and in its own, never in a
+  one-tome file — handing someone a book should not hand them your daily goal.
+  A tome's `writingDays` and `writingSessions` are the opposite: tome-owned,
+  replaced whole with it, and only the days are in `touchedAt` (a sitting has no
+  `updatedAt` and needs none).
 - `Blob`s travel as base64 through `serializeImage`/`deserializeImage`.
 - **A restore bypasses Dexie's upgrades, so it must produce what the current
   schema would**: the spine satisfying `expectSpineIntact` (backfilled rows,
@@ -279,15 +293,18 @@ format. Reasoning is in the `backup.ts`, `syncPlan.ts` and `drive.ts` headers.
 - Wait for images on `load`, never `decode()` — it never settles in a hidden
   tab.
 
-### Two vestigial things — don't build on them
+### One vestigial thing — don't build on it
 
 - `Element.deletedAt` is filtered on but never written; `deleteElement`
   hard-deletes. There is no trash or restore.
-- The `activities` table has no reader and no writer.
+
+The `activities` table was the other one. It never had a reader or a writer, so
+v12 dropped it rather than leave a dead table beside the feature now called
+Activity.
 
 ## Dexie schema changes — read before editing `models/db.ts`
 
-The database is `myTomeDB`, currently at **version 11**. Each version's
+The database is `myTomeDB`, currently at **version 12**. Each version's
 reasoning is commented beside it in `db.ts`.
 
 1. **Never edit a shipped `.version(n)` block.** Add `.version(n+1)`.
@@ -372,7 +389,13 @@ in `App.tsx`.
 - **Old links keep resolving**: `plots/compare/:plotIds[/*]`
   (`PlotCompareRedirect`) and `plots/:plotIds/rows/:rowId` land on the current
   shapes. Don't remove them without deciding those links may 404.
-- `/backup`, `/authors`, `/privacy` and `/terms` are library-level. Both writing
+- **The activity tracker splits by what the number is about.** `/activity` is
+  library-level because the daily goal is one row every book is measured against
+  — one habit, one streak — while `/tomes/:tomeId/activity` draws one book's
+  days, sittings and distance from its own target. `wordTarget` and `deadline`
+  live on the `Tome`; the daily and session goals live on the singleton. Both
+  config dialogs are routes (`activity/targets`, `/activity/goals`).
+- `/backup`, `/authors`, `/activity`, `/privacy` and `/terms` are library-level. Both writing
   routes stay under `WorkspaceLayout`, so the workspace shows behind the
   `FocusSurface` and `TomeWorkspaceContext` stays in scope.
 

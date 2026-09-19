@@ -71,6 +71,9 @@ const snapshot = async () => ({
   plotItems: await db.plotItems.orderBy("id").toArray(),
   writeItems: await db.writeItems.orderBy("id").toArray(),
   authors: await db.authors.orderBy("id").toArray(),
+  writingDays: await db.writingDays.orderBy("id").toArray(),
+  writingSessions: await db.writingSessions.orderBy("id").toArray(),
+  writingGoals: await db.writingGoals.orderBy("id").toArray(),
 });
 
 /** A file as it comes back off disk: everything a JSON round trip would drop. */
@@ -642,5 +645,138 @@ describe("backupFileName", () => {
     expect(backupFileName({ ...file, exportedAt: "2026-08-30T11:00:00.000Z" })).toBe(
       "myTome-the-long-road-book-ii-2026-08-30.json",
     );
+  });
+});
+
+describe("writing activity", () => {
+  /** Writes `words` into a tome's prose, which is what records a day and a sitting. */
+  const record = async (tomeId: string, count: number) => {
+    const item = await store.createDraftWriteItem(tomeId, "chapter");
+    await store.saveWriteItem({
+      id: item.id,
+      title: "Chapter one",
+      type: "chapter",
+      content: JSON.stringify({ root: { children: [], type: "root", version: 1 } }),
+      preview: Array.from({ length: count }, (_, i) => `w${i}`).join(" "),
+    });
+  };
+
+  /**
+   * A day's net is the one thing in a tome that cannot be rebuilt from anything
+   * else in the file — unlike `wordCount`, which a restore derives. If it does
+   * not survive a round trip it is simply gone, and with it the streak.
+   */
+  it("carries a tome's days and sittings through a round trip", async () => {
+    const { tome } = await fullTome("The Long Road");
+    await record(tome.id, 120);
+    const before = await snapshot();
+
+    const file = throughJson(await store.exportBackup());
+    for (const table of db.tables) await table.clear();
+    await store.restoreBackup(file, "replace");
+
+    expect(await snapshot()).toEqual(before);
+    expect((await db.writingDays.toArray())[0].net).toBe(120);
+    expect(await db.writingSessions.count()).toBe(1);
+  });
+
+  it("leaves a tome's history alone when this browser is the newer copy", async () => {
+    const { tome } = await fullTome("The Long Road");
+    await record(tome.id, 120);
+    const file = throughJson(await store.exportBackup());
+
+    // More writing here since the file was made, so the file is the stale one
+    // — and a merge must not put its smaller day back over this one.
+    await record(tome.id, 400);
+    expect((await db.writingDays.toArray())[0].net).toBe(520);
+
+    expect((await store.restoreBackup(file, "merge")).kept).toBe(1);
+    expect((await db.writingDays.toArray())[0].net).toBe(520);
+  });
+
+  it("brings a tome's history back with it, whole", async () => {
+    const { tome } = await fullTome("The Long Road");
+    await record(tome.id, 120);
+    await record(tome.id, 400);
+    const file = throughJson(await store.exportBackup());
+
+    await store.deleteTome(tome.id);
+    expect(await db.writingDays.count()).toBe(0);
+
+    expect((await store.restoreBackup(file, "merge")).added).toBe(1);
+    expect((await db.writingDays.toArray())[0].net).toBe(520);
+    expect(await db.writingSessions.where("tomeId").equals(tome.id).count()).toBe(1);
+  });
+
+  it("counts writing towards a tome's high-water mark", async () => {
+    const { tome } = await fullTome("The Long Road");
+    const before = (await store.tomeMarks())[0].touchedAt;
+    await record(tome.id, 40);
+    expect((await store.tomeMarks())[0].touchedAt > before).toBe(true);
+    expect((await store.exportTomeBackup(tome.id)).tomes[0].writingDays).toHaveLength(1);
+  });
+
+  it("merges the goals row by row, newest wins — the profile rule", async () => {
+    await fullTome("The Long Road");
+    await store.saveWritingGoals({ dailyWords: 1000, countedDays: [1, 2, 3, 4, 5] });
+    const file = throughJson(await store.exportBackup());
+
+    // A goal changed here after the file was written stands: the file is older.
+    await store.saveWritingGoals({ dailyWords: 1500 });
+    expect((await store.restoreBackup(file, "merge")).goals).toBe("keep");
+    expect((await store.readWritingGoals()).dailyWords).toBe(1500);
+
+    // And the other way round, whatever became of the tomes beside them.
+    const newer = throughJson(await store.exportBackup());
+    await store.saveWritingGoals({ dailyWords: 200 });
+    await db.writingGoals.update("library", { updatedAt: "2020-01-01T00:00:00.000Z" });
+    expect((await store.restoreBackup(newer, "merge")).goals).toBe("replace");
+    expect((await store.readWritingGoals()).dailyWords).toBe(1500);
+  });
+
+  /**
+   * A one-tome file is something an author hands to someone else. The book's
+   * byline goes with it, because the book has one; the writer's daily habit
+   * does not.
+   */
+  it("keeps the goals out of a one-tome file", async () => {
+    const { tome } = await fullTome("The Long Road");
+    await store.saveWritingGoals({ dailyWords: 1000 });
+
+    expect((await store.exportTomeBackup(tome.id)).goals).toBeUndefined();
+    expect((await store.exportBackup()).goals).toMatchObject({ dailyWords: 1000 });
+    expect((await store.exportGoalsBackup()).goals).toMatchObject({ dailyWords: 1000 });
+  });
+
+  it("says what a restore would do with the goals before it does it", async () => {
+    await store.saveWritingGoals({ dailyWords: 1000 });
+    const file = throughJson(await store.exportBackup());
+    expect((await store.summarizeBackup(file)).goals).toBe("keep");
+
+    await db.writingGoals.clear();
+    expect((await store.summarizeBackup(file)).goals).toBe("add");
+  });
+
+  it("restores a pre-v12 file, which simply has no history in it", async () => {
+    const { tome } = await fullTome("The Long Road");
+    await record(tome.id, 120);
+    const file = throughJson(await store.exportBackup());
+    // A file from before the tracker existed: no arrays, no goals.
+    const older: BackupFile = {
+      ...file,
+      goals: undefined,
+      tomes: file.tomes.map((entry) => ({
+        ...entry,
+        writingDays: undefined,
+        writingSessions: undefined,
+      })),
+    };
+
+    for (const table of db.tables) await table.clear();
+    await store.restoreBackup(throughJson(older), "replace");
+
+    expect(await db.tomes.count()).toBe(1);
+    expect(await db.writingDays.count()).toBe(0);
+    expect(await db.writingGoals.count()).toBe(0);
   });
 });

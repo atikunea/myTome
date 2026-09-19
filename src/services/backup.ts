@@ -1,4 +1,6 @@
 import { asProseDocument, countDocumentWords, documentText } from "../lexical/blocks";
+import type { WritingDay, WritingGoals, WritingSession } from "../models/Activity";
+import { defaultWritingGoals, libraryGoalsId } from "../models/Activity";
 import type { Author } from "../models/Author";
 import { authorByline, authorDescription } from "../models/Author";
 import { backfillPlotRows, db } from "../models/db";
@@ -36,8 +38,12 @@ import { clearTome } from "./tomes";
  *   beat never touches the tome row, so comparing tome rows alone would call a
  *   browser full of new writing "older" and quietly discard it.
  *
- * The `activities` table is deliberately left out: it has no reader and no
- * writer (see the root AGENTS.md), so its rows are not data anyone would miss.
+ * **The activity tracker's days and sittings ride with their tome**, because
+ * they belong to one book and are replaced whole with it like everything else.
+ * Only the days join `touchedAt` — a sitting has no `updatedAt`, and none is
+ * needed: nothing changes a sitting without changing the day it is on, in the
+ * same transaction. The *goals* are library-level and merge like a profile;
+ * they are the one row here an author actually typed.
  *
  * **Author profiles are the one thing here that is not a tome's.** A byline is
  * shared by every book credited to it, so it cannot be "replaced whole" along
@@ -69,6 +75,11 @@ export const backupFormat = "myTome-backup";
  * applied rather than skipped: `authors` and `Tome.authorId` are new fields an
  * older reader ignores, and nothing it already knows changed meaning. (An older
  * app refuses the file anyway, on `schemaVersion`.)
+ *
+ * Schema v12's activity tracker does not bump it either, by the same test:
+ * `writingDays`, `writingSessions`, `goals`, `Tome.wordTarget` and
+ * `Tome.deadline` are all additions, and no field an older reader knows means
+ * anything different than it did.
  */
 export const backupFormatVersion = 3;
 
@@ -116,6 +127,9 @@ export interface TomeBackup {
   plotRows: PlotRow[];
   plotItems: PlotItem[];
   writeItems: WriteItem[];
+  /** Absent in a file written before schema v12; `parseBackup` defaults both. */
+  writingDays?: WritingDay[];
+  writingSessions?: WritingSession[];
 }
 
 export type BackedUpAuthor = Omit<Author, "image"> & { image?: SerializedImage };
@@ -134,6 +148,14 @@ export interface BackupFile {
    * it. See the note at the top for why these merge row by row.
    */
   authors: BackedUpAuthor[];
+  /**
+   * The library's writing goals — the one row on the three activity tables an
+   * author typed rather than earned. Present in a whole-library file and in the
+   * goals' own Drive file; absent from a one-tome file, because handing someone
+   * a book should not hand them your daily word target. Absent too from any
+   * file written before schema v12.
+   */
+  goals?: WritingGoals;
 }
 
 /**
@@ -166,6 +188,8 @@ export interface BackupSummary {
   exportedAt: string;
   tomes: BackupTomeSummary[];
   authors: BackupAuthorSummary[];
+  /** What the file's writing goals would do, when it carries any. */
+  goals?: MergeAction;
 }
 
 export interface RestoreCounts {
@@ -177,6 +201,8 @@ export interface RestoreCounts {
 /** Tome counts at the top, as before profiles existed; the profiles' own beside them. */
 export interface RestoreResult extends RestoreCounts {
   authors: RestoreCounts;
+  /** What became of the file's writing goals, when it carried any. */
+  goals?: MergeAction;
 }
 
 const bytesToBase64 = (bytes: Uint8Array) => {
@@ -234,6 +260,8 @@ const readTome = async (tomeId: string) => {
     plotRows,
     plotItems,
     writeItems,
+    writingDays,
+    writingSessions,
   ] = await Promise.all([
     db.elementTypes.where("tomeId").equals(tomeId).toArray(),
     db.elements.where("tomeId").equals(tomeId).toArray(),
@@ -242,6 +270,8 @@ const readTome = async (tomeId: string) => {
     db.plotRows.where("tomeId").equals(tomeId).toArray(),
     db.plotItems.where("tomeId").equals(tomeId).toArray(),
     db.writeItems.where("tomeId").equals(tomeId).toArray(),
+    db.writingDays.where("tomeId").equals(tomeId).toArray(),
+    db.writingSessions.where("tomeId").equals(tomeId).toArray(),
   ]);
   return {
     tome,
@@ -252,6 +282,8 @@ const readTome = async (tomeId: string) => {
     plotRows,
     plotItems,
     writeItems,
+    writingDays,
+    writingSessions,
   };
 };
 
@@ -267,6 +299,10 @@ const highWaterMark = (rows: TomeRows) =>
     rows.plotRows,
     rows.plotItems,
     rows.writeItems,
+    // Days, but not sittings: a `WritingSession` carries no `updatedAt` and
+    // needs none, since nothing touches one without touching the day it is on
+    // in the same transaction.
+    rows.writingDays,
   ]);
 
 /**
@@ -306,14 +342,33 @@ const collectAuthor = async (author: Author): Promise<BackedUpAuthor> => ({
   image: await serializeImage(author.image),
 });
 
-const fileOf = (tomes: TomeBackup[], authors: BackedUpAuthor[]): BackupFile => ({
+const fileOf = (
+  tomes: TomeBackup[],
+  authors: BackedUpAuthor[],
+  goals?: WritingGoals,
+): BackupFile => ({
   format: backupFormat,
   formatVersion: backupFormatVersion,
   schemaVersion: db.verno,
   exportedAt: new Date().toISOString(),
   tomes,
   authors,
+  goals,
 });
+
+/**
+ * The goals row, if the author has ever set one. An untouched library exports
+ * nothing rather than a row of zeroes, so restoring a file from a browser that
+ * never set a goal cannot quietly clear the goal on this one.
+ */
+const collectGoals = async () => db.writingGoals.get(libraryGoalsId);
+
+/** What merging the file's goals would do: newer `updatedAt` wins, a tie keeps. */
+const goalsMergeAction = async (entry: WritingGoals): Promise<MergeAction> => {
+  const here = await db.writingGoals.get(libraryGoalsId);
+  if (!here) return "add";
+  return entry.updatedAt > here.updatedAt ? "replace" : "keep";
+};
 
 /** What merging one profile would do: the newer `updatedAt` wins, a tie keeps what is here. */
 const authorMergeAction = async (entry: BackedUpAuthor): Promise<MergeAction> => {
@@ -397,6 +452,12 @@ const writeTome = async (entry: TomeBackup) => {
       wordCount: item.wordCount ?? countDocumentWords(item.content ?? ""),
     })),
   );
+  // Verbatim, and this is the one part of a tome that could not be rebuilt if
+  // it were dropped: unlike `wordCount`, a day's net is not derivable from
+  // anything else in the file. A file written before v12 carries neither array
+  // and the tome simply arrives with no history, which is the truth about it.
+  await db.writingDays.bulkPut(entry.writingDays ?? []);
+  await db.writingSessions.bulkPut(entry.writingSessions ?? []);
 };
 
 export const backupStore = {
@@ -410,6 +471,7 @@ export const backupStore = {
     return fileOf(
       entries.filter((entry) => entry !== undefined),
       authors,
+      await collectGoals(),
     );
   },
 
@@ -435,6 +497,30 @@ export const backupStore = {
     const author = await db.authors.get(authorId);
     if (!author) throw new Error("That author is no longer in this browser.");
     return fileOf([], [await collectAuthor(author)]);
+  },
+
+  /**
+   * The writing goals and nothing else: the file Drive keeps for them. Like a
+   * profile, the goals are their own unit of sync — one row shared by every
+   * book, so carrying them inside tome files would mean a browser with newer
+   * prose never pulling a goal changed elsewhere.
+   */
+  async exportGoalsBackup(): Promise<BackupFile> {
+    const goals = await collectGoals();
+    if (!goals) throw new Error("No writing goals have been set in this browser.");
+    return fileOf([], [], goals);
+  },
+
+  /**
+   * The goals' mark for a sync, in the same shape a tome's and a profile's
+   * take. One row, so its high-water mark is its own `updatedAt`, and there is
+   * exactly one of them or none.
+   */
+  async goalsMarks(): Promise<{ id: string; title: string; touchedAt: string }[]> {
+    const goals = await collectGoals();
+    return goals
+      ? [{ id: goals.id, title: "Writing goals", touchedAt: goals.updatedAt }]
+      : [];
   },
 
   /**
@@ -499,7 +585,12 @@ export const backupStore = {
         byline: authorByline(entry),
         mergeAction: await authorMergeAction(entry),
       });
-    return { exportedAt: file.exportedAt, tomes, authors };
+    return {
+      exportedAt: file.exportedAt,
+      tomes,
+      authors,
+      goals: file.goals ? await goalsMergeAction(file.goals) : undefined,
+    };
   },
 
   /**
@@ -525,7 +616,10 @@ export const backupStore = {
       db.plotRows,
       db.plotItems,
       db.writeItems,
+      db.writingDays,
+      db.writingSessions,
       db.authors,
+      db.writingGoals,
     ];
     return db.transaction("rw", tables, async (tx) => {
       const result: RestoreResult = {
@@ -535,6 +629,18 @@ export const backupStore = {
         authors: { added: 0, replaced: 0, kept: 0 },
       };
       if (mode === "replace") for (const table of tables) await table.clear();
+      // The goals merge on their own `updatedAt`, like a profile and for the
+      // same reason: one row shared by every book, so whatever became of the
+      // tomes beside them says nothing about which copy of them is newer.
+      if (file.goals) {
+        result.goals = await goalsMergeAction(file.goals);
+        if (result.goals !== "keep")
+          await db.writingGoals.put({
+            ...defaultWritingGoals,
+            ...file.goals,
+            id: libraryGoalsId,
+          });
+      }
       for (const entry of file.authors) {
         const action = await authorMergeAction(entry);
         if (action === "keep") result.authors.kept += 1;
@@ -618,6 +724,10 @@ export const parseBackup = (text: string): BackupFile => {
       plotRows: entry.plotRows ?? [],
       plotItems: entry.plotItems ?? [],
       writeItems: entry.writeItems ?? [],
+      // Absent before v12. A tome restored without them has no writing history,
+      // which is exactly what a file that never recorded any says about it.
+      writingDays: entry.writingDays ?? [],
+      writingSessions: entry.writingSessions ?? [],
     })),
     // Absent before schema v11. A profile without the fields the merge compares
     // is dropped rather than written as a row nothing could name or date.
@@ -628,6 +738,15 @@ export const parseBackup = (text: string): BackupFile => {
         typeof author.name === "string" &&
         typeof author.updatedAt === "string",
     ),
+    // Absent before v12, and dropped rather than half-written when the fields
+    // the merge compares are missing — the same test the profiles get above.
+    goals:
+      isRecord(file.goals) &&
+      typeof file.goals.dailyWords === "number" &&
+      Array.isArray(file.goals.countedDays) &&
+      typeof file.goals.updatedAt === "string"
+        ? { ...defaultWritingGoals, ...file.goals, id: libraryGoalsId }
+        : undefined,
   };
 };
 

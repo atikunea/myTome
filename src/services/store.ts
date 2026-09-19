@@ -1,3 +1,4 @@
+import { activityStore } from "./activity";
 import { authorStore } from "./authors";
 import { backupStore } from "./backup";
 import { elementStore } from "./elements";
@@ -37,6 +38,7 @@ export const store = {
   ...plotStore,
   ...spineStore,
   ...writeItemStore,
+  ...activityStore,
   ...backupStore,
 };
 
@@ -65,4 +67,6 @@ export {
   validateFields,
   validatePlotItem,
   validateRelationship,
+  validateTomeTargets,
+  validateWritingGoals,
 } from "./validate";

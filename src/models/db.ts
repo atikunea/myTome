@@ -6,16 +6,9 @@ import type { ElementType } from "./ElementType";
 import type { Relationship } from "./Relationship";
 import type { Plot, PlotItem, PlotRow } from "./Plot";
 import type { WriteItem } from "./WriteItem";
+import type { WritingDay, WritingGoals, WritingSession } from "./Activity";
 import { elementSearchText } from "./Element";
 import { asProseDocument, countDocumentWords, documentText } from "../lexical/blocks";
-export interface Activity {
-  id: string;
-  tomeId: string;
-  elementId?: string;
-  action: string;
-  occurredAt: string;
-  summary: string;
-}
 /**
  * Gives every plot item the `writeItemIds` array that readers and the
  * `*writeItemIds` multiEntry index both require. Safe to run repeatedly.
@@ -149,13 +142,15 @@ export class MyTomeDB extends Dexie {
   tomes!: EntityTable<Tome, "id">;
   elements!: EntityTable<Element, "id">;
   elementTypes!: EntityTable<ElementType, "id">;
-  activities!: EntityTable<Activity, "id">;
   relationships!: EntityTable<Relationship, "id">;
   plots!: EntityTable<Plot, "id">;
   plotRows!: EntityTable<PlotRow, "id">;
   plotItems!: EntityTable<PlotItem, "id">;
   writeItems!: EntityTable<WriteItem, "id">;
   authors!: EntityTable<Author, "id">;
+  writingDays!: EntityTable<WritingDay, "id">;
+  writingSessions!: EntityTable<WritingSession, "id">;
+  writingGoals!: EntityTable<WritingGoals, "id">;
   constructor(name = "myTomeDB") {
     super(name);
     this.version(2).stores({
@@ -261,6 +256,28 @@ export class MyTomeDB extends Dexie {
     // an author scans the tomes table, which is one row per book.
     this.version(11).stores({
       authors: "id, name",
+    });
+    // v12 adds the activity tracker. All three tables are new, and the two
+    // fields it puts on `Tome` — `wordTarget` and `deadline` — are optional
+    // ones for which `undefined` is the right reading, so this bump needs no
+    // upgrade at all (rule 2), exactly as v11's `authorId` did not.
+    //
+    // The indexes are chosen against how often these rows are *written*, which
+    // is once per autosave: `writingDays` carries only the two it is read by —
+    // `[tomeId+date]` for one book's page and upsert, `date` for the library's
+    // range across every book — and `writingSessions` carries `[tomeId+date]`
+    // for a day's sittings and `[tomeId+lastSaveAt]` for the one lookup on the
+    // hot path, "the sitting this save might continue".
+    //
+    // `activities` goes in the same bump. It has had no reader and no writer
+    // since it was added in v2, so there is nothing in it anywhere to lose, and
+    // leaving a dead table called that beside a live feature named Activity
+    // would mislead every future reader of this file.
+    this.version(12).stores({
+      writingDays: "id, tomeId, [tomeId+date], date",
+      writingSessions: "id, tomeId, [tomeId+date], [tomeId+lastSaveAt]",
+      writingGoals: "id",
+      activities: null,
     });
   }
 }

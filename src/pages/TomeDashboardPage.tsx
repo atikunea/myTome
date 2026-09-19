@@ -18,6 +18,7 @@ import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useProseFace } from "../context/ProseFaceContext";
+import { ActivityCard } from "../components/ActivityCard";
 import { AuthorPicker } from "../components/AuthorPicker";
 import { ImagePicker } from "../components/ImagePicker";
 import { InlineTextField } from "../components/InlineTextField";
@@ -211,6 +212,12 @@ function TomeOverview({ tome }: { tome: Tome }) {
           onSaveState={handleSaveState}
         />
       </Box>
+
+      {/* Last on the page, and absent entirely until the author has set a goal
+          or a target: it reports on the book rather than being part of it, and
+          a card of zeroes would be an invitation to configure something rather
+          than a fact about the manuscript. */}
+      <ActivityCard tome={tome} />
     </Box>
   );
 }

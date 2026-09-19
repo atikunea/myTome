@@ -18,6 +18,7 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CloudDoneIcon from "@mui/icons-material/CloudDone";
+import InsightsIcon from "@mui/icons-material/Insights";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutlined";
 import type { Tome, TomeStatus } from "../models/Tome";
 import { useTomes } from "../context/TomesContext";
@@ -140,6 +141,15 @@ export function TomeLibraryPage({
                 onClick={() => navigate("/authors")}
               >
                 Authors
+              </Button>
+              {/* Here for the same reason: the daily goal is one habit spanning
+                  every book on the shelf, so it is reachable from the shelf. */}
+              <Button
+                variant="text"
+                startIcon={<InsightsIcon />}
+                onClick={() => navigate("/activity")}
+              >
+                Activity
               </Button>
               <Button
                 variant="text"

@@ -258,7 +258,7 @@ The export rules are in the root `AGENTS.md`. On the UI side:
 
 ## Tables
 
-`WriteListPage` is the app's only table, so it sets the pattern for the next:
+`WriteListPage` is the table these rules were written for, and the one to copy:
 
 - The mouse gets the whole row; the keyboard gets the title, which is a real
   button and calls `stopPropagation`, so a click on it doesn't navigate twice.
@@ -268,6 +268,32 @@ The export rules are in the root `AGENTS.md`. On the UI side:
 - A hover-revealed row action stays visible below `sm`, because a phone has no
   hover. Hide it with `opacity`, not `display`, so `:focus-visible` can still
   show it.
+
+The day table on `ActivityPage` is the second one, and simpler: its order is
+fixed (newest first, because a day table has one sensible order), so it sorts on
+no header at all — which is why "every header sorts" belongs to the list above
+rather than to the table's own file.
+
+## The activity pages
+
+`ActivityCalendar` is the app's only colour-coded data display, so it carries
+the one rule that makes such a thing honest: **the squares are never the only
+reading**. Each is a real `<button>` whose accessible name says the date and the
+figure, and the day table beneath it is the same record as text. When the next
+chart arrives, it owes the reader the same second reading.
+
+- **A day that lost words is not a paler good day.** Negative days take the
+  error colour; the four-step ramp is for days that gained. One ramp cannot say
+  both things.
+- Colour comes from `alpha()` over `primary.main` and `error.main`, never from
+  a hardcoded ramp, so both colour modes get a scale that sits on their own
+  paper.
+- `ActivityCard` renders **nothing** until the author has set a goal or a
+  target. A card of zeroes on the overview would be an invitation to configure
+  something rather than a fact about the book.
+- Every figure on all three surfaces — page, card, library page — is derived in
+  `services/activityStats.ts`. None of them may compute a streak or a pace of
+  its own, or the overview will eventually disagree with the page it links to.
 
 ## Below `sm` the nav is a top bar
 

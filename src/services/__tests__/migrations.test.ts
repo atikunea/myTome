@@ -111,7 +111,7 @@ const seedLegacy = async (
 const upgrade = async (name: string) => {
   const db = new MyTomeDB(name);
   await db.open();
-  expect(db.verno).toBe(11);
+  expect(db.verno).toBe(12);
   const items = await db.plotItems.toArray();
   const rows = await db.plotRows.toArray();
   db.close();
@@ -370,7 +370,7 @@ describe("v9 — backfillElementProse", () => {
   const upgradeElements = async (name: string) => {
     const db = new MyTomeDB(name);
     await db.open();
-    expect(db.verno).toBe(11);
+    expect(db.verno).toBe(12);
     const elements = await db.elements.toArray();
     db.close();
     return elements;
@@ -446,7 +446,7 @@ describe("v10 — backfillTomeProse", () => {
   const upgradeTomes = async (name: string) => {
     const db = new MyTomeDB(name);
     await db.open();
-    expect(db.verno).toBe(11);
+    expect(db.verno).toBe(12);
     const tomes = await db.tomes.toArray();
     db.close();
     return tomes;
@@ -520,5 +520,82 @@ describe("v11 — author profiles", () => {
     expect(tome?.updatedAt).toBe("2024-01-01T00:00:00.000Z");
     expect(tome?.authorId).toBeUndefined();
     expect(authors).toEqual([]);
+  });
+});
+
+describe("v12 — the activity tracker's tables", () => {
+  /** A v10 library: one tome, and the dead `activities` table still standing. */
+  const seedPreActivity = () =>
+    seedLegacy(10, async (write) => {
+      await write("tomes", [
+        {
+          id: "t1",
+          title: "The Long Road",
+          description: JSON.stringify({
+            root: {
+              children: [
+                {
+                  type: "paragraph",
+                  version: 1,
+                  children: [{ type: "text", text: "A war.", format: 0, version: 1 }],
+                },
+              ],
+              type: "root",
+              version: 1,
+            },
+          }),
+          descriptionText: "A war.",
+          status: "Draft",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          updatedAt: "2024-01-01T00:00:00.000Z",
+        },
+      ]);
+      // A real v10 database came through v8, so its prose already carries a
+      // count — seeding one without would be testing a library that cannot exist.
+      await write("writeItems", [{ ...legacyText("w1", "one two three"), wordCount: 3 }]);
+    });
+
+  it("adds the three tables and drops the one that never had a reader", async () => {
+    const name = await seedPreActivity();
+
+    const db = new MyTomeDB(name);
+    await db.open();
+    const tables = db.tables.map((table) => table.name);
+    db.close();
+
+    expect(tables).toEqual(expect.arrayContaining([
+      "writingDays",
+      "writingSessions",
+      "writingGoals",
+    ]));
+    // `activities` had no writer from the day it shipped, so there is nothing
+    // in it anywhere to lose — and a dead table by that name beside a live
+    // feature called Activity would mislead every later reader.
+    expect(tables).not.toContain("activities");
+  });
+
+  /**
+   * The bump carries no `.upgrade()` at all, which is only correct if nothing
+   * existing needs a value: every table is new, and `Tome.wordTarget` and
+   * `Tome.deadline` are optional fields for which `undefined` is the right
+   * reading. This is that claim, checked.
+   */
+  it("needs no backfill: existing rows come through untouched", async () => {
+    const name = await seedPreActivity();
+
+    const db = new MyTomeDB(name);
+    await db.open();
+    const tome = await db.tomes.get("t1");
+    const text = await db.writeItems.get("w1");
+    const days = await db.writingDays.count();
+    db.close();
+
+    expect(tome!.title).toBe("The Long Road");
+    expect(tome!.wordTarget).toBeUndefined();
+    expect(tome!.deadline).toBeUndefined();
+    expect(text!.wordCount).toBe(3);
+    // A library that never recorded a day arrives with no days, not with zeroes
+    // for every date it might have written on.
+    expect(days).toBe(0);
   });
 });

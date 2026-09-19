@@ -37,6 +37,19 @@ export interface Tome {
    * restored into a browser that never saw its author is a real way to get one.
    */
   authorId?: string;
+  /**
+   * How long this book is meant to be, in words. Optional since schema v12, and
+   * absent means "no target": the activity page shows the book's progress only
+   * when there is something to be making progress towards.
+   */
+  wordTarget?: number;
+  /**
+   * The day this book is due, as a local `YYYY-MM-DD` key — the same shape a
+   * `WritingDay` carries, and for the same reason: a deadline is a date the
+   * author lives through, not an instant. Pace is derived from this and
+   * `wordTarget` on every read and never stored; see `services/activityStats.ts`.
+   */
+  deadline?: string;
   status: TomeStatus;
   createdAt: string;
   updatedAt: string;
