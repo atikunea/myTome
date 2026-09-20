@@ -5,7 +5,7 @@ import type { WriteItem } from "../../models/WriteItem";
 import { isProseDocument } from "../../lexical/blocks";
 import { backupFileName, parseBackup, store } from "../store";
 import type { BackupFile } from "../store";
-import { addBeat, beatsOf, expectSpineIntact, makeTome } from "./helpers";
+import { addBeat, backdateTome, beatsOf, expectSpineIntact, makeTome } from "./helpers";
 
 /**
  * A tome with something in every table a backup carries: two element types'
@@ -710,6 +710,9 @@ describe("writing activity", () => {
 
   it("counts writing towards a tome's high-water mark", async () => {
     const { tome } = await fullTome("The Long Road");
+    // Without this the setup and the write below can share a millisecond, and
+    // "the mark moved" becomes a coin flip. See `backdateTome`.
+    await backdateTome(tome.id);
     const before = (await store.tomeMarks())[0].touchedAt;
     await record(tome.id, 40);
     expect((await store.tomeMarks())[0].touchedAt > before).toBe(true);
