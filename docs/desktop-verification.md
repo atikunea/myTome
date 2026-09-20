@@ -138,7 +138,11 @@ Everything below is invisible to the probe above and to every test in the repo.
 `npm run desktop:package` changes how the app finds its own files: the renderer
 is read from inside `app.asar` rather than from `dist/` on disk. Run the whole
 list above against the installed build, not only against `npx electron .`, and
-add these:
+add these.
+
+**This is the release checklist.** `release.yml` builds and publishes, but it
+cannot run the app it just built. Nothing below has an automated equivalent,
+and the third item is the one that loses libraries.
 
 - [ ] **The packaged app loads at all.** A blank window means the protocol
       handler could not read the renderer out of the asar — the fix is
@@ -325,6 +329,36 @@ Two things worth knowing:
 - **A pause does not survive a restart.** A launch tick will try the broken
   folder once more and pause again. That is once per launch, not a loop, and
   it is how the app notices that a drive came back.
+
+### Windows 11 — phase 5 (the release pipeline) — 2026-09-20
+
+`package.json` moved to **0.1.0**, and `npm run desktop:package` produced
+`myTome Setup 0.1.0.exe` (106.8 MB) and `myTome-0.1.0-portable.exe`
+(106.6 MB) — the version reaching the artifact names, which is the thing the
+old `0.0.0` was hiding.
+
+**Unsigned, confirmed rather than assumed.** electron-builder logs
+`signing with signtool.exe` for each executable even with no certificate
+present, which reads like success and is not;
+`Get-AuthenticodeSignature` reports **NotSigned** for both. That is the
+behaviour `release.yml` depends on — signing is wired through `CSC_LINK` and
+`CSC_KEY_PASSWORD` from secrets that do not exist, and the build carries on
+without them — but the log line is misleading enough to be worth writing down.
+
+electron-builder also writes `latest.yml` and a `.blockmap` into `release/`
+whether or not anything publishes them. The workflow's `release/*.exe` glob
+leaves both behind on purpose: there is no auto-update, and a feed nothing
+reads would be a promise this app has not made.
+
+The two shell steps in `release.yml` that are easy to get wrong were run
+locally against the real repo: the version gate accepts `0.1.0` and refuses
+`0.2.0` with the package's actual version in the message, and the release-notes
+substitution produces the right filenames. Both workflow files parse as YAML.
+
+**The After packaging list above is still unrun**, and deliberately so: an
+installed 0.1.0 would open the author's *real* library in `%APPDATA%\myTome`,
+and that is not something to do to someone's novels without asking first. It
+is the largest remaining gap in this document.
 
 ### Drive sync, end to end — both builds — 2026-09-20
 

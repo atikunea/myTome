@@ -1,0 +1,143 @@
+name: Release the desktop app
+
+# `workflow_dispatch` only, exactly like `deploy.yml`. Pushing to `main` must
+# not ship an installer any more than it ships the site — a release is a thing
+# someone decides to do, with a version number they chose.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release — must match package.json (e.g. 0.1.0)"
+        required: true
+      draft:
+        description: "Create the release as a draft"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  # **A three-platform matrix with two rows disabled**, and that is deliberate.
+  # macOS cannot be built on a Linux runner — notarization needs Apple's own
+  # tooling — so the shape of this workflow is decided by platforms that are
+  # not shipping yet. Enabling a row should be a one-line change here, not a
+  # rewrite of a Windows script. See docs/desktop-app.md, "Signing and
+  # distribution".
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifacts: "release/*.exe"
+          # - os: macos-latest
+          #   platform: macos
+          #   artifacts: "release/*.dmg"
+          #   Needs: an Apple Developer account, a Developer ID certificate,
+          #   and notarization. Gatekeeper *blocks* an unsigned build rather
+          #   than warning about it.
+          # - os: ubuntu-latest
+          #   platform: linux
+          #   artifacts: "release/*.AppImage"
+          #   AppImage rather than deb/rpm, because electron-updater supports
+          #   AppImage and supports neither of the others.
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The version in the tag and the version in the package must agree, or
+      # the installer claims to be something the release is not — and an
+      # upgrade path that compares versions is built on exactly this number.
+      - name: Check the version matches package.json
+        shell: bash
+        run: |
+          packaged=$(node -p "require('./package.json').version")
+          if [ "$packaged" != "${{ inputs.version }}" ]; then
+            echo "package.json is $packaged but this release says ${{ inputs.version }}." >&2
+            echo "Bump package.json and commit it before releasing." >&2
+            exit 1
+          fi
+
+      - run: npm run build
+      - run: npm test
+
+      # A *variable* for the client id and a *secret* for the client secret,
+      # matching `deploy.yml`. Neither is confidential in the RFC 8252 sense —
+      # a credential inside an installed app is extractable, which is why PKCE
+      # protects the exchange — but they stay out of the repository so a fork
+      # is never quietly talking to someone else's Google project. Leave them
+      # unset and the release simply has no Drive feature.
+      - name: Package
+        run: npm run desktop:package
+        env:
+          MYTOME_GOOGLE_CLIENT_ID: ${{ vars.MYTOME_GOOGLE_CLIENT_ID }}
+          MYTOME_GOOGLE_CLIENT_SECRET: ${{ secrets.MYTOME_GOOGLE_CLIENT_SECRET }}
+          # electron-builder reads these and signs if they are present. They
+          # are not, today, and it carries on without them — which is why this
+          # workflow needs no change on the day a certificate appears. See the
+          # `win` block in desktop/builder.yml.
+          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+
+      # Says it out loud in the run summary, so an unsigned release is never a
+      # thing someone discovers from a SmartScreen dialog. The comparison is
+      # done in the expression, never by expanding the secret into a script.
+      - name: Warn if this build is unsigned
+        if: ${{ secrets.WINDOWS_CERTIFICATE == '' }}
+        run: echo "::warning::No signing certificate is configured, so these artifacts are unsigned and SmartScreen will warn anyone who downloads them."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+
+  # Publishing is its own job so that a matrix row failing to build cannot
+  # leave half a release standing.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # `gh release create` rather than electron-builder's own publisher, on
+      # purpose: **there is no auto-update yet**, and publishing an update feed
+      # nothing consumes is a promise this app has not made.
+      #
+      # electron-builder writes `latest.yml` and a `.blockmap` into `release/`
+      # regardless — they are what a feed would be made of. The matrix's
+      # `release/*.exe` glob leaves both behind, so only the two executables
+      # ever reach a release. When auto-update lands, publishing those files is
+      # part of the same change. See docs/desktop-app.md.
+      # The notes live in `.github/release-notes.md` rather than in a heredoc
+      # here: they are prose that gets edited, and prose is easier to get right
+      # in a Markdown file than inside a YAML string inside a shell script.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          sed "s/VERSION/$VERSION/g" .github/release-notes.md > notes.md
+          gh release create "v$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "myTome $VERSION" \
+            --notes-file notes.md \
+            ${{ inputs.draft && '--draft' || '' }} \
+            artifacts/*

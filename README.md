@@ -119,9 +119,9 @@ It writes to `release/`:
 
 Both executables are around 112 MB, nearly all of it Electron.
 
-**Version numbers come from `package.json`**, which is still `0.0.0`. Bump it
-before handing a build to anyone, or every build will claim to be the same one
-— and auto-update, when it arrives, compares exactly this.
+**Version numbers come from `package.json`.** Bump it before handing a build to
+anyone, or every build will claim to be the same one — and auto-update, when it
+arrives, compares exactly this.
 
 Config is [desktop/builder.yml](desktop/builder.yml).
 
@@ -137,6 +137,39 @@ reason; if you ever see that error, check what else is watching the folder.
 > downloads one, prominently. That is fine for your own machines and not fine
 > for handing to someone else — see
 > [docs/desktop-app.md](docs/desktop-app.md) for what signing involves.
+
+### Releasing it
+
+[`release.yml`](.github/workflows/release.yml) builds the installer on a
+Windows runner and publishes it to GitHub Releases. Like the Pages deploy, it
+is **`workflow_dispatch` only** — pushing to `main` ships nothing.
+
+1. Bump `version` in `package.json` and commit it. The workflow refuses to run
+   if the version you type does not match, because an installer that claims a
+   version the release does not have is how upgrade paths go wrong.
+2. Run the workflow, give it the same version, and leave "draft" on until you
+   have looked at what it produced.
+
+It runs `npm run build` and `npm test` first, packages with the Google
+credentials from repository settings (`MYTOME_GOOGLE_CLIENT_ID` as a variable,
+`MYTOME_GOOGLE_CLIENT_SECRET` as a secret — a release without them simply has
+no Drive feature), and attaches both executables. Release notes come from
+[.github/release-notes.md](.github/release-notes.md), with `VERSION`
+substituted.
+
+**Nothing about the workflow changes on the day a certificate exists.** It
+already passes `CSC_LINK` and `CSC_KEY_PASSWORD` through from secrets that are
+not set; electron-builder signs when it finds them and carries on when it does
+not. Adding the two secrets is the entire change. Until then the run posts a
+warning saying the artifacts are unsigned.
+
+**There is no auto-update yet**, which is why the workflow publishes with
+`gh release create` rather than electron-builder's own publisher — that
+publisher also writes a `latest.yml` update feed, and a feed nothing reads is a
+promise this app has not made. Auto-update waits for signing: on macOS
+`electron-updater` verifies a signature before applying anything, and on
+Windows an updater that cannot verify what it installs is worse than no
+updater.
 
 Two lines in `builder.yml` are load-bearing rather than cosmetic, and both are
 commented there: `productName` must stay exactly `myTome`, because it decides
@@ -172,8 +205,13 @@ test` can see a window, a clipboard, a font or a print dialog.
 
 ## Deployment
 
-`.github/workflows/deploy.yml` publishes `dist/` to GitHub Pages and is
-**`workflow_dispatch` only** — pushing to `main` ships nothing, deliberately.
+Two workflows, both **`workflow_dispatch` only** — pushing to `main` ships
+nothing, deliberately.
+
+| | |
+|---|---|
+| [`deploy.yml`](.github/workflows/deploy.yml) | Publishes `dist/` to GitHub Pages. |
+| [`release.yml`](.github/workflows/release.yml) | Builds the desktop installer and publishes a GitHub Release. See [Releasing it](#releasing-it). |
 
 The site is served from the `/myTome/` subpath, which is why the router is a
 `HashRouter`.

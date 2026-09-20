@@ -22,10 +22,13 @@ import {
  * "where can this app talk to", and is what this page should be checked
  * against.
  *
- * **The desktop build ships this same page**, and parts of it are still
- * written as though the browser were the only host. The network list and the
- * question of where a desktop library lives on disk are the remaining gaps;
- * `docs/desktop-app.md`, "Documents this feature makes wrong", is the list.
+ * **The desktop build ships this same page**, so every claim here has to be
+ * true of both. Where they differ the text says which is which: the desktop
+ * renderer talks to nothing (its CSP is `connect-src 'self'`) and the shell
+ * makes the Drive calls, the desktop library is a different library in
+ * `userData`, and the desktop app can write backups into a folder the author
+ * chose. `docs/desktop-app.md`, "Documents this feature makes wrong", is the
+ * list this page was checked against.
  */
 export function PrivacyPolicyPage() {
   return (
@@ -51,7 +54,11 @@ export function PrivacyPolicyPage() {
       </PolicySection>
 
       <PolicySection title="What is stored, and where">
-        <PolicyParagraph>All of it lives in this browser, for this site only:</PolicyParagraph>
+        <PolicyParagraph>
+          In the browser, all of it lives in this browser, for this site only.
+          In the desktop app it lives on that machine, in a place named further
+          down. Either way it is one list:
+        </PolicyParagraph>
         <PolicyBullets
           items={[
             "Your work — tomes, author profiles, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
@@ -67,14 +74,35 @@ export function PrivacyPolicyPage() {
           to your browser about your own machine — it sends nothing anywhere.
         </PolicyParagraph>
         <PolicyParagraph>
+          The desktop app keeps its own copy, in its own place, and it is{" "}
+          <strong>not the same library as this page’s</strong> — installing it
+          does not import what you have written in a browser, and writing in one
+          does not change the other. Moving work between them is a backup file
+          or a Drive sync, deliberately. On Windows it lives under
+          %APPDATA%\myTome, on macOS under ~/Library/Application
+          Support/myTome, and on Linux under ~/.config/myTome. Uninstalling
+          leaves it there on purpose, so removing the app never removes your
+          writing.
+        </PolicyParagraph>
+        <PolicyParagraph>
+          <strong>None of it is encrypted, and it is not pretending to be.</strong>{" "}
+          Your library — in a browser or in the desktop app — is as private as
+          any other document in your account on that machine: protected by the
+          operating system’s own file permissions, and by full-disk encryption
+          like BitLocker or FileVault if you use it. Anything running as you can
+          read it. The one exception is the Drive renewal key, which the desktop
+          app hands to your operating system’s credential store, and only where
+          that store is a real one.
+        </PolicyParagraph>
+        <PolicyParagraph>
           The desktop app is the one version that can write outside itself, and
           only where you point it. Choose a folder under “Keep a copy in a
           folder” and it writes a full backup file there from time to time,
           removing its own older ones to stay within the number you set. It
           writes nowhere else, deletes nothing it did not write, and does
-          nothing at all until you have chosen a folder. Those files are
-          ordinary files on your machine: myTome does not encrypt them, and
-          anything that can read your documents can read them.
+          nothing at all until you have chosen a folder. What lands there is the
+          same backup file you could save by hand, and the paragraph above
+          applies to it: it is not encrypted either.
         </PolicyParagraph>
         <PolicyParagraph>
           There are no cookies, no tracking pixels, no advertising, and no
@@ -99,6 +127,16 @@ export function PrivacyPolicyPage() {
           That list is enforced rather than merely promised: the published build
           ships a content security policy naming those hosts, so a request
           anywhere else is blocked by the browser itself.
+        </PolicyParagraph>
+        <PolicyParagraph>
+          The desktop app is stricter, not looser. The page itself is allowed to
+          talk to nothing at all — no sign-in script, no Google API, no host
+          serving it, because it is already on your machine. When you use Drive
+          there, the app around the page makes those calls instead: Google's
+          token service, Google Drive, and a listener on your own computer that
+          exists for a few seconds so your browser can hand the sign-in back. It
+          accepts nothing from anywhere else, and it is not running when you are
+          not signing in.
         </PolicyParagraph>
       </PolicySection>
 

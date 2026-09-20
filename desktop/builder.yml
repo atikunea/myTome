@@ -1,9 +1,16 @@
 # Packaging for the desktop shell.
 #
-# **This produces an UNSIGNED build.** Windows SmartScreen will warn anyone who
-# downloads it, prominently. That is fine for testing on your own machines and
-# not fine for handing to another person — see docs/desktop-app.md, "Signing
-# and distribution", for what signing costs and why auto-update depends on it.
+# **This produces an UNSIGNED build today.** Windows SmartScreen will warn
+# anyone who downloads it, prominently. That is fine for testing on your own
+# machines and not fine for handing to another person — see
+# docs/desktop-app.md, "Signing and distribution", for what signing costs and
+# why auto-update depends on it.
+#
+# **There is nothing to change here when a certificate appears.**
+# electron-builder signs whenever `CSC_LINK` and `CSC_KEY_PASSWORD` are in the
+# environment and carries on quietly when they are not, so
+# `.github/workflows/release.yml` already passes them through from repository
+# secrets that do not exist yet. Adding the secrets is the whole change.
 #
 # Run it with `npm run desktop:package`.
 

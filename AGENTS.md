@@ -11,13 +11,33 @@ lives in IndexedDB via Dexie, shipped as a static bundle on GitHub Pages. Don't
 reach for a data-fetching library or invent a service; if a feature seems to
 need a server, say so rather than building one.
 
+**`desktop/` is not a carve-out from that.** The Electron main process is a
+shell around the same `src/`, and `docs/desktop-app.md` says what it may own:
+a window, the operating system, a Google token the renderer must never hold,
+and a folder the author pointed it at. It holds no tomes, no plots, no
+database, and it never parses a backup file. A feature that wants the main
+process to *know* something about a library is the same "if a feature seems to
+need a server" conversation, one process closer.
+
 **The one exception is `services/drive.ts`** — optional Google Drive sync,
 calling `accounts.google.com` and `www.googleapis.com` per user click, and
 absent entirely from a build without `VITE_GOOGLE_CLIENT_ID`. It is not
 permission to fetch things generally; a second remote dependency needs the same
-justification. `fetch` appears in that module only, and `import.meta.env`
-carries that one variable only — a *public* OAuth client id. The repo must never
-gain a secret.
+justification.
+
+- **In `src/`, `fetch` appears in that module only**, and `import.meta.env`
+  carries that one variable only — a *public* OAuth client id.
+- **In `desktop/`, network code is `oauth.ts` and `drive.ts`**, which add
+  `oauth2.googleapis.com` for the token exchange and a loopback listener on
+  `127.0.0.1` for the redirect. The renderer reaches neither: its CSP keeps
+  `connect-src 'self'`, and it has no token to spend. `drive.request` is
+  allowlisted to the two Drive API prefixes — see that file for why an
+  un-allowlisted proxy with a token attached is the failure to avoid.
+- **The repo must never gain a secret.** The desktop client secret is not one
+  in the confidential sense (RFC 8252 §8.5 — a credential inside an installed
+  app is extractable, which is why PKCE protects the exchange), but it still
+  lives outside the repo: an environment variable, a git-ignored
+  `.env.desktop.local`, or a CI secret.
 
 `CLAUDE.md` is just `@AGENTS.md`. `src/components/AGENTS.md` is the UI
 companion; it loads on its own in `src/components` (through that folder's own
@@ -275,8 +295,14 @@ format. Reasoning is in the `backup.ts`, `syncPlan.ts` and `drive.ts` headers.
   count; an older reader ignores them.
 - **A sync only ever merges.** `"replace"` stays a deliberate act on a file a
   human picked, behind a confirm.
-- **The OAuth token lives in a module variable only** — never `localStorage`,
-  IndexedDB or a cookie. No refresh token; the short lifetime is the design.
+- **The token rule is now two rules, one per platform**, and both live behind
+  `driveTransport.ts`. On the **web**, the access token lives in a module
+  variable only — never `localStorage`, IndexedDB or a cookie — there is no
+  refresh token, and the hour-long lifetime is the design. On the **desktop**,
+  the renderer holds no token at all: the main process makes every call, and
+  the refresh token is written to disk *only* through `desktop/vault.ts`,
+  which refuses unless the OS has a real credential store. Neither platform
+  ever puts a token where `src/` could read it back.
 - **`drive.file` is the only scope.** Never widen it to `drive` or
   `drive.readonly`.
 - Nothing is ever deleted from Drive, and no upload overwrites a file whose
