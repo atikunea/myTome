@@ -121,6 +121,12 @@ Everything below is invisible to the probe above and to every test in the repo.
       the app.
 - [ ] **Fonts**: the brand serif renders as intended — the check that matters
       on Linux, where Georgia does not exist.
+- [ ] **Drive sync, end to end.** Nothing automated can reach this: it needs a
+      real Google account, a real consent screen and a second machine. Connect
+      and see the account named; find the files in Drive itself; **close the
+      app completely, reopen it, and still be connected** — the refresh token
+      surviving a restart is the reason the desktop build exists at all; then
+      change a tome somewhere else and watch it come back down.
 - [ ] **Automatic backup export, left running for a real writing session**:
       files appear on the interval and only after something changed, and the
       app never stutters while a manuscript-sized library is serialised. The
@@ -319,6 +325,34 @@ Two things worth knowing:
 - **A pause does not survive a restart.** A launch tick will try the broken
   folder once more and pause again. That is once per launch, not a loop, and
   it is how the app notices that a drive came back.
+
+### Drive sync, end to end — both builds — 2026-09-20
+
+**Run by the author against their own Google account, not by a probe**, and it
+is the one check in this file nothing automated could have made: it needs a
+real consent screen and somewhere for the work to come back down to.
+
+Confirmed in the **desktop** build and the **web** build:
+
+- the OAuth round trip completes and the card names the signed-in account —
+  the loopback listener, PKCE and the token exchange, on the desktop side;
+- the files are really in Drive, in a myTome folder, visible in Drive itself;
+- **the desktop app is still connected after a full restart**, with no second
+  sign-in. That is the refresh token surviving in `safeStorage`, and it is the
+  reason the desktop build exists;
+- a change made in one place comes back down in another — the whole round
+  trip, not just the upload.
+
+This closes the gap phases 2, 3 and 4 all carried forward: until now Drive had
+been verified only structurally (the bridge surface, the request allowlist
+refusing an off-list URL, the token never crossing into the renderer). The
+transport is now known to work, on both platforms, with a real account.
+
+Still not checked here: the seven-day refresh-token expiry that comes with
+leaving the OAuth app in **Testing** status — a deliberate, recorded choice
+while the app is being built. See `docs/google-drive-sync.md`. The first time
+it bites, the desktop card should say "Sign in again" rather than look broken;
+that path has not been seen happen.
 
 ### macOS
 
