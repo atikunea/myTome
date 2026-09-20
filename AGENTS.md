@@ -148,6 +148,13 @@ services/
   backup.ts          The backup file format, export, restore/merge.
   syncPlan.ts        Pure: what a sync should move.
   drive.ts           The only network code. Optional, gated, untested — verify in the built app.
+  driveTransport.ts  Two build-time seams, each three files: the interface, plus a `.web.ts`
+  fileTransport.ts   and a `.desktop.ts` chosen by a Vite alias (`#driveTransport`,
+                     `#fileTransport`) and a tsconfig path. Import the alias, never a half.
+                     Drive is the page's own fetch on the web and the shell's session on the
+                     desktop; files are a download and a hidden input on the web and real OS
+                     dialogs on the desktop. **No page or component branches on the platform** —
+                     if one ever does, every one of them eventually will.
   storage.ts         navigator.storage.persist(). Touches no table; not on `store`.
   manuscript.ts      Pure: what a plot line's manuscript contains. Not on `store`.
   manuscriptDocx.ts  That manuscript as OOXML. Lazy-loaded; not on `store`.

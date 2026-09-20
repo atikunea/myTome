@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { DriveRequestInit } from "./bridge.js";
 import * as drive from "./drive.js";
+import * as files from "./files.js";
 import { buildApplicationMenu } from "./menu.js";
 
 /**
@@ -25,10 +26,9 @@ import { buildApplicationMenu } from "./menu.js";
  * exactly as it does on the web. See docs/desktop-app.md, "The main process is
  * not a backend".
  *
- * Phase 1 is deliberately inert: the preload surface exposes facts about the
- * host and nothing else, no code here reaches the network, and nothing is
- * written outside Chromium's own profile. What this file does carry is the
- * lockdown, and one decision that cannot be taken back.
+ * What it does own is the lockdown, the two things the renderer is not allowed
+ * to do for itself — spend a Google token, write to a disk — and one decision
+ * that cannot be taken back.
  */
 
 /**
@@ -176,12 +176,15 @@ const hardenSession = (): void => {
 };
 
 /**
- * The renderer's four ways to ask about Drive. Nothing here trusts the caller
- * beyond the fact that it is our own page: `drive.ts` validates the URL, and
- * the checked sender keeps a frame that somehow loaded something else from
- * spending the author's token.
+ * Everything the renderer may ask of the shell.
+ *
+ * Nothing here trusts the caller beyond the fact that it is our own page. The
+ * checked sender keeps a frame that somehow loaded something else from
+ * spending the author's Google token or writing to their disk; beyond that,
+ * `drive.ts` validates every URL, and `files.ts` never takes a path from the
+ * renderer at all.
  */
-const registerDriveIpc = (): void => {
+const registerIpc = (): void => {
   const fromOurPage = (url: string) =>
     url.startsWith(APP_ORIGIN) || (isDev && url.startsWith(DEV_SERVER_URL));
 
@@ -198,6 +201,9 @@ const registerDriveIpc = (): void => {
   handle("drive:authorize", () => drive.authorize());
   handle("drive:revoke", () => drive.revoke());
   handle("drive:request", (url: string, init?: DriveRequestInit) => drive.request(url, init));
+
+  handle("files:save", (request: Parameters<typeof files.save>[0]) => files.save(request));
+  handle("files:open", (options: Parameters<typeof files.open>[0]) => files.open(options));
 };
 
 const createWindow = (): BrowserWindow => {
@@ -266,7 +272,7 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => {
     serveRenderer();
     hardenSession();
-    registerDriveIpc();
+    registerIpc();
     Menu.setApplicationMenu(buildApplicationMenu({ appName: app.getName(), openExternal, isDev }));
     createWindow();
 

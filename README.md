@@ -61,15 +61,17 @@ formatter; match the surrounding style.
 
 ## The desktop app
 
-> **Status: early.** The shell exists and runs — window, lockdown, menus,
-> storage — but Drive sync, native file dialogs and automatic backup export are
-> not built yet. Windows only so far; macOS and Linux are planned. The full
-> design is in [docs/desktop-app.md](docs/desktop-app.md).
+> **Status: early.** The shell, Google Drive sync with a refresh token, and
+> native open/save dialogs all work. Automatic backup export, code signing and
+> auto-update are not built yet. Windows only so far; macOS and Linux are
+> planned. The full design is in [docs/desktop-app.md](docs/desktop-app.md).
 
 The desktop build is the *same* `src/` in an Electron shell. It differs from the
-web build in three ways and no more: it loads from a `mytome://` scheme instead
+web build in four ways and no more: it loads from a `mytome://` scheme instead
 of a URL subpath, it gets a stricter Content-Security-Policy as a real header,
-and it carries no OAuth client id.
+its Google credentials live in the shell rather than in the page, and getting a
+file in or out of it goes through a real OS dialog instead of a browser
+download and a hidden `<input type="file">`.
 
 **Its library is separate from the web app's** — a different origin means a
 different IndexedDB. Moving work between them is a backup file or a Drive sync,

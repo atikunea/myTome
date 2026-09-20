@@ -85,9 +85,15 @@ Each of these bit in more than one component:
   for the life of the document.
 - It is a layout effect, so a caller with a fallback doesn't paint the fallback
   first and then swap in the real image.
-- A URL that lives for one *action* — the download in `BackupPage` and
-  `ManuscriptExportDialog` — stays in its handler, with create, click and revoke
-  together. Don't convert those.
+- A URL that lives for one *action* stays in its handler, with create, click
+  and revoke together. **There is exactly one of those left, and it is not in a
+  component**: the `<a download>` inside `services/fileTransport.web.ts`.
+  Getting a file out of the app goes through `#fileTransport` now, and the
+  desktop half of that seam hands bytes across IPC without allocating a URL at
+  all. A page or component that wants to save a file calls `transport.save`,
+  and a page or component that wants one from the author calls
+  `transport.open` — neither touches `createObjectURL`, and neither builds an
+  `<input type="file">`.
 - `imageHref` allocates nothing and is safe anywhere, render bodies included.
 
 ## The focus surface: one live editor, the rest static
@@ -327,8 +333,10 @@ height. Keep both values.
 - `RestoreDialog` shows, per tome, what a restore would do before doing it,
   using `store.summarizeBackup`. "Replace everything" opens the app-wide
   confirm on top of it; that confirm's fixed "Delete permanently" wording is
-  accurate, so don't fork the provider. `BackupPage` is the only place that
-  touches the DOM for backups.
+  accurate, so don't fork the provider. `BackupPage` reaches no file API of its
+  own: it asks `#fileTransport` for a save and a pick, and cannot tell a
+  browser download from a native dialog. **Only the desktop build can report a
+  cancel**, so a `saved: false` means "say nothing", never "something failed".
 
 ## Only the browser shows these
 

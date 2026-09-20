@@ -18,7 +18,7 @@
  * proven to work end to end before anything worth stealing crosses it.
  */
 
-import type { DriveBridge, DriveRequestInit } from "./bridge.js";
+import type { DriveBridge, DriveRequestInit, FilesBridge } from "./bridge.js";
 
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
@@ -38,6 +38,15 @@ const drive: DriveBridge = {
     ipcRenderer.invoke("drive:request", url, init),
 };
 
+/**
+ * Always present, unlike `drive`: a build with no Google credentials still
+ * saves backups and opens cover images.
+ */
+const files: FilesBridge = {
+  save: (request) => ipcRenderer.invoke("files:save", request),
+  open: (options) => ipcRenderer.invoke("files:open", options),
+};
+
 const api = {
   /** Present only in the desktop build. The web build leaves `window.myTome` undefined. */
   isDesktop: true as const,
@@ -47,6 +56,7 @@ const api = {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
   },
+  files,
   // Omitted entirely when the build has no credentials, which is what the
   // renderer reads as "Drive is not part of this build".
   ...(process.env["MYTOME_DRIVE_CONFIGURED"] ? { drive } : {}),

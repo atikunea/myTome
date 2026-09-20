@@ -58,9 +58,37 @@ export interface DriveBridge {
   request(url: string, init?: DriveRequestInit): Promise<DriveResponse>;
 }
 
+/** A native dialog's file-type filter. Extensions carry no leading dot. */
+export interface BridgeFileFilter {
+  name: string;
+  extensions: string[];
+}
+
+/**
+ * Native open and save dialogs.
+ *
+ * **The renderer supplies a suggested name, never a path.** Where the file
+ * actually lands is whatever the dialog returned, which is why writing needs
+ * no allowlist the way `DriveBridge.request` does: the author chose it.
+ */
+export interface FilesBridge {
+  save(request: {
+    suggestedName: string;
+    filters: BridgeFileFilter[];
+    bytes: Uint8Array;
+  }): Promise<{ saved: boolean; name?: string }>;
+
+  /** Null when the author cancelled. */
+  open(options: {
+    filters: BridgeFileFilter[];
+  }): Promise<{ name: string; bytes: Uint8Array } | null>;
+}
+
 export interface MyTomeBridge {
   readonly isDesktop: true;
   readonly platform: string;
   readonly versions: { app: string; electron: string; chrome: string };
-  readonly drive: DriveBridge;
+  readonly files: FilesBridge;
+  /** Absent when the build carries no Google credentials. */
+  readonly drive?: DriveBridge;
 }

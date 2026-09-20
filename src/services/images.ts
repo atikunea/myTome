@@ -11,7 +11,10 @@ export const imageHref = (image?: ImageSource) =>
 
 export const imageFrom = async (
   url: string,
-  file?: File,
+  // A `Blob`, not a `File`: all this does with it is store it, and the desktop
+  // build's picker returns bytes read by the main process rather than a `File`
+  // the browser handed out.
+  file?: Blob,
 ): Promise<ImageSource | undefined> => {
   if (file) return { kind: "local", blob: file };
   if (!url.trim()) return undefined;
