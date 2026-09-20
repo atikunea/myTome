@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Box,
@@ -13,14 +13,18 @@ import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import CloudQueueIcon from "@mui/icons-material/CloudQueue";
 import SyncIcon from "@mui/icons-material/Sync";
 import {
+  canStaySignedIn,
   connect,
   disconnect,
+  driveAccount,
   driveConfigured,
-  isConnected,
+  driveState,
   lastSyncAt,
+  resumeDrive,
   syncNow,
 } from "../services/drive";
 import type { SyncReport } from "../services/drive";
+import type { DriveState } from "../services/driveTransport";
 
 /**
  * The Google Drive half of "where backups go".
@@ -36,11 +40,32 @@ import type { SyncReport } from "../services/drive";
  * an error state.
  */
 export function DriveSyncCard() {
-  const [connected, setConnected] = useState(isConnected);
+  const [state, setState] = useState<DriveState>(driveState);
+  const [account, setAccount] = useState(driveAccount);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [report, setReport] = useState<SyncReport | null>(null);
   const [syncedAt, setSyncedAt] = useState(lastSyncAt);
+
+  const connected = state === "connected";
+  const needsReconnect = state === "needs-reconnect";
+
+  /**
+   * The desktop build may already be signed in from a previous launch — that
+   * is what its refresh token is for — and only the shell knows. The web build
+   * has nothing to resume and answers immediately.
+   */
+  useEffect(() => {
+    let live = true;
+    void resumeDrive().then((resumed) => {
+      if (!live) return;
+      setState(resumed);
+      setAccount(driveAccount);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const run = async (what: string, action: () => Promise<void>) => {
     setBusy(what);
@@ -108,13 +133,40 @@ export function DriveSyncCard() {
                   there too.
                 </Typography>
               ) : null}
+              {account ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                  Signed in as <strong>{account}</strong>.
+                </Typography>
+              ) : null}
+              {needsReconnect ? (
+                <Typography variant="body2" color="warning.main" sx={{ mt: 0.75 }}>
+                  Google has stopped accepting this connection — it may have
+                  expired, been removed from your account, or the password may
+                  have changed. Your work is untouched; sign in again to resume
+                  syncing.
+                </Typography>
+              ) : null}
+              {driveConfigured && connected && !canStaySignedIn() ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                  This connection lasts until you close myTome. Staying signed in
+                  needs somewhere safe to keep the key, and this system has no
+                  password store myTome can use — so it asks again rather than
+                  leaving one lying about.
+                </Typography>
+              ) : null}
             </Box>
             <Chip
               size="small"
               label={
-                !driveConfigured ? "Not set up" : connected ? "Connected" : "Not connected"
+                !driveConfigured
+                  ? "Not set up"
+                  : needsReconnect
+                    ? "Sign in again"
+                    : connected
+                      ? "Connected"
+                      : "Not connected"
               }
-              color={connected ? "success" : "default"}
+              color={connected ? "success" : needsReconnect ? "warning" : "default"}
             />
           </Stack>
 
@@ -132,9 +184,16 @@ export function DriveSyncCard() {
                     loading={busy === "sync"}
                     onClick={() =>
                       run("sync", async () => {
-                        const result = await syncNow();
-                        setReport(result);
-                        setSyncedAt(result.at);
+                        try {
+                          const result = await syncNow();
+                          setReport(result);
+                          setSyncedAt(result.at);
+                        } finally {
+                          // A sync is where a dead refresh token surfaces, so
+                          // re-read the state whether it succeeded or not.
+                          setState(driveState());
+                          setAccount(driveAccount);
+                        }
                       })
                     }
                   >
@@ -147,7 +206,8 @@ export function DriveSyncCard() {
                     onClick={() =>
                       run("disconnect", async () => {
                         await disconnect();
-                        setConnected(false);
+                        setState("disconnected");
+                        setAccount(undefined);
                         setReport(null);
                       })
                     }
@@ -162,11 +222,12 @@ export function DriveSyncCard() {
                   onClick={() =>
                     run("connect", async () => {
                       await connect();
-                      setConnected(true);
+                      setState(driveState());
+                      setAccount(driveAccount);
                     })
                   }
                 >
-                  Connect Google Drive
+                  {needsReconnect ? "Sign in again" : "Connect Google Drive"}
                 </Button>
               )}
               {syncedAt ? (

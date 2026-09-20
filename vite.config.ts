@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
@@ -69,6 +70,30 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: desktop ? "./" : "/myTome/",
+
+    resolve: {
+      alias: {
+        /**
+         * Which Drive transport `services/drive.ts` gets, decided here rather
+         * than by a runtime `if`. An alias makes each bundle *unable* to
+         * contain the other's code: the web bundle never carries the IPC
+         * client, and the desktop bundle never carries Google's script loader
+         * — which its stricter CSP would refuse to run anyway.
+         *
+         * `tsconfig.json` maps the same specifier to the web implementation,
+         * which is what types it. Both satisfy `DriveTransport`, so either
+         * would do.
+         */
+        "#driveTransport": fileURLToPath(
+          new URL(
+            desktop
+              ? "./src/services/driveTransport.desktop.ts"
+              : "./src/services/driveTransport.web.ts",
+            import.meta.url,
+          ),
+        ),
+      },
+    },
     plugins: desktop ? [react()] : [react(), cspPlugin()],
     ...(desktop
       ? { define: { "import.meta.env.VITE_GOOGLE_CLIENT_ID": '""' } }

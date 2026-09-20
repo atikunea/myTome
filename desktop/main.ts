@@ -1,7 +1,19 @@
-import { app, BrowserWindow, Menu, nativeTheme, net, protocol, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  net,
+  protocol,
+  session,
+  shell,
+} from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import type { DriveRequestInit } from "./bridge.js";
+import * as drive from "./drive.js";
 import { buildApplicationMenu } from "./menu.js";
 
 /**
@@ -163,6 +175,31 @@ const hardenSession = (): void => {
   target.setPermissionCheckHandler((_contents, permission) => allowed(permission));
 };
 
+/**
+ * The renderer's four ways to ask about Drive. Nothing here trusts the caller
+ * beyond the fact that it is our own page: `drive.ts` validates the URL, and
+ * the checked sender keeps a frame that somehow loaded something else from
+ * spending the author's token.
+ */
+const registerDriveIpc = (): void => {
+  const fromOurPage = (url: string) =>
+    url.startsWith(APP_ORIGIN) || (isDev && url.startsWith(DEV_SERVER_URL));
+
+  const handle = <T>(channel: string, run: (...args: never[]) => Promise<T> | T) => {
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!fromOurPage(event.senderFrame?.url ?? "")) {
+        throw new Error("Refused: unexpected sender.");
+      }
+      return run(...(args as never[]));
+    });
+  };
+
+  handle("drive:session", () => drive.session());
+  handle("drive:authorize", () => drive.authorize());
+  handle("drive:revoke", () => drive.revoke());
+  handle("drive:request", (url: string, init?: DriveRequestInit) => drive.request(url, init));
+};
+
 const createWindow = (): BrowserWindow => {
   const win = new BrowserWindow({
     width: 1280,
@@ -221,10 +258,15 @@ if (!app.requestSingleInstanceLock()) {
 
   // Read by the sandboxed preload, which inherits this process's environment.
   process.env["MYTOME_APP_VERSION"] = app.getVersion();
+  // Whether to expose the Drive bridge at all. Without credentials the card
+  // stays a description of a feature this build does not have — no dead
+  // buttons, exactly as the web app behaves without a client id.
+  process.env["MYTOME_DRIVE_CONFIGURED"] = drive.configured ? "1" : "";
 
   void app.whenReady().then(() => {
     serveRenderer();
     hardenSession();
+    registerDriveIpc();
     Menu.setApplicationMenu(buildApplicationMenu({ appName: app.getName(), openExternal, isDev }));
     createWindow();
 

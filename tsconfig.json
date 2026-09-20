@@ -12,6 +12,11 @@
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+
+    /* The Drive transport is chosen by a Vite alias per build mode; this is
+       what types it. Pointing at the web implementation is arbitrary — both
+       satisfy `DriveTransport`, which is the point of the seam. */
+    "paths": { "#driveTransport": ["./src/services/driveTransport.web.ts"] },
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,

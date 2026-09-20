@@ -4,6 +4,46 @@ import type { PlotItem } from "../../models/Plot";
 import { store } from "../store";
 
 /** A tome with `plots` named plots, ready for beats. */
+/**
+ * Pushes every row a tome owns into the past.
+ *
+ * `touchedAt` is a max over `updatedAt` across all of these tables, and two
+ * writes landing in the same millisecond share a timestamp. So a test that
+ * sets a tome up, writes again, and expects the mark to have *moved* is a coin
+ * flip — it passes on a slow machine and fails on a fast one, which is exactly
+ * the flake `AGENTS.md` warns about under "Never assert an order that
+ * `updatedAt` alone decides".
+ *
+ * Backdating the earlier side makes the comparison mean what it says. The
+ * table list is the one in `highWaterMark` (`backup.ts`); a new tome-owned
+ * table with an `updatedAt` belongs in both.
+ */
+export const backdateTome = async (tomeId: string, at = "2001-01-01T00:00:00.000Z") => {
+  const tome = await db.tomes.get(tomeId);
+  if (tome) await db.tomes.put({ ...tome, updatedAt: at });
+
+  const owned = [
+    "elementTypes",
+    "elements",
+    "relationships",
+    "plots",
+    "plotRows",
+    "plotItems",
+    "writeItems",
+    "writingDays",
+  ];
+
+  const tables = db.tables.filter((table) => owned.includes(table.name));
+  // A renamed or dropped table would otherwise be skipped in silence, and the
+  // backdating would be quietly partial — which is the same flake again,
+  // wearing a helper's clothes.
+  expect(tables.map((table) => table.name).sort()).toEqual([...owned].sort());
+
+  for (const table of tables) {
+    await table.where("tomeId").equals(tomeId).modify({ updatedAt: at });
+  }
+};
+
 export const makeTome = async (plotNames: string[] = []) => {
   const tome = await store.saveTome({
     title: "Test Tome",

@@ -315,10 +315,15 @@ height. Keep both values.
   `PlotGrid` by hand.
 - `PolicyProse` exists so the two policy pages can't drift apart. Don't grow it
   into a general page scaffold.
-- **An integration with no config renders as prose with nothing to click**
-  (`DriveSyncCard` without `VITE_GOOGLE_CLIENT_ID`). Sync is a button, never a
-  background loop, and a reload starts disconnected because the token lives
-  only in memory.
+- **An integration with no config renders as prose with nothing to click** —
+  `DriveSyncCard` with no credentials, meaning a web build without
+  `VITE_GOOGLE_CLIENT_ID` or a desktop build whose shell exposed no Drive
+  bridge. Sync is a button, never a background loop.
+- **A reload starts disconnected on the web and connected on the desktop.** The
+  web token lives only in memory; the desktop build holds a refresh token that
+  outlives the window. That is why the card asks `resumeDrive()` on mount
+  instead of assuming either — and why the state it renders is
+  `DriveState`, which has a `needs-reconnect` the web build never reaches.
 - `RestoreDialog` shows, per tome, what a restore would do before doing it,
   using `store.summarizeBackup`. "Replace everything" opens the app-wide
   confirm on top of it; that confirm's fixed "Delete permanently" wording is

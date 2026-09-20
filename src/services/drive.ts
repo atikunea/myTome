@@ -1,4 +1,5 @@
 import { authorByline } from "../models/Author";
+import { transport } from "#driveTransport";
 import { parseBackup, store } from "./store";
 import type { BackupFile, RestoreResult } from "./store";
 import { planSync } from "./syncPlan";
@@ -19,19 +20,18 @@ import type { LocalCopy, RemoteCopy, SyncPlan } from "./syncPlan";
  * every book's activity page reads, so carried inside tome files a goal changed
  * in one browser would never reach another that happened to hold newer prose.
  *
- * Rules this module is built around, all of them security-shaped:
+ * **Getting a token is not in this file.** How the author signs in, where the
+ * token is kept, and who attaches it to a request are the only parts of Drive
+ * that differ between the web app and the desktop build, and they live behind
+ * `driveTransport.ts` — which is also where those rules are now written down.
+ * Everything else about Drive is here and is the same on both.
  *
- * - **The token never leaves memory.** No `localStorage`, no IndexedDB, no
- *   cookie. It expires in about an hour and there is no refresh token, which is
- *   a feature: the blast radius of an XSS is one session, not forever.
  * - **`drive.file` is the only scope**, so the app can touch files it created
  *   and nothing else in the user's Drive. Because that grant follows the OAuth
  *   client rather than the browser, the file this app wrote in Chrome is the
  *   same file it can read in Firefox — which is the entire trick behind syncing
- *   without a server.
- * - **Google's script is loaded on demand**, at the moment the author first
- *   asks to connect — not on page load. Someone who never touches Drive never
- *   runs third-party code.
+ *   without a server. It is also why `about?fields=user` is allowed to name the
+ *   signed-in account without asking for an identity scope.
  * - **A sync only ever merges.** `restoreBackup(…, "replace")` stays a
  *   deliberate, confirmed act on a file a human picked. Nothing automatic is
  *   allowed to wipe a library.
@@ -39,171 +39,55 @@ import type { LocalCopy, RemoteCopy, SyncPlan } from "./syncPlan";
  *   changed since the plan was made. See `syncPlan.ts` for what that costs.
  */
 
-const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "";
-
 /**
- * Whether this build carries an OAuth client id at all. Without one the Drive
- * UI stays a description of what it would do — no dead buttons, and a fork of
+ * Whether this build can reach Drive at all.
+ *
+ * On the web that means an OAuth client id compiled into the bundle; on the
+ * desktop it means the shell exposed its Drive bridge. Without it the Drive UI
+ * stays a description of what it would do — no dead buttons, and a fork of
  * this repo is never quietly talking to someone else's Google project.
  */
-export const driveConfigured = Boolean(clientId);
+export const driveConfigured = transport.configured;
 
-/** Per-file access to files this app created. Nothing else in the user's Drive. */
-const scope = "https://www.googleapis.com/auth/drive.file";
-const gisUrl = "https://accounts.google.com/gsi/client";
+/** Cached state and the account, for a card that has to render synchronously. */
+export const driveState = () => transport.state();
+export const driveAccount = () => transport.accountLabel();
+export const canStaySignedIn = () => transport.canStaySignedIn();
+
+/** Picks up a session the platform may already hold. Call once, on mount. */
+export const resumeDrive = () => transport.resume();
+
+export const isConnected = () => transport.state() === "connected";
+export const connect = () => transport.connect();
+export const disconnect = () => transport.disconnect();
+
 const apiRoot = "https://www.googleapis.com/drive/v3";
 const uploadRoot = "https://www.googleapis.com/upload/drive/v3";
 const folderName = "myTome";
 const folderMime = "application/vnd.google-apps.folder";
 const lastSyncKey = "myTome.drive.lastSyncAt";
 
-interface TokenResponse {
-  access_token?: string;
-  error?: string;
-  error_description?: string;
-}
-interface TokenClient {
-  requestAccessToken: (overrides?: { prompt?: string }) => void;
-}
-interface GoogleOAuth2 {
-  initTokenClient: (config: {
-    client_id: string;
-    scope: string;
-    callback: (response: TokenResponse) => void;
-    error_callback?: (error: { type?: string }) => void;
-  }) => TokenClient;
-  revoke: (token: string, done?: () => void) => void;
-}
-declare global {
-  interface Window {
-    google?: { accounts?: { oauth2?: GoogleOAuth2 } };
-  }
-}
-
-/** In memory for the life of the tab, and nowhere else. */
-let token: string | null = null;
-let client: TokenClient | null = null;
-let pending: {
-  resolve: (token: string) => void;
-  reject: (error: Error) => void;
-} | null = null;
-let loadingGis: Promise<void> | null = null;
-
-export const isConnected = () => token !== null;
-
-const loadGis = () =>
-  (loadingGis ??= new Promise<void>((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) return resolve();
-    const script = document.createElement("script");
-    script.src = gisUrl;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      // Let a later attempt try again rather than caching the failure forever.
-      loadingGis = null;
-      reject(new Error("Could not reach Google to sign in. Check your connection."));
-    };
-    document.head.append(script);
-  }));
-
-const tokenClient = async () => {
-  if (client) return client;
-  await loadGis();
-  const oauth2 = window.google?.accounts?.oauth2;
-  if (!oauth2) throw new Error("Google's sign-in script did not load.");
-  client = oauth2.initTokenClient({
-    client_id: clientId,
-    scope,
-    // One client, reused; each request parks its promise in `pending` because
-    // the callback is fixed when the client is built.
-    callback: (response) => {
-      const settle = pending;
-      pending = null;
-      if (response.access_token) settle?.resolve(response.access_token);
-      else
-        settle?.reject(
-          new Error(
-            response.error_description ??
-              response.error ??
-              "Google did not grant access.",
-          ),
-        );
-    },
-    error_callback: (error) => {
-      const settle = pending;
-      pending = null;
-      settle?.reject(
-        new Error(
-          error.type === "popup_closed"
-            ? "Sign-in was closed before it finished."
-            : "Google sign-in could not start. A pop-up blocker may be in the way.",
-        ),
-      );
-    },
-  });
-  return client;
-};
-
 /**
- * Gets a usable token, asking Google only when there isn't one. Call from a
- * click: the consent pop-up needs a user gesture behind it.
+ * One Drive call, and what to say when it goes wrong.
+ *
+ * Getting a token, keeping it, and retrying once when it has expired all
+ * belong to the transport — they are the only part of this that differs
+ * between the web app and the desktop build. What is left here is Drive's own
+ * vocabulary of failure, which is the same on both.
  */
-const authorize = async () => {
-  if (token) return token;
-  if (!clientId) throw new Error("Google Drive isn't set up in this build.");
-  const gis = await tokenClient();
-  token = await new Promise<string>((resolve, reject) => {
-    pending = { resolve, reject };
-    // An empty prompt means "don't ask again if they've already agreed".
-    gis.requestAccessToken({ prompt: "" });
-  });
-  return token;
-};
-
-export const connect = async () => {
-  await authorize();
-};
-
-/**
- * Hands the token back to Google and forgets it. Revoking rather than merely
- * dropping it is the honest reading of "disconnect" — the next connect asks for
- * consent again, which is the point.
- */
-export const disconnect = async () => {
-  const held = token;
-  token = null;
-  if (!held) return;
-  await new Promise<void>((resolve) => {
-    const oauth2 = window.google?.accounts?.oauth2;
-    if (!oauth2) return resolve();
-    oauth2.revoke(held, () => resolve());
-  });
-};
-
 const request = async (url: string, init?: RequestInit): Promise<Response> => {
-  const send = async () =>
-    fetch(url, {
-      ...init,
-      headers: { ...init?.headers, Authorization: `Bearer ${token}` },
-    });
-  let response = await send();
-  if (response.status === 401) {
-    // The hour is up. One silent retry — Google usually re-issues without a
-    // prompt for a grant already given.
-    token = null;
-    await authorize();
-    response = await send();
-  }
+  const response = await transport.request(url, init);
   if (response.ok) return response;
   const detail = await response
     .json()
     .then((body: { error?: { message?: string } }) => body.error?.message)
     .catch(() => undefined);
   throw new Error(
-    response.status === 403
-      ? (detail ?? "Google refused the request. It may be a rate limit — try again shortly.")
-      : (detail ?? `Google Drive returned ${response.status}.`),
+    response.status === 401
+      ? "Google Drive needs you to sign in again."
+      : response.status === 403
+        ? (detail ?? "Google refused the request. It may be a rate limit — try again shortly.")
+        : (detail ?? `Google Drive returned ${response.status}.`),
   );
 };
 
@@ -417,7 +301,11 @@ const carryOut = async (
  * first, so a tome arriving in the same sync already has its byline here.
  */
 export const syncNow = async (): Promise<SyncReport> => {
-  await authorize();
+  // Only when there is no session to use. On the web this is the pop-up, and
+  // it needs the click that got here; on the desktop a connected session is
+  // already in hand, and calling `connect` unconditionally would throw the
+  // system browser in the author's face on every sync.
+  if (transport.state() !== "connected") await transport.connect();
   const folderId = await folder();
   const remote = await listRemote(folderId);
   const localAuthors = await store.authorMarks();
