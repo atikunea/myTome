@@ -3,12 +3,18 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "desktop:check": "tsc -p tsconfig.desktop.json --noEmit",
+    "desktop:compile": "tsc -p tsconfig.desktop.json",
+    "desktop:dev": "npm run desktop:compile && electron . --dev",
+    "desktop:build": "vite build --mode desktop && npm run desktop:compile",
+    "desktop:start": "npm run desktop:build && electron ."
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -34,9 +40,11 @@
     "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
+    "@types/node": "^26.6.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "electron": "^44.4.3",
     "fake-indexeddb": "^6.2.5",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",

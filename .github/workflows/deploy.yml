@@ -21,7 +21,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Electron is a devDependency of the desktop shell and has no part in the
+      # web bundle. Without this, every web deploy downloads a ~100 MB binary
+      # it will never run.
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       # A repository *variable*, not a secret: an OAuth client id is public by
       # design and ships in the bundle. Leave it unset and the build simply has
       # no Drive sync. See docs/google-drive-sync.md.

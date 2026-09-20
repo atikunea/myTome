@@ -47,15 +47,42 @@ const cspPlugin = (): Plugin => ({
   }),
 });
 
-export default defineConfig({
-  base: "/myTome/",
-  plugins: [react(), cspPlugin()],
-  server: {
-    port: process.env.PORT ? Number(process.env.PORT) : 5173,
-  },
-  test: {
-    environment: "node",
-    include: ["src/**/*.test.ts"],
-    setupFiles: ["src/services/__tests__/setup.ts"],
-  },
+/**
+ * Two builds out of one `src/`.
+ *
+ * The web build is unchanged: the `/myTome/` subpath GitHub Pages serves from,
+ * and the policy above riding in the document because Pages serves no headers
+ * we control.
+ *
+ * The desktop build differs in exactly three ways, and no more. It loads from
+ * a custom scheme rather than a subpath, so `base` is relative. It gets its
+ * Content-Security-Policy as a real header from `desktop/main.ts` — stricter
+ * than the one above, since that renderer never loads Google's script — so the
+ * meta tag would only duplicate it. And it carries no OAuth client id: Drive
+ * arrives in phase 2 through the transport seam in `services/`, driven by the
+ * main process, never by the browser flow the web build uses.
+ *
+ * See docs/desktop-app.md, "Keeping the web build clean".
+ */
+export default defineConfig(({ mode }) => {
+  const desktop = mode === "desktop";
+
+  return {
+    base: desktop ? "./" : "/myTome/",
+    plugins: desktop ? [react()] : [react(), cspPlugin()],
+    ...(desktop
+      ? { define: { "import.meta.env.VITE_GOOGLE_CLIENT_ID": '""' } }
+      : {}),
+    server: {
+      port: process.env.PORT ? Number(process.env.PORT) : 5173,
+    },
+    test: {
+      environment: "node",
+      // `desktop/` is already a `node` program, so its pure modules — PKCE,
+      // the callback parser, the export scheduler — test here rather than
+      // needing a suite of their own. Nothing matches it yet.
+      include: ["src/**/*.test.ts", "desktop/**/*.test.ts"],
+      setupFiles: ["src/services/__tests__/setup.ts"],
+    },
+  };
 });
