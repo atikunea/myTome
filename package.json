@@ -17,7 +17,8 @@
     "desktop:dev": "npm run desktop:compile && electron . --dev",
     "desktop:build": "vite build --mode desktop && npm run desktop:compile",
     "desktop:start": "npm run desktop:build && electron .",
-    "desktop:package": "npm run desktop:build && electron-builder --config desktop/builder.yml"
+    "desktop:package": "npm run desktop:build && electron-builder --config desktop/builder.yml",
+    "desktop:icon": "electron scripts/make-icon.cjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

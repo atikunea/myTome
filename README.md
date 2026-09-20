@@ -103,15 +103,24 @@ data; misleading if you forget.
 npm run desktop:package
 ```
 
-Produces, in `release/`:
+Windows only for now. The first run downloads NSIS and 7-Zip tooling, so it
+needs a network connection and a few minutes; later runs are quicker.
 
-- **an NSIS installer** — per-user, so it never asks for an administrator, and
-  it lets the author choose the install directory
-- **a portable `.exe`** — runs from anywhere with no install at all, which is
-  the easiest way to try it on another machine
+It writes to `release/`:
 
-Config is [desktop/builder.yml](desktop/builder.yml). The app icon is generated
-from `public/favicon.svg` into `build/icon.png`.
+| | |
+|---|---|
+| `myTome Setup <version>.exe` | The installer. Per-user, so it never asks for an administrator, and the author chooses the directory. |
+| `myTome-<version>-portable.exe` | No install at all — runs from wherever you put it. The easiest way to try it on another machine. |
+| `win-unpacked/` | The app as a plain folder. `win-unpacked/myTome.exe` runs it without installing anything, which is what you want while testing. |
+
+Both executables are around 112 MB, nearly all of it Electron.
+
+**Version numbers come from `package.json`**, which is still `0.0.0`. Bump it
+before handing a build to anyone, or every build will claim to be the same one
+— and auto-update, when it arrives, compares exactly this.
+
+Config is [desktop/builder.yml](desktop/builder.yml).
 
 Packaging and `npm run dev` can run at the same time, but only because
 `vite.config.ts` says so. On Windows a watcher handle on a directory blocks
@@ -126,10 +135,24 @@ reason; if you ever see that error, check what else is watching the folder.
 > for handing to someone else — see
 > [docs/desktop-app.md](docs/desktop-app.md) for what signing involves.
 
-Two lines in that config are load-bearing rather than cosmetic, and both are
+Two lines in `builder.yml` are load-bearing rather than cosmetic, and both are
 commented there: `productName` must stay exactly `myTome`, because it decides
 where the library lives on disk, and `deleteAppDataOnUninstall` must stay
 `false`, because `true` means uninstalling silently deletes every novel.
+
+#### The icon
+
+```bash
+npm run desktop:icon
+```
+
+Renders `public/favicon.svg` into `build/icon.png`, which electron-builder
+converts to the Windows `.ico`. It uses the Electron already installed rather
+than an image library — Chromium renders the SVG and a hidden window is
+captured.
+
+`build/icon.png` is committed, so packaging never depends on having run this.
+Run it when the favicon changes, and commit the result.
 
 ### Checking it
 
