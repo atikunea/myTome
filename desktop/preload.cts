@@ -18,7 +18,25 @@
  * proven to work end to end before anything worth stealing crosses it.
  */
 
-const { contextBridge } = require("electron") as typeof import("electron");
+import type { DriveBridge, DriveRequestInit } from "./bridge.js";
+
+const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
+
+/**
+ * Four named calls, and never `ipcRenderer` itself — handing the renderer the
+ * whole IPC channel would make the sandbox decorative.
+ *
+ * Note what is *not* here: anything that returns a token. The renderer asks
+ * the main process to make a Drive call and gets the response back; the
+ * credential never crosses this boundary in either direction.
+ */
+const drive: DriveBridge = {
+  authorize: () => ipcRenderer.invoke("drive:authorize"),
+  session: () => ipcRenderer.invoke("drive:session"),
+  revoke: () => ipcRenderer.invoke("drive:revoke"),
+  request: (url: string, init?: DriveRequestInit) =>
+    ipcRenderer.invoke("drive:request", url, init),
+};
 
 const api = {
   /** Present only in the desktop build. The web build leaves `window.myTome` undefined. */
@@ -29,8 +47,9 @@ const api = {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
   },
-} as const;
+  // Omitted entirely when the build has no credentials, which is what the
+  // renderer reads as "Drive is not part of this build".
+  ...(process.env["MYTOME_DRIVE_CONFIGURED"] ? { drive } : {}),
+};
 
 contextBridge.exposeInMainWorld("myTome", api);
-
-export type MyTomeBridge = typeof api;

@@ -15,7 +15,7 @@
     "desktop:check": "tsc -p tsconfig.desktop.json --noEmit",
     "desktop:compile": "tsc -p tsconfig.desktop.json",
     "desktop:dev": "npm run desktop:compile && electron . --dev",
-    "desktop:build": "vite build --mode desktop && npm run desktop:compile",
+    "desktop:build": "vite build --mode desktop && npm run desktop:compile && node scripts/desktop-credentials.cjs",
     "desktop:start": "npm run desktop:build && electron .",
     "desktop:package": "npm run desktop:build && electron-builder --config desktop/builder.yml",
     "desktop:icon": "electron scripts/make-icon.cjs"
