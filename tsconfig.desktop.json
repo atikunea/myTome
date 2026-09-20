@@ -1,0 +1,41 @@
+{
+  /*
+   * The desktop shell is a separate TypeScript program, and not as a matter of
+   * taste. `tsconfig.json` describes a *browser*: `lib` carries DOM and
+   * DOM.Iterable, `types` carries `vite/client`. Main-process code checked
+   * against it would accept `document` and `window` and then fail at runtime,
+   * while Electron's own types would drag Node globals into scope for every
+   * file under `src/`, where they have no business being.
+   *
+   * Keeping them apart also means `npm run build` — the web gate — type-checks
+   * `src` only, so a broken file in here can never block a web deploy.
+   *
+   * `strict` is on because this is new code and nothing depends on it being
+   * off; `tsconfig.json` is left exactly as it was.
+   */
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "types": ["node"],
+
+    /* Node's own resolution, not the bundler's: this code is run by Electron,
+       not bundled. It also gives `.cts` its CommonJS meaning, which the
+       sandboxed preload depends on. */
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "verbatimModuleSyntax": true,
+
+    "outDir": "dist-electron",
+    "rootDir": "desktop",
+    "noEmit": false,
+    "skipLibCheck": true,
+
+    /* Matching the root config's linting, plus strict. */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["desktop"]
+}

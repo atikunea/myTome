@@ -1,5 +1,10 @@
 import { createTheme, type PaletteMode, type ThemeOptions } from "@mui/material/styles";
 
+import gelasioLatin from "./assets/fonts/gelasio-latin.woff2";
+import gelasioLatinExt from "./assets/fonts/gelasio-latin-ext.woff2";
+import gelasioItalicLatin from "./assets/fonts/gelasio-italic-latin.woff2";
+import gelasioItalicLatinExt from "./assets/fonts/gelasio-italic-latin-ext.woff2";
+
 const brand = {
   accent: "#9d5537",
   accentDark: "#c98a5e",
@@ -34,19 +39,78 @@ const darkPalette: ThemeOptions["palette"] = {
   success: { main: "#6fae78", light: "#25352a" },
 };
 
-export const brandFontFamily = "Georgia, 'Times New Roman', serif";
+/**
+ * Google's own subset ranges for this font, kept verbatim so a `latin-ext`
+ * file is fetched only by text that needs it.
+ */
+const latinRange =
+  "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD";
+const latinExtRange =
+  "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF";
+
+/** Each file is a variable font covering the whole 400–700 range in one style. */
+const gelasioFace = (src: string, style: "normal" | "italic", range: string) => `
+@font-face {
+  font-family: 'Gelasio';
+  font-style: ${style};
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(${src}) format('woff2');
+  unicode-range: ${range};
+}`;
+
+/**
+ * Shipped because `brandFontFamily` below cannot rely on the host having
+ * Georgia. Attached to `MuiCssBaseline` in `getTheme`, which is how CSS enters
+ * an app with no stylesheet of its own.
+ */
+export const gelasioFontFaces = [
+  gelasioFace(gelasioLatin, "normal", latinRange),
+  gelasioFace(gelasioLatinExt, "normal", latinExtRange),
+  gelasioFace(gelasioItalicLatin, "italic", latinRange),
+  gelasioFace(gelasioItalicLatinExt, "italic", latinExtRange),
+].join("\n");
+
+/**
+ * The brand serif, and the one place this app ships a font rather than naming
+ * one.
+ *
+ * **Georgia stays first**, so Windows and macOS render exactly what they always
+ * have and never download a byte — a face is only fetched when it is actually
+ * needed to draw something. Neither Georgia nor Times New Roman exists on most
+ * Linux distributions, though; they are Microsoft core fonts, not free ones. So
+ * without a bundled face the app there falls through to whatever generic
+ * `serif` happens to resolve to.
+ *
+ * That is cosmetic nearly everywhere, and **not cosmetic in
+ * `ManuscriptPrint`**: `components/manuscriptStyles.ts` records a line-width
+ * calibration measured against Georgia, so a different serif silently moves the
+ * measure the author chose. Gelasio is metric-compatible with Georgia, which is
+ * why it is the fallback and not simply a serif someone liked — the calibration
+ * holds on all three platforms.
+ */
+export const brandFontFamily = "Georgia, Gelasio, 'Times New Roman', serif";
+
+/**
+ * The interface face, and the app's default. Exported rather than written
+ * inline below because `components/manuscriptStyles.ts` offers it as one of the
+ * three prose faces — and a second copy of this string there would be free to
+ * drift from the one everything else is set in.
+ */
+export const sansFontFamily =
+  "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 export function getTheme(mode: PaletteMode) {
   return createTheme({
     palette: mode === "light" ? lightPalette : darkPalette,
     shape: { borderRadius: 10 },
     typography: {
-      fontFamily:
-        "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+      fontFamily: sansFontFamily,
       h1: { letterSpacing: "-0.03em" },
       h2: { letterSpacing: "-0.02em" },
     },
     components: {
+      MuiCssBaseline: { styleOverrides: gelasioFontFaces },
       MuiCard: {
         styleOverrides: { root: { borderRadius: 14 } },
       },

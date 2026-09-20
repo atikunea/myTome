@@ -1,0 +1,73 @@
+# Packaging for the desktop shell.
+#
+# **This produces an UNSIGNED build.** Windows SmartScreen will warn anyone who
+# downloads it, prominently. That is fine for testing on your own machines and
+# not fine for handing to another person — see docs/desktop-app.md, "Signing
+# and distribution", for what signing costs and why auto-update depends on it.
+#
+# Run it with `npm run desktop:package`.
+
+appId: com.atikunea.mytome
+
+# **This string is permanent.** electron-builder writes it into the packaged
+# app, where it becomes `app.getName()` — which decides `userData`, which is
+# where IndexedDB physically lives. Changing it points a new version at an
+# empty library and orphans the author's work in a folder the app no longer
+# looks in. It must stay exactly "myTome", matching `name` in package.json.
+# See docs/desktop-app.md, "The origin is a one-way decision".
+productName: myTome
+
+# Packaging extracts Electron into `release/win-unpacked.tmp` and then renames
+# it into place. On Windows that rename fails with EPERM if anything holds a
+# watcher handle on the directory — which Vite does, for the whole project
+# root, whenever `npm run dev` is running. `vite.config.ts` excludes `release/`
+# and `dist-electron/` from its watcher so the two can run side by side; if
+# that exclusion is ever removed, this build breaks in a way that points
+# nowhere near the dev server.
+directories:
+  output: release
+  buildResources: build
+
+# Everything the app needs and nothing else.
+#
+# `node_modules` is excluded outright, which is safe *because of how this app
+# is built*: the renderer is a Vite bundle, so react, MUI, Dexie and Lexical
+# are already inside `dist/`, and the main process imports nothing but
+# `electron` and node builtins. Shipping them again would roughly double the
+# installer for files that would never be read. If the shell ever gains a real
+# runtime dependency, this line is what will break — deliberately.
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - "!node_modules/**/*"
+
+asar: true
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  # A real installer with a directory choice, rather than a one-click that
+  # decides for the author.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+  # Per-user, so installing never needs an administrator.
+  perMachine: false
+
+  # **Leave this false.** True means uninstalling deletes `userData` — which is
+  # every novel the author has written, with no prompt and no undo. It is the
+  # default; it is written out because it is the single most destructive line
+  # this file could contain.
+  deleteAppDataOnUninstall: false
+
+  shortcutName: myTome
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}

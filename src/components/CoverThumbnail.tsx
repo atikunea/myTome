@@ -2,6 +2,7 @@ import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import type { ImageSource } from "../models/Tome";
 import { useImageSrc } from "../hooks/useObjectUrl";
+import { brandFontFamily } from "../theme";
 
 /**
  * A cover, or a monogram standing in for one. `sx` sizes both — callers are
@@ -48,7 +49,7 @@ export function CoverThumbnail({
         placeItems: "center",
         background: "linear-gradient(135deg, #d7b799, #8e6048)",
         color: "#fff",
-        fontFamily: "Georgia, serif",
+        fontFamily: brandFontFamily,
         fontSize: "3rem",
         ...sx,
       }}
