@@ -91,13 +91,21 @@ export const gelasioFontFaces = [
  */
 export const brandFontFamily = "Georgia, Gelasio, 'Times New Roman', serif";
 
+/**
+ * The interface face, and the app's default. Exported rather than written
+ * inline below because `components/manuscriptStyles.ts` offers it as one of the
+ * three prose faces — and a second copy of this string there would be free to
+ * drift from the one everything else is set in.
+ */
+export const sansFontFamily =
+  "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+
 export function getTheme(mode: PaletteMode) {
   return createTheme({
     palette: mode === "light" ? lightPalette : darkPalette,
     shape: { borderRadius: 10 },
     typography: {
-      fontFamily:
-        "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+      fontFamily: sansFontFamily,
       h1: { letterSpacing: "-0.03em" },
       h2: { letterSpacing: "-0.02em" },
     },

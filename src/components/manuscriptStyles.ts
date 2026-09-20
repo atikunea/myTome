@@ -1,5 +1,5 @@
 import type { SxProps, Theme } from "@mui/material";
-import { brandFontFamily } from "../theme";
+import { brandFontFamily, sansFontFamily } from "../theme";
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
 
 /**
@@ -74,13 +74,11 @@ export const firstLineIndentVar = "--mytome-first-line-indent";
 
 export const firstLineIndentSx = { [firstLineIndentVar]: proseIndent };
 
-const sansStack = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
-
 const monoStack =
   "ui-monospace, 'Cascadia Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 
 export const proseFontFamily = (face: ProseFace) =>
-  ({ serif: brandFontFamily, sans: sansStack, mono: monoStack })[face];
+  ({ serif: brandFontFamily, sans: sansFontFamily, mono: monoStack })[face];
 
 /** Sized so the faces sit at a comparable x-height rather than a comparable em. */
 export const proseFontSize = (face: ProseFace) =>
