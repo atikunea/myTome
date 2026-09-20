@@ -73,6 +73,27 @@ Everything below is invisible to the probe above and to every test in the repo.
 - [ ] **Fonts**: the brand serif renders as intended — the check that matters
       on Linux, where Georgia does not exist.
 
+## After packaging
+
+`npm run desktop:package` changes how the app finds its own files: the renderer
+is read from inside `app.asar` rather than from `dist/` on disk. Run the whole
+list above against the installed build, not only against `npx electron .`, and
+add these:
+
+- [ ] **The packaged app loads at all.** A blank window means the protocol
+      handler could not read the renderer out of the asar — the fix is
+      `asarUnpack` for `dist/`, not a change to `main.ts`.
+- [ ] **The library survives an upgrade.** Install, write something, install
+      again over the top, and confirm the work is still there. This is what
+      catches a changed `productName`, which silently repoints `userData`.
+- [ ] **Uninstalling does not delete the library.** `deleteAppDataOnUninstall`
+      is `false` in `desktop/builder.yml`; confirm that `%APPDATA%\myTome`
+      still exists afterwards. Reinstalling should find the work again.
+- [ ] **The portable exe and the installed app share one library** — both
+      resolve the same `userData` — and running one while the other is open
+      hands focus over rather than opening a second window.
+- [ ] **The icon** is the book mark in Explorer, the taskbar and the installer.
+
 ## Results
 
 ### Windows 11 — phase 1 — 2026-09-19
@@ -102,6 +123,41 @@ prints them when `webPreferences` are unsafe.
 
 **The manual list above has not been run.** Nothing in this session typed into
 the editor, printed, dragged a beat or picked an image.
+
+### Windows 11 — packaging — 2026-09-19
+
+electron-builder 26.15.3. Produced `myTome Setup 0.0.0.exe` (112 MB) and
+`myTome-0.0.0-portable.exe` (111.8 MB).
+
+The packaged app was probed exactly as the dev build was, and matched it on
+every point: origin `mytome://app`, route `#/tomes`, the same preload surface,
+no Node globals in the renderer, an inline script blocked by the CSP, durable
+storage granted.
+
+**The asar question is settled.** `protocol.handle` + `net.fetch` reads the
+renderer directly out of `app.asar`; no `asarUnpack` was needed and
+`desktop/main.ts` required no change for packaging. The packaged app also
+opened the *same* library the from-source runs had created, which confirms
+`productName: myTome` keeps `userData` where it was.
+
+Not checked: installing via the NSIS installer, upgrading over an existing
+install, uninstalling, and the icon in Explorer. The whole **After packaging**
+list above is still outstanding — these artifacts were run unpacked, not
+installed.
+
+**One trap worth recording, because it cost an hour and pointed nowhere near
+its cause.** Packaging failed five times with `EPERM … rename
+'release\win-unpacked.tmp' -> 'release\win-unpacked'`, and the one build that
+succeeded was the one writing to `%TEMP%`. The cause was a `npm run dev` in
+another terminal: Vite watches the project root, a watcher handle on a
+directory blocks renaming it on Windows, and packaging extracts Electron into
+`win-unpacked.tmp` before renaming it into place.
+
+What made it misleading is that renaming an equivalent directory *by hand* in
+the same folder works — because that finishes in milliseconds, before the
+watcher registers the new directory, while the extraction takes ten seconds or
+more. `vite.config.ts` now excludes `release/` and `dist-electron/` from the
+watcher, verified by packaging successfully with the dev server running.
 
 ### macOS
 

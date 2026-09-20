@@ -75,6 +75,22 @@ export default defineConfig(({ mode }) => {
       : {}),
     server: {
       port: process.env.PORT ? Number(process.env.PORT) : 5173,
+      watch: {
+        /**
+         * Vite watches the project root recursively, and its defaults exclude
+         * `node_modules` and `dist` but nothing the desktop build produces.
+         *
+         * That costs more than wasted work. On Windows a watcher handle on a
+         * directory blocks renaming it, and packaging extracts Electron into
+         * `release/win-unpacked.tmp` and then renames it — so with `npm run
+         * dev` running, `npm run desktop:package` fails with `EPERM ... rename
+         * 'win-unpacked.tmp' -> 'win-unpacked'` and nothing explains why. The
+         * extraction takes long enough for the watcher to notice the new
+         * directory, which is why a quick rename by hand in the same folder
+         * succeeds and looks like a contradiction.
+         */
+        ignored: ["**/release/**", "**/dist-electron/**"],
+      },
     },
     test: {
       environment: "node",
