@@ -18,9 +18,16 @@ import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
 import UploadIcon from "@mui/icons-material/UploadFile";
 import type { ImageSource } from "../models/Tome";
+import { transport } from "#fileTransport";
+import type { FileFilter } from "../services/fileTransport";
 import { imageFrom } from "../services/store";
 import { useImageSrc, useObjectUrl } from "../hooks/useObjectUrl";
 import { CoverThumbnail } from "./CoverThumbnail";
+
+/** What the desktop dialog offers; the web build reads `accept` instead. */
+const IMAGE_FILTERS: FileFilter[] = [
+  { name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg"] },
+];
 
 export function ImagePicker({
   image,
@@ -110,7 +117,7 @@ function ImagePickerDialog({
   onChange: (image: ImageSource | undefined) => void;
 }) {
   const [error, setError] = useState("");
-  const [picked, setPicked] = useState<File>();
+  const [picked, setPicked] = useState<Blob>();
   const [typed, setTyped] = useState("");
 
   // Opening *and* closing start the dialog over. MUI unmounts the content but
@@ -129,8 +136,11 @@ function ImagePickerDialog({
   const storedUrl = useImageSrc(image);
   const preview = pickedUrl ?? (typed || storedUrl);
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setPicked(event.target.files?.[0]);
+  // No `<input type="file">` and so no `name="file"` for the form to read —
+  // the picked image is held in state and passed to `imageFrom` directly.
+  const choosePicture = async () => {
+    const chosen = await transport.open({ accept: "image/*", filters: IMAGE_FILTERS });
+    if (chosen) setPicked(chosen.blob);
   };
 
   const handleUrlChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -143,10 +153,7 @@ function ImagePickerDialog({
     const form = event.currentTarget;
     const data = new FormData(form);
     try {
-      const next = await imageFrom(
-        String(data.get("url") ?? ""),
-        (form.elements.namedItem("file") as HTMLInputElement).files?.[0],
-      );
+      const next = await imageFrom(String(data.get("url") ?? ""), picked);
       onChange(next ?? image);
       onClose();
     } catch (cause) {
@@ -187,9 +194,14 @@ function ImagePickerDialog({
               defaultValue={image?.kind === "url" ? image.url : ""}
               onChange={handleUrlChange}
             />
-            <Button component="label" variant="outlined" startIcon={<UploadIcon />} sx={{ alignSelf: "flex-start" }}>
+            <Button
+              type="button"
+              variant="outlined"
+              startIcon={<UploadIcon />}
+              sx={{ alignSelf: "flex-start" }}
+              onClick={() => void choosePicture()}
+            >
               Upload an image
-              <input type="file" name="file" accept="image/*" hidden onChange={handleFileChange} />
             </Button>
           </Stack>
         </DialogContent>

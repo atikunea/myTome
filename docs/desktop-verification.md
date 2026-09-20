@@ -49,6 +49,26 @@ over CDP (`http://localhost:9222/json` lists targets; Node 22+ has a global
 **Do not leave a debugging port open beyond the check.** It is an unauthenticated
 door into the renderer.
 
+A running instance holds a single-instance lock, so a second copy quits
+immediately and the probe finds no target. Give the probe its own library with
+`--user-data-dir=<a scratch path>` rather than closing the author's app — and
+remember that a run under that flag starts with an empty library.
+
+The native dialogs can be driven too, which is the only way to check them
+without a person at the window. Issue the call without awaiting it, park the
+promise on `window`, drive the dialog from the OS side — on Windows,
+`SetForegroundWindow` on the dialog's `hwnd`, then `Alt+N` to reach the
+filename field, then the path and `Enter` — and read the promise back
+afterwards. **`AppActivate` on the process id is not enough**: it raises the
+main window, and the keystrokes then go to the page instead of the dialog.
+
+| Check | Expect |
+|---|---|
+| `Object.keys(window.myTome.files)` | exactly `open, save` |
+| a save, driven to a path you chose | the bytes at that path, and `{ saved: true, name }` — a **name**, never a path |
+| a save, cancelled | `{ saved: false }`, no error, and the page says nothing |
+| an open, driven to a file you chose | `{ name, bytes }`, and the page's own parse of it succeeds |
+
 ## What only a person at the window can check
 
 Everything below is invisible to the probe above and to every test in the repo.
@@ -62,6 +82,11 @@ Everything below is invisible to the probe above and to every test in the repo.
       white paper in both colour modes.
 - [ ] **Images**: pick a cover, it renders, it survives a restart, and a
       `.indexeddb.blob` directory appears beside the leveldb one.
+- [ ] **Dialogs**: the save dialog opens on a sensible filename with the right
+      file type selected, and the open dialog is filtered to what the caller
+      asked for. On macOS both are **sheets attached to the window**, not
+      free-floating panels that can be lost behind the app — `desktop/files.ts`
+      passes the parent window for exactly that reason.
 - [ ] **Restart**: the library is still there. Then restart again after a
       forced kill, which is the LevelDB recovery path.
 - [ ] **Dark mode**: toggle, and confirm the window background matches rather
@@ -158,6 +183,56 @@ the same folder works — because that finishes in milliseconds, before the
 watcher registers the new directory, while the extraction takes ten seconds or
 more. `vite.config.ts` now excludes `release/` and `dist-electron/` from the
 watcher, verified by packaging successfully with the dev server running.
+
+### Windows 11 — phase 3 (native file dialogs) — 2026-09-20
+
+Electron 44.4.3, packaged path (`mytome://app`), run under its own
+`--user-data-dir` because the portable build from the packaging session was
+still open and held the single-instance lock.
+
+Bridge surface: `drive, files, isDesktop, platform, versions`, and
+`window.myTome.files` is exactly `open, save`. `require`, `process` and
+`module` are still `undefined` in the renderer — the new channels added no
+Node.
+
+All four call sites were driven through the UI, not through the bridge:
+
+- **Backup export.** `/backup` → "Download backup" opened a Save As dialog,
+  the file was written where it was pointed (7,858 bytes, valid backup JSON),
+  and the page reported *"Saved 1 tome to phase3-library.json."* — the name the
+  dialog returned, not the suggested one. The promise resolved to
+  `{ saved: true, name: "phase3-library.json" }`, with no path anywhere in it.
+- **Restore.** "Choose backup file…" opened a filtered Open dialog; picking
+  that file gave `RestoreDialog` the filename and a parsed summary
+  ("1 tome … Phase Three, 0 elements · 1 plot · 0 texts"), so the bytes crossed
+  IPC, became a `Blob` with a type, and `parseBackup` read them.
+- **Cover image.** The picker's "Upload an image" opened a filtered dialog; the
+  chosen PNG previewed at its real 343×361, saved, and **still rendered after a
+  reload** — so the reconstructed `Blob` carried `image/png` into Dexie rather
+  than `application/octet-stream`.
+- **Manuscript `.docx`.** A chapter was typed into Lexical on a beat, and
+  "Download .docx" produced a 23,595-byte file whose `word/document.xml`
+  contains both the beat title and the typed sentence.
+
+The web half was driven too, on `npm run dev`: the download reported the
+suggested name, left no `<a download>` behind in the DOM, and wrote bytes; the
+picker built one transient `<input type="file">` per call, and a `cancel` on it
+removed the element and settled the promise with no error and no dialog.
+
+Two things found on the way, neither a phase-3 regression:
+
+- **`connect-src 'self'` blocks `fetch()` on a `blob:` URL** in the desktop
+  build. Nothing in the app does that — `fetch` lives only in `drive.ts`, and
+  images go to `<img src>`, which `img-src blob:` allows — but a future caller
+  would hit it, and the failure is a CSP console error rather than an
+  exception the code can catch.
+- **"Download .docx" is disabled when the manuscript has no beats with prose**,
+  which is correct and easy to misread as a hang: a `click()` on a disabled
+  button reports success and does nothing.
+
+Still not run here: the `cancel` path of a *desktop* save (the code is the same
+`canceled` branch the open path took), and everything under **After packaging**
+— these ran from source, not from an installed build.
 
 ### macOS
 

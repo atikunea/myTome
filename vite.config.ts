@@ -92,6 +92,16 @@ export default defineConfig(({ mode }) => {
             import.meta.url,
           ),
         ),
+
+        /** The same arrangement for native file dialogs. */
+        "#fileTransport": fileURLToPath(
+          new URL(
+            desktop
+              ? "./src/services/fileTransport.desktop.ts"
+              : "./src/services/fileTransport.web.ts",
+            import.meta.url,
+          ),
+        ),
       },
     },
     plugins: desktop ? [react()] : [react(), cspPlugin()],

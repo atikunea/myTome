@@ -29,11 +29,15 @@ import {
   manuscriptFileName,
   summarizeSkips,
 } from "../services/manuscript";
+import { transport } from "#fileTransport";
+import type { FileFilter } from "../services/fileTransport";
 import type { DocxImage } from "../services/manuscriptDocx";
 import { store } from "../services/store";
 import { useProseFace } from "../context/ProseFaceContext";
 import { useObservable } from "../hooks/useObservable";
 import { ManuscriptPrint, printImagesReady } from "./ManuscriptPrint";
+
+const DOCX_FILTERS: FileFilter[] = [{ name: "Word document", extensions: ["docx"] }];
 
 /**
  * Turns one plot line into a manuscript file.
@@ -219,12 +223,13 @@ export function ManuscriptExportDialog({
           `The ${unread.join(" and ")} could not be read, so the .docx goes without ${unread.length === 1 ? "it" : "them"}.`,
         );
       const blob = await manuscriptDocxBlob(manuscript, { cover, photo }, { firstLineIndent });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = manuscriptFileName(manuscript, "docx");
-      link.click();
-      URL.revokeObjectURL(url);
+      // Where it lands is the author's business, and on the desktop they get a
+      // real dialog to say so. A cancel is silent: nothing went wrong.
+      await transport.save({
+        suggestedName: manuscriptFileName(manuscript, "docx"),
+        filters: DOCX_FILTERS,
+        data: blob,
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The document could not be built.");
     } finally {

@@ -484,7 +484,7 @@ is produced.
 | Today | Desktop |
 |---|---|
 | `<a download>` for backup JSON (`BackupPage`) | Native save dialog, author picks the location |
-| `<a download>` for `.docx` (`ManuscriptExportDialog`) | Native save dialog; offer "open after saving" |
+| `<a download>` for `.docx` (`ManuscriptExportDialog`) | Native save dialog, same as the backup file |
 | `window.print()` for PDF | Unchanged — Electron's print dialog is the OS one |
 | `<input type="file">` for cover images (`ImagePicker`) | Native picker; the file still becomes a `Blob` in Dexie |
 | `<input type="file">` for restore | Native picker, filtered to `.json` |
@@ -497,21 +497,44 @@ Where the library itself lives, and what that does and does not guarantee, is
 
 ### The preload surface
 
-The complete list. Anything not here does not exist to the renderer.
+The complete list. Anything not here does not exist to the renderer. The
+signatures are `desktop/bridge.ts`, which is the one file both processes and
+the renderer import; read it rather than trusting this list, and correct this
+list when it drifts.
+
+Shipped:
 
 ```
-dialog.saveFile(suggestedName, filters, bytes)   → path | null
-dialog.openFile(filters)                         → { name, bytes } | null
-dialog.chooseFolder()                            → path | null
-drive.authorize()                                → { email } — opens the browser
+isDesktop                                        → true
+platform                                         → process.platform
+versions                                         → { app, electron, chrome }
+files.save({ suggestedName, filters, bytes })    → { saved, name? }
+files.open({ filters })                          → { name, bytes } | null
+drive.session()                                  → { state, account? } — state is
+                                                   "connected" | "disconnected" | "needs-reconnect"
+drive.authorize()                                → { state, account? }
 drive.request(url, init)                         → { status, headers, body }
 drive.revoke()                                   → void
-drive.state()                                    → "connected" | "disconnected" | "needs-reconnect"
-backup.write(folder, filename, bytes)            → void
-backup.prune(folder, keep)                       → number deleted
-shell.openExternal(url)                          → void — https: only
-app.version()                                    → string
 ```
+
+`drive` is **optional** — a build carrying no Google credentials has no such
+key, which is what `DriveSyncCard` reads to render prose with nothing to click.
+`files` is always there.
+
+Still planned:
+
+```
+dialog.chooseFolder()                            → path | null      (phase 4)
+backup.write(folder, filename, bytes)            → void             (phase 4)
+backup.prune(folder, keep)                       → number deleted   (phase 4)
+```
+
+**`files.save` returns a name, never a path.** The renderer names no location
+going in — only a *suggested* filename — and gets none back; the author picked
+the destination in their own operating system's dialog, and that is what makes
+writing safe without the allowlist `drive.request` needs. A page holding a
+filesystem path would be a page that could be talked into reusing one.
+`{ saved: false }` is a cancel, which is an ordinary outcome and not an error.
 
 `drive.request` takes a URL the renderer chose, which is the one place this
 surface is broad. **The main process validates it against an allowlist of
@@ -527,17 +550,26 @@ attached.
 ```
 desktop/
   main.ts        Window, lockdown, IPC registration. Thin.
-  preload.ts     The surface above, and nothing more.
+  bridge.ts      The types all three sides share. Imports nothing.
+  preload.cts    The surface above, and nothing more. CommonJS, because a
+                 sandboxed preload cannot be an ES module.
+  menu.ts        The application menu, Edit roles included.
   oauth.ts       PKCE, loopback listener, token exchange, refresh. Pure where
                  it can be — the PKCE and callback parsing are testable.
   vault.ts       safeStorage read/write/delete for the refresh token.
-  files.ts       Dialogs, backup writing, retention pruning.
+  credentials.ts The Google client id and secret, from the environment or from
+                 a file written beside main.js at package time.
+  drive.ts       The session: tokens, refresh-or-forget, the request allowlist.
+  files.ts       Dialogs. Backup writing and retention pruning land here in
+                 phase 4.
   builder.yml    electron-builder config.
 ```
 
-`src/` gains only `driveTransport*.ts`. Nothing else in the app knows a desktop
-build exists — with one exception: the UI on `/backup` needs to show a connected
-account and a reconnect state, which the web build simply never enters.
+`src/` gains only `driveTransport*.ts` and `fileTransport*.ts`, each a
+three-file seam (the interface, the web half, the desktop half) picked by a
+Vite alias. Nothing else in the app knows a desktop build exists — with one
+exception: the UI on `/backup` needs to show a connected account and a
+reconnect state, which the web build simply never enters.
 
 ### Scripts and gates
 

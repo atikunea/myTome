@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
   Alert,
@@ -13,6 +13,8 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DownloadIcon from "@mui/icons-material/Download";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
+import { transport } from "#fileTransport";
+import type { FileFilter } from "../services/fileTransport";
 import { backupFileName, parseBackup, store } from "../services/store";
 import type { BackupFile, BackupSummary, RestoreMode } from "../services/store";
 import { useTomes } from "../context/TomesContext";
@@ -23,16 +25,17 @@ import { RestoreDialog } from "../components/RestoreDialog";
 /**
  * Backup and restore, for the whole library or one tome at a time.
  *
- * This page is the transport half of `services/backup.ts`: turning a
- * `BackupFile` into a download and a chosen file back into text is the only
- * part that needs the DOM, so it is the only part that lives here. When Google
- * Drive lands it becomes a second transport under "Where backups go" and reads
- * and writes the same file, rather than a second format.
+ * This page turns a `BackupFile` into a saved file and a chosen file back into
+ * text. *How* either happens is no longer its business — `#fileTransport` is a
+ * browser download and a hidden input on the web, and real dialogs on the
+ * desktop, and this page cannot tell which it has. Google Drive under "Where
+ * backups go" is a third transport for the same file, never a second format.
  */
+const BACKUP_FILTERS: FileFilter[] = [{ name: "myTome backup", extensions: ["json"] }];
+
 export function BackupPage() {
   const tomes = useTomes();
   const confirmAction = useConfirm();
-  const fileInput = useRef<HTMLInputElement>(null);
   const [picked, setPicked] = useState<{
     file: BackupFile;
     name: string;
@@ -42,15 +45,12 @@ export function BackupPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const download = (file: BackupFile) => {
-    const blob = new Blob([JSON.stringify(file)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = backupFileName(file);
-    link.click();
-    URL.revokeObjectURL(url);
-  };
+  const download = (file: BackupFile) =>
+    transport.save({
+      suggestedName: backupFileName(file),
+      filters: BACKUP_FILTERS,
+      data: new Blob([JSON.stringify(file)], { type: "application/json" }),
+    });
 
   const run = async (what: () => Promise<void>) => {
     setError("");
@@ -65,30 +65,36 @@ export function BackupPage() {
   const exportAll = () =>
     run(async () => {
       const file = await store.exportBackup();
-      download(file);
+      const { saved, name } = await download(file);
+      // A cancelled dialog is an ordinary outcome, and says nothing. Only the
+      // desktop build can tell; the web build always reports a save.
+      if (!saved) return;
       setNotice(
-        `Saved ${file.tomes.length === 1 ? "1 tome" : `${file.tomes.length} tomes`} to ${backupFileName(file)}.`,
+        `Saved ${file.tomes.length === 1 ? "1 tome" : `${file.tomes.length} tomes`} to ${name ?? backupFileName(file)}.`,
       );
     });
 
   const exportOne = (tomeId: string) =>
     run(async () => {
       const file = await store.exportTomeBackup(tomeId);
-      download(file);
-      setNotice(`Saved ${backupFileName(file)}.`);
+      const { saved, name } = await download(file);
+      if (!saved) return;
+      setNotice(`Saved ${name ?? backupFileName(file)}.`);
     });
 
-  const choose = (event: ChangeEvent<HTMLInputElement>) => {
-    const chosen = event.target.files?.[0];
-    // Clearing the input is what lets the same file be picked twice in a row —
-    // without it a second pick of the same path fires no change event.
-    event.target.value = "";
-    if (!chosen) return;
+  // No input element to clear between picks: the transport builds one per call
+  // on the web and throws it away, so picking the same file twice in a row
+  // works without the value-reset that used to be needed here.
+  const choose = () =>
     void run(async () => {
-      const file = parseBackup(await chosen.text());
+      const chosen = await transport.open({
+        accept: "application/json,.json",
+        filters: BACKUP_FILTERS,
+      });
+      if (!chosen) return;
+      const file = parseBackup(await chosen.blob.text());
       setPicked({ file, name: chosen.name, summary: await store.summarizeBackup(file) });
     });
-  };
 
   const restore = async (mode: RestoreMode) => {
     if (!picked) return;
@@ -187,18 +193,10 @@ export function BackupPage() {
           </Typography>
           <Button
             startIcon={<UploadFileIcon />}
-            onClick={() => fileInput.current?.click()}
+            onClick={choose}
           >
             Choose backup file…
           </Button>
-          <Box
-            component="input"
-            ref={fileInput}
-            type="file"
-            accept="application/json,.json"
-            onChange={choose}
-            sx={{ display: "none" }}
-          />
         </Card>
 
         <Card variant="outlined" sx={{ p: 2.5 }}>
