@@ -102,6 +102,21 @@ export default defineConfig(({ mode }) => {
             import.meta.url,
           ),
         ),
+
+        /**
+         * And for automatic backup export — the one seam where the web half
+         * exists to be *absent*. A page has no folder it may write to
+         * unattended, so that half reports `supported: false` and the card
+         * renders nothing.
+         */
+        "#backupTransport": fileURLToPath(
+          new URL(
+            desktop
+              ? "./src/services/backupTransport.desktop.ts"
+              : "./src/services/backupTransport.web.ts",
+            import.meta.url,
+          ),
+        ),
       },
     },
     plugins: desktop ? [react()] : [react(), cspPlugin()],

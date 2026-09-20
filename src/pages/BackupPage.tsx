@@ -19,6 +19,7 @@ import { backupFileName, parseBackup, store } from "../services/store";
 import type { BackupFile, BackupSummary, RestoreMode } from "../services/store";
 import { useTomes } from "../context/TomesContext";
 import { useConfirm } from "../context/ConfirmContext";
+import { AutoExportCard } from "../components/AutoExportCard";
 import { DriveSyncCard } from "../components/DriveSyncCard";
 import { RestoreDialog } from "../components/RestoreDialog";
 
@@ -242,6 +243,13 @@ export function BackupPage() {
           )}
         </Card>
 
+        {/*
+          Desktop only, and it renders nothing at all on the web rather than
+          describing a feature a browser tab cannot have. Before the Drive
+          card, because a folder on this machine is the nearer place for a
+          backup to go.
+        */}
+        <AutoExportCard />
         <DriveSyncCard />
       </Stack>
 

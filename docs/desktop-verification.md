@@ -69,6 +69,30 @@ main window, and the keystrokes then go to the page instead of the dialog.
 | a save, cancelled | `{ saved: false }`, no error, and the page says nothing |
 | an open, driven to a file you chose | `{ name, bytes }`, and the page's own parse of it succeeds |
 
+**The folder picker needs a different trick.** Its "Select Folder" button does
+not answer `Enter`, `Alt`-accelerators or a synthetic mouse click, and UI
+Automation sees only a `Pane` with no invokable pattern. What works is the
+plain Win32 route: `EnumChildWindows` on the dialog, find the child whose
+`GetDlgCtrlID` is `1`, and send it `BM_CLICK` (`0x00F5`). Typing the path
+first *does* land — the "Folder:" field holds it — so only the commit needs
+this.
+
+Automatic backup export is checkable end to end, and `localStorage` is where
+most of its state is:
+
+| Check | Expect |
+|---|---|
+| `Object.keys(window.myTome.backup)` | exactly `chooseFolder, folder, forgetFolder, write` |
+| `window.myTome.backup.folder()` on a fresh profile | `undefined`, and `myTome.autoExport.*` absent — it is off until a folder is picked |
+| picking a folder | one file appears at once, named `myTome-backup-<date>-<HHMM>.json` in **local** time |
+| reloading with nothing changed | no new file — the change gate, not the clock |
+| changing a tome, back-dating `lastExportAt`, reloading | one new file |
+| seeding older auto-named files and lowering "files to keep" | the oldest automatic files removed, down to the count |
+| a hand-saved `myTome-backup-<date>.json` (no time) in the same folder | **never** deleted, whatever the retention |
+| moving the folder away, then "Back up now" | a sentence, not an `errno`, and the schedule paused |
+| putting the folder back, then "Back up now" | writes, and the error clears |
+| "Stop" | the card goes back to "Choose a folder…", and every file already written is still there |
+
 ## What only a person at the window can check
 
 Everything below is invisible to the probe above and to every test in the repo.
@@ -97,6 +121,17 @@ Everything below is invisible to the probe above and to every test in the repo.
       the app.
 - [ ] **Fonts**: the brand serif renders as intended — the check that matters
       on Linux, where Georgia does not exist.
+- [ ] **Drive sync, end to end.** Nothing automated can reach this: it needs a
+      real Google account, a real consent screen and a second machine. Connect
+      and see the account named; find the files in Drive itself; **close the
+      app completely, reopen it, and still be connected** — the refresh token
+      surviving a restart is the reason the desktop build exists at all; then
+      change a tome somewhere else and watch it come back down.
+- [ ] **Automatic backup export, left running for a real writing session**:
+      files appear on the interval and only after something changed, and the
+      app never stutters while a manuscript-sized library is serialised. The
+      probe above can force a write; it cannot tell you whether a 200 MB
+      library freezes the editor for a second every half hour.
 
 ## After packaging
 
@@ -233,6 +268,91 @@ Two things found on the way, neither a phase-3 regression:
 Still not run here: the `cancel` path of a *desktop* save (the code is the same
 `canceled` branch the open path took), and everything under **After packaging**
 — these ran from source, not from an installed build.
+
+### Windows 11 — phase 4 (automatic backup export) — 2026-09-20
+
+Electron 44.4.3, packaged path (`mytome://app`), again under its own
+`--user-data-dir`.
+
+Bridge: `backup, drive, files, isDesktop, platform, versions`, and
+`window.myTome.backup` is exactly `chooseFolder, folder, forgetFolder, write`.
+On first look `backup.folder()` was `undefined` and neither
+`myTome.autoExport.settings` nor `myTome.autoExport.state` existed — off until
+a folder is chosen, with nothing written and nothing remembered.
+
+Driven through the card on `/backup`:
+
+- **Choosing a folder** wrote one file immediately:
+  `myTome-backup-2026-09-20-0930.json`, 26,753 bytes, parsing as
+  `myTome-backup` v3 / schema 12 with both tomes in it. The card switched to
+  "On", showed the path, and reported the filename back.
+- **A launch tick with nothing changed wrote nothing.** Reloading fired a real
+  scheduled run — not the forced button — and the folder still held one file.
+  That is the change gate, and it is the behaviour that keeps an idle day from
+  costing ten files.
+- **A changed library past its interval wrote once.** Adding a tome,
+  back-dating `lastExportAt` by an hour and reloading produced a second file
+  and nothing more.
+- **Retention deleted only its own.** With the folder seeded with two older
+  auto-named files, a hand-saved `myTome-backup-2026-09-19.json`, a one-tome
+  `myTome-phase-three-2026-09-19.json` and a `notes.txt`, setting "files to
+  keep" to 3 and writing once left exactly three automatic files — and all
+  three decoys untouched. The hand-saved file has no `-HHMM`, so it cannot
+  match the pruner's pattern.
+- **A missing folder is a sentence, not an `errno`.** Moving the folder away
+  and pressing "Back up now" gave *"The backup folder is no longer there:
+  C:\…"* and paused the schedule. Putting it back and pressing again wrote,
+  cleared the error and resumed. The first attempt showed Electron's own
+  `Error invoking remote method 'backup:write': Error: …` wrapper, which
+  `backupTransport.desktop.ts` now strips — these messages are read by an
+  author, and an IPC channel name in front of one is noise about our plumbing.
+- **"Stop" stops and keeps.** The card returned to "Choose a folder…",
+  `backup.folder()` went back to `undefined`, and all six files in the folder
+  were still there.
+
+On the web, `/backup` showed the four original cards, no "Keep a copy in a
+folder", no `myTome.autoExport.*` keys and `window.myTome` undefined. Grepping
+both bundles: the desktop bundle carries no "part of the desktop app" refusal
+and the web bundle carries no bridge string — the card component itself ships
+in both, which is correct, because it is the transport that differs and the
+card simply returns `null`.
+
+Two things worth knowing:
+
+- **"Back up now" twice inside one minute overwrites**, because the name has
+  minute resolution. Harmless — both files are the current library — and
+  unreachable from the schedule, whose minimum interval is five minutes.
+- **A pause does not survive a restart.** A launch tick will try the broken
+  folder once more and pause again. That is once per launch, not a loop, and
+  it is how the app notices that a drive came back.
+
+### Drive sync, end to end — both builds — 2026-09-20
+
+**Run by the author against their own Google account, not by a probe**, and it
+is the one check in this file nothing automated could have made: it needs a
+real consent screen and somewhere for the work to come back down to.
+
+Confirmed in the **desktop** build and the **web** build:
+
+- the OAuth round trip completes and the card names the signed-in account —
+  the loopback listener, PKCE and the token exchange, on the desktop side;
+- the files are really in Drive, in a myTome folder, visible in Drive itself;
+- **the desktop app is still connected after a full restart**, with no second
+  sign-in. That is the refresh token surviving in `safeStorage`, and it is the
+  reason the desktop build exists;
+- a change made in one place comes back down in another — the whole round
+  trip, not just the upload.
+
+This closes the gap phases 2, 3 and 4 all carried forward: until now Drive had
+been verified only structurally (the bridge surface, the request allowlist
+refusing an off-list URL, the token never crossing into the renderer). The
+transport is now known to work, on both platforms, with a real account.
+
+Still not checked here: the seven-day refresh-token expiry that comes with
+leaving the OAuth app in **Testing** status — a deliberate, recorded choice
+while the app is being built. See `docs/google-drive-sync.md`. The first time
+it bites, the desktop card should say "Sign in again" rather than look broken;
+that path has not been seen happen.
 
 ### macOS
 

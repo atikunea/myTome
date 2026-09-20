@@ -204,6 +204,11 @@ const registerIpc = (): void => {
 
   handle("files:save", (request: Parameters<typeof files.save>[0]) => files.save(request));
   handle("files:open", (options: Parameters<typeof files.open>[0]) => files.open(options));
+
+  handle("backup:folder", () => files.folder());
+  handle("backup:chooseFolder", () => files.chooseFolder());
+  handle("backup:forgetFolder", () => files.forgetFolder());
+  handle("backup:write", (request: Parameters<typeof files.write>[0]) => files.write(request));
 };
 
 const createWindow = (): BrowserWindow => {

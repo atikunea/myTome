@@ -107,8 +107,9 @@ src/
   models/      Data shapes + the two template registries. Only db.ts declares the Dexie schema.
   services/    The data layer, split by table behind the store.ts barrel. Tests in __tests__/.
   hooks/       useObservable.ts (Dexie liveQuery → React state), autosave.ts (framework-free,
-               tested) + useAutosave.ts, and useObjectUrl.ts — the only place render-land
-               calls createObjectURL. Tests in __tests__/.
+               tested) + useAutosave.ts, useObjectUrl.ts — the only place render-land
+               calls createObjectURL — and useAutoExport.ts, which is mounted once in
+               App.tsx and only keeps time. Tests in __tests__/.
   context/     App-wide state: tomes, current workspace, confirm dialog, color mode, prose face.
   layouts/     WorkspaceLayout.tsx — the /tomes/:tomeId/* shell (nav + header + Outlet).
   pages/       Route-level screens, one per <Route> in App.tsx.
@@ -148,13 +149,19 @@ services/
   backup.ts          The backup file format, export, restore/merge.
   syncPlan.ts        Pure: what a sync should move.
   drive.ts           The only network code. Optional, gated, untested — verify in the built app.
-  driveTransport.ts  Two build-time seams, each three files: the interface, plus a `.web.ts`
+  driveTransport.ts  Three build-time seams, each three files: the interface, plus a `.web.ts`
   fileTransport.ts   and a `.desktop.ts` chosen by a Vite alias (`#driveTransport`,
-                     `#fileTransport`) and a tsconfig path. Import the alias, never a half.
-                     Drive is the page's own fetch on the web and the shell's session on the
-                     desktop; files are a download and a hidden input on the web and real OS
-                     dialogs on the desktop. **No page or component branches on the platform** —
-                     if one ever does, every one of them eventually will.
+  backupTransport.ts `#fileTransport`, `#backupTransport`) and a tsconfig path. Import the
+                     alias, never a half. Drive is the page's own fetch on the web and the
+                     shell's session on the desktop; files are a download and a hidden input
+                     on the web and real OS dialogs on the desktop; the backup folder does not
+                     exist on the web at all, and that half says so with `supported: false`.
+                     **No page or component branches on the platform** — if one ever does,
+                     every one of them eventually will.
+  autoExport.ts      Desktop-only: a whole-library backup written into a folder the author
+                     chose, on a schedule. The decision is pure and tested; the rest is not
+                     on `store` and is verified in the running app. The folder and the file
+                     name live in the shell, never here — see `desktop/files.ts`.
   storage.ts         navigator.storage.persist(). Touches no table; not on `store`.
   manuscript.ts      Pure: what a plot line's manuscript contains. Not on `store`.
   manuscriptDocx.ts  That manuscript as OOXML. Lazy-loaded; not on `store`.

@@ -16,17 +16,23 @@ import {
  * Everything here is a claim about the code, so it has to be re-read whenever
  * the code moves: the storage list mirrors `models/db.ts` plus the three
  * `localStorage` keys in `context/`, the guide dismissal in `GuideStrip`, the
- * line width in `FocusSurface` and the sync mark in `services/drive.ts`,
- * and the network list mirrors the CSP in `vite.config.ts` — which is the
- * exhaustive answer to "where can this app talk to", and is what this page
- * should be checked against.
+ * line width in `FocusSurface`, the sync mark in `services/drive.ts` and the
+ * two auto-export keys in `services/autoExport.ts`; and the network list
+ * mirrors the CSP in `vite.config.ts` — which is the exhaustive answer to
+ * "where can this app talk to", and is what this page should be checked
+ * against.
+ *
+ * **The desktop build ships this same page**, and parts of it are still
+ * written as though the browser were the only host. The network list and the
+ * question of where a desktop library lives on disk are the remaining gaps;
+ * `docs/desktop-app.md`, "Documents this feature makes wrong", is the list.
  */
 export function PrivacyPolicyPage() {
   return (
     <PolicyPage
       title="Privacy"
       lede="myTome has no server, no accounts, and no analytics. Your writing stays in this browser unless you deliberately move it somewhere else."
-      updated="18 September 2026"
+      updated="20 September 2026"
       sibling={{ to: "/terms", label: "Terms of use" }}
     >
       <PolicySection title="The short version">
@@ -38,8 +44,9 @@ export function PrivacyPolicyPage() {
           and no database of yours that anyone else holds.
         </PolicyParagraph>
         <PolicyParagraph>
-          The two exceptions are things you start yourself: a backup file you
-          download, and the optional Google Drive sync. Both are described below.
+          The exceptions are things you start yourself: a backup file you save,
+          the optional Google Drive sync, and — in the desktop app — a folder
+          you ask it to keep backup copies in. All three are described below.
         </PolicyParagraph>
       </PolicySection>
 
@@ -51,12 +58,23 @@ export function PrivacyPolicyPage() {
             "How much you wrote and when: a running total of words for each day you write, the sittings those days were made of, and the goals and targets you set. All of it is counted from your own prose as you save it, and it is kept in that same database.",
             "Cover, element and author images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
             "Five small preferences: light or dark mode, your prose typeface, the line width of the writing view, whether its paragraphs indent their first line, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
+            "In the desktop app only, two more of those: how often to write an automatic backup and how many to keep, along with when the last one was written. The folder you chose for them is remembered by the app itself rather than by the page.",
           ]}
         />
         <PolicyParagraph>
           Once you have work worth keeping, myTome asks your browser to store it
           durably, so it is not discarded when space runs short. That is a request
           to your browser about your own machine — it sends nothing anywhere.
+        </PolicyParagraph>
+        <PolicyParagraph>
+          The desktop app is the one version that can write outside itself, and
+          only where you point it. Choose a folder under “Keep a copy in a
+          folder” and it writes a full backup file there from time to time,
+          removing its own older ones to stay within the number you set. It
+          writes nowhere else, deletes nothing it did not write, and does
+          nothing at all until you have chosen a folder. Those files are
+          ordinary files on your machine: myTome does not encrypt them, and
+          anything that can read your documents can read them.
         </PolicyParagraph>
         <PolicyParagraph>
           There are no cookies, no tracking pixels, no advertising, and no
@@ -98,7 +116,7 @@ export function PrivacyPolicyPage() {
             "What is sent: the contents of the tomes and author profiles being synced, as the same backup files you could download by hand. Nothing else about you or your machine is included.",
             "Who receives it: Google, into your own Drive account. What happens to it there is governed by Google's privacy policy and your Drive settings; we never see it and have no access to it.",
             "What access is asked for: per-file access to files this app created itself. It cannot see, list, or touch anything else in your Drive.",
-            "The sign-in token is held in memory, in this tab only. It is never written to disk, expires after about an hour, and closing the tab ends it.",
+            "In the browser, the sign-in token is held in memory, in this tab only. It is never written to disk, expires after about an hour, and closing the tab ends it. The desktop app instead keeps a renewal key so you stay signed in between launches — encrypted by your operating system's own credential store, and only where that store is a real one. Disconnecting hands the key back to Google and deletes it.",
             "Google's sign-in script is loaded the first time you connect — never on an ordinary page load — so ignoring Drive means never running Google's code.",
             "Sync never deletes anything from Drive. A tome or author profile you delete here stays in your Drive until you delete that file yourself, and will come back on the next sync.",
           ]}
