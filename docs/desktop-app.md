@@ -705,47 +705,95 @@ is not shipping yet. Enabling a row should be a one-line change.
 - **The release workflow is `workflow_dispatch` only**, matching `deploy.yml`.
   Pushing to `main` must not ship an installer any more than it ships the site.
 
+**What phase 5 actually built, and what it deliberately did not.**
+
+`release.yml` exists, as the three-platform matrix described above with the
+macOS and Linux rows commented out. It gates on `npm run build` and `npm test`,
+refuses to run unless the version it was given matches `package.json`, packages
+with the Google credentials from repository settings, and publishes both
+executables with `gh release create`.
+
+- **Signing is wired but inert.** electron-builder signs whenever `CSC_LINK`
+  and `CSC_KEY_PASSWORD` are in the environment and carries on quietly when
+  they are not, so the workflow already passes them through from secrets that
+  do not exist. Adding the two secrets is the entire change; nothing in
+  `builder.yml` or the workflow has to move. Until then every run posts a
+  warning that the artifacts are unsigned, and the release notes say so to the
+  person downloading them.
+- **Auto-update is deliberately not built yet**, and that is why publishing
+  goes through `gh release create` rather than electron-builder's own
+  publisher: that publisher also writes a `latest.yml` update feed, and a feed
+  nothing consumes is a promise this app has not made. It waits on signing.
+  On macOS `electron-updater` verifies a signature before applying anything;
+  on Windows an updater that cannot verify what it is installing is a worse
+  offer than no updater. Switching the publisher over is the first step of
+  that work.
+- **The OAuth app's Google status is a distribution question, not just a
+  development one.** In **Testing**, only accounts added as test users can
+  connect at all (100 maximum), and every refresh token dies after seven days.
+  Handing the installer to someone outside that list means handing them an app
+  whose Drive sync cannot work for them. The release notes say what an
+  author will actually see; moving to **Production** — which needs the consent
+  screen filled in and, for `drive.file`, no security assessment — is the fix.
+
 ### Maintenance
 
 Electron carries Chromium, and a stale Electron ships known CVEs to an app that
 holds a refresh token. **Pin the Electron major, and treat its upgrades as
 scheduled work, not as something to do when convenient.**
 
+`package.json` has `"electron": "^44.4.3"`, which is the pin: a caret holds the
+major, so `npm update` takes security patches within 44 and never walks to 45.
+Moving majors is a deliberate act, and the thing to run afterwards is
+`docs/desktop-verification.md` in full — a Chromium bump is exactly the change
+that can break Lexical, printing or IndexedDB without failing a single test.
+
+**Without auto-update, an upgrade reaches an author only if they come and get
+it.** That is the real cost of deferring it: a CVE fixed here sits in a release
+nobody is told about. It is survivable while the audience is one person and it
+is the first thing that stops being survivable.
+
 ## Documents this feature makes wrong
 
 `AGENTS.md` says `/privacy` and `/terms` go stale silently. This feature is
-precisely the kind that does it, so the list is part of the spec:
+precisely the kind that does it, so the list was part of the spec. **It is
+worked through as of phase 5**; what follows is the record of what each item
+turned out to be, because the next feature of this shape will need the same
+list made again.
 
-- **`/privacy` — network list.** It mirrors the CSP. The desktop build adds
-  `https://oauth2.googleapis.com` (token exchange) and the loopback listener,
-  which is not a remote host but is a socket and should be described.
-- **`/privacy` — storage list.** *Done in phase 4*: the two auto-export keys,
-  the folder the shell remembers, the fact that the desktop app writes outside
-  itself at all, and the Drive token bullet, which said the token is never
-  written to disk and had been wrong since phase 2. **Still outstanding**: name
-  where the library lives on each platform (`%APPDATA%\myTome`,
-  `~/Library/Application Support/myTome`, `~/.config/myTome`) and say it is not
-  the same library as the browser's.
-- **`/privacy` — a sentence that does not exist yet.** That the library is
-  **not encrypted**, and is as private as any document file in the author's
-  account — protected by the operating system's file permissions and by
-  BitLocker or FileVault if they use them, and by nothing myTome adds. The
-  refresh token is the exception and should be named as one. A privacy page
-  that leaves this to inference is exactly the silent staleness `AGENTS.md`
-  warns about.
-- Both pages' **"Last updated"** lines move. They render through
-  `PolicyProse.tsx`.
-- **`AGENTS.md`**: the no-backend paragraph (add the main process carve-out),
-  the "`fetch` appears in that module only" sentence, and "`import.meta.env`
-  carries that one variable only."
-- **`drive.ts` header**: the token rule, now two rules.
-- **`.env.example`**: scope the no-secret sentence to the web flow.
-- **`docs/google-drive-sync.md`**: the Testing-vs-Production warning above is
-  the most important edit in this list, and it applies to the *web* client too
-  for anyone who cares about the seven-day expiry.
-- `/terms` clause 8 says the repo carries no licence. Shipping a signed
-  installer to other people is the moment to decide whether that is still what
-  you want; if a `LICENSE` appears, clause 8 changes in the same commit.
+- **`/privacy` — network list.** *Done.* The desktop page now says the
+  renderer talks to nothing at all — its CSP is `connect-src 'self'` — and
+  that the shell makes the Drive calls: Google's token service, Drive itself,
+  and a loopback listener that exists for a few seconds during sign-in and is
+  not running otherwise.
+- **`/privacy` — storage list.** *Done, across two phases.* Phase 4 added the
+  two auto-export keys, the folder the shell remembers, and the fact that the
+  desktop app writes outside itself; it also fixed the Drive token bullet,
+  which said the token is never written to disk and had been wrong since phase
+  2. Phase 5 added where the library lives on each platform
+  (`%APPDATA%\myTome`, `~/Library/Application Support/myTome`,
+  `~/.config/myTome`) and that it is **not** the browser's library.
+- **`/privacy` — the sentence that did not exist.** *Done.* The library is not
+  encrypted, is as private as any other document in that account, and the
+  Drive renewal key is named as the one exception. A privacy page that leaves
+  this to inference is exactly the silent staleness `AGENTS.md` warns about.
+- **"Last updated"** on `/privacy` moved with those edits. `/terms` has not
+  changed and its line has not moved.
+- **`AGENTS.md`**: *done.* The no-backend paragraph now says what the main
+  process may own and that wanting it to know about a library is the same
+  conversation one process closer; the `fetch` and `import.meta.env` rules are
+  split per directory; and the token rule is two rules, one per platform.
+- **`drive.ts` header**: *done in phase 2* — "Getting a token is not in this
+  file", pointing at `driveTransport.ts`.
+- **`.env.example`**: *done.* It carries only the web variable now, and points
+  at `.env.desktop.example` for the other two, which were inert in `.env.local`
+  anyway.
+- **`docs/google-drive-sync.md`**: *done in phase 2*, including the
+  Testing-vs-Production warning.
+- `/terms` clause 8 says the repo carries no licence. **Still true and still
+  unresolved**: there is no `LICENSE`. Shipping an installer to other people is
+  the moment to decide whether that is still what you want; if a `LICENSE`
+  appears, clause 8 changes in the same commit.
 
 ## Phases
 
