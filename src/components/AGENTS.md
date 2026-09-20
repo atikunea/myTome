@@ -325,6 +325,12 @@ height. Keep both values.
   `DriveSyncCard` with no credentials, meaning a web build without
   `VITE_GOOGLE_CLIENT_ID` or a desktop build whose shell exposed no Drive
   bridge. Sync is a button, never a background loop.
+- **An integration the platform cannot have renders nothing at all.**
+  `AutoExportCard` returns `null` on the web, and that is the deliberate
+  opposite of the rule above: a build with no Drive credentials still *could*
+  have Drive, so it says so, while a browser tab will never be handed a folder
+  to write to unattended. The *card* decides, not `BackupPage` — a page that
+  asked which platform it was on would be the first of many.
 - **A reload starts disconnected on the web and connected on the desktop.** The
   web token lives only in memory; the desktop build holds a refresh token that
   outlives the window. That is why the card asks `resumeDrive()` on mount

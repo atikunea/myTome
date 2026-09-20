@@ -84,11 +84,50 @@ export interface FilesBridge {
   }): Promise<{ name: string; bytes: Uint8Array } | null>;
 }
 
+/**
+ * Automatic backup export: a folder the author chose, that the app keeps
+ * writing whole-library backup files into.
+ *
+ * **The folder lives here, in the main process, and the renderer never names
+ * one.** It picks it once through a dialog and is afterwards told only what it
+ * is, for showing back to the author. That is the same rule `FilesBridge`
+ * follows, and it is what makes an unattended, repeating write safe: the page
+ * can ask for *an* export, never an export *there*.
+ *
+ * The file name is the main process's too, for a sharper reason — see
+ * `desktop/files.ts`. Pruning deletes, and a pruner that deleted whatever the
+ * renderer named would be a renderer that could delete anything in the folder.
+ */
+export interface BackupBridge {
+  /** The remembered folder, or undefined when the author has not picked one. */
+  folder(): Promise<string | undefined>;
+
+  /** Opens a folder dialog. The chosen folder, or null when cancelled. */
+  chooseFolder(): Promise<string | null>;
+
+  /** Forgets the folder. Nothing further is written, and nothing is deleted. */
+  forgetFolder(): Promise<void>;
+
+  /**
+   * Writes one export into the remembered folder, then deletes its own older
+   * files until `keep` remain. Rejects when no folder is set.
+   */
+  write(request: { bytes: Uint8Array; keep: number }): Promise<AutoExportWrite>;
+}
+
+export interface AutoExportWrite {
+  /** What it was written as — a name, never a path. */
+  fileName: string;
+  /** How many older automatic exports the retention rule removed. */
+  pruned: number;
+}
+
 export interface MyTomeBridge {
   readonly isDesktop: true;
   readonly platform: string;
   readonly versions: { app: string; electron: string; chrome: string };
   readonly files: FilesBridge;
+  readonly backup: BackupBridge;
   /** Absent when the build carries no Google credentials. */
   readonly drive?: DriveBridge;
 }

@@ -61,17 +61,18 @@ formatter; match the surrounding style.
 
 ## The desktop app
 
-> **Status: early.** The shell, Google Drive sync with a refresh token, and
-> native open/save dialogs all work. Automatic backup export, code signing and
+> **Status: early.** The shell, Google Drive sync with a refresh token, native
+> open/save dialogs and automatic backup export all work. Code signing and
 > auto-update are not built yet. Windows only so far; macOS and Linux are
 > planned. The full design is in [docs/desktop-app.md](docs/desktop-app.md).
 
 The desktop build is the *same* `src/` in an Electron shell. It differs from the
-web build in four ways and no more: it loads from a `mytome://` scheme instead
+web build in five ways and no more: it loads from a `mytome://` scheme instead
 of a URL subpath, it gets a stricter Content-Security-Policy as a real header,
-its Google credentials live in the shell rather than in the page, and getting a
+its Google credentials live in the shell rather than in the page, getting a
 file in or out of it goes through a real OS dialog instead of a browser
-download and a hidden `<input type="file">`.
+download and a hidden `<input type="file">`, and it can keep writing a full
+backup into a folder you choose — which a browser tab cannot do at all.
 
 **Its library is separate from the web app's** — a different origin means a
 different IndexedDB. Moving work between them is a backup file or a Drive sync,

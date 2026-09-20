@@ -22,8 +22,15 @@ import { AuthorsPage } from "./pages/AuthorsPage";
 import { BackupPage } from "./pages/BackupPage";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsOfUsePage } from "./pages/TermsOfUsePage";
+import { useAutoExport } from "./hooks/useAutoExport";
 
 export default function App() {
+  // The desktop build writes a whole-library backup into the author's chosen
+  // folder on a schedule. It is mounted here, not on `/backup`, so that it runs
+  // while they write — a timer that only ticked on the backup page would be a
+  // timer that never ticked. The web build has no folder and this does nothing.
+  useAutoExport();
+
   return (
     <ColorModeProvider>
       <ProseFaceProvider>

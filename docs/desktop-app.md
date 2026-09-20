@@ -458,23 +458,50 @@ that needs no OAuth at all.
 - **The file is a `BackupFile` from `backup.ts`, unchanged.** Not a second
   format, not a variant, not "a desktop format." Same rule the Drive header
   already states: transport, never format.
-- **The renderer builds it; the main process writes it.** `createBackup` runs
-  where it already runs, and hands the main process bytes and a filename from
-  `backupFileName`.
+- **The renderer builds it; the main process writes it.** `exportBackup` runs
+  where it already runs, and hands the main process bytes — and nothing else.
+- **The main process names the file, not the renderer.** This is a change from
+  the original plan, and the reason is pruning: retention *deletes*, and it
+  deletes exactly one name shape. A renderer that chose the names would be a
+  renderer choosing what the pruner is allowed to remove. So `desktop/files.ts`
+  builds `myTome-backup-2026-09-20-1432.json` itself — **local time**, like
+  `activityStats.ts`'s day keys, because a person reads these names in a folder
+  sorted by name.
 - Whole-library file, so the writing goals row rides along — the one-tome file
   deliberately excludes it.
+- **The renderer never names the folder either**, for the same reason it never
+  names a save path. It picks one through a dialog, the main process remembers
+  it in `<userData>/auto-export.json`, and afterwards the renderer is only
+  *told* what it is, so it can show the author. An unattended repeating write
+  that a page could aim is a different and much worse feature.
 - **Scheduling is a pure module** under `src/services/` with no Electron import
-  and no React: given the last export time, the current time and the author's
-  settings, what should happen. Tested under `node` alongside `activityStats.ts`
-  and `autosave.ts`, which is the pattern this repo already uses for exactly
-  this reason.
+  and no React: given the library's high-water mark, the current time and the
+  author's settings, what should happen. Tested under `node` alongside
+  `activityStats.ts` and `autosave.ts`, which is the pattern this repo already
+  uses for exactly this reason.
+- **Change-gated, not clock-driven.** `useAutoExport` in `App.tsx` asks every
+  five minutes; `nextAutoExport` answers. It writes only when the library's
+  high-water mark — the newest `updatedAt` across tomes, profiles and goals,
+  read through the same cheap `*Marks` calls a Drive sync plans with — differs
+  from the one on record. A day without writing costs no files, and an
+  unchanged library is skipped *before* the interval is consulted, so a missed
+  deadline can never force a duplicate.
 - **Retention is a policy, not a pile.** Keep the last *N* (default 10) and
   delete older ones — the only place this app deletes a file, and it only ever
-  deletes files it wrote, matched by the `backupFileName` shape.
+  deletes files matching the automatic shape above. A backup the author saved
+  by hand is `myTome-backup-2026-09-20.json` with no time, never matches, and
+  is never touched. Sorted by name, not by mtime: the name carries the time,
+  and a folder that has been copied or restored can arrive with every mtime
+  identical.
 - Export never blocks the UI and never interrupts writing. A failure — folder
-  gone, disk full, permission denied — shows on `/backup` and does not retry in
-  a loop.
+  gone, disk full, permission denied — shows on `/backup` in words rather than
+  an `errno`, and **pauses the schedule** rather than retrying: a folder on an
+  unplugged drive fails in milliseconds, and a timer that kept trying would
+  spend the session failing. "Back up now" is the way out, and it is also the
+  way past the pause.
 - **It is off until the author picks a folder.** No silent writing to disk.
+- There is no `mkdir`. A folder that has stopped existing is news, and
+  recreating it would quietly put files back somewhere the author removed.
 
 ## Native OS integration
 
@@ -515,19 +542,15 @@ drive.session()                                  → { state, account? } — sta
 drive.authorize()                                → { state, account? }
 drive.request(url, init)                         → { status, headers, body }
 drive.revoke()                                   → void
+backup.folder()                                  → string | undefined
+backup.chooseFolder()                            → string | null
+backup.forgetFolder()                            → void
+backup.write({ bytes, keep })                    → { fileName, pruned }
 ```
 
 `drive` is **optional** — a build carrying no Google credentials has no such
 key, which is what `DriveSyncCard` reads to render prose with nothing to click.
-`files` is always there.
-
-Still planned:
-
-```
-dialog.chooseFolder()                            → path | null      (phase 4)
-backup.write(folder, filename, bytes)            → void             (phase 4)
-backup.prune(folder, keep)                       → number deleted   (phase 4)
-```
+`files` and `backup` are always there.
 
 **`files.save` returns a name, never a path.** The renderer names no location
 going in — only a *suggested* filename — and gets none back; the author picked
@@ -535,6 +558,14 @@ the destination in their own operating system's dialog, and that is what makes
 writing safe without the allowlist `drive.request` needs. A page holding a
 filesystem path would be a page that could be talked into reusing one.
 `{ saved: false }` is a cancel, which is an ordinary outcome and not an error.
+
+**`backup.write` names neither the folder nor the file.** It is handed bytes
+and a retention count. `backup.folder()` hands a path *back*, which is the one
+direction that is safe: it is what the author chose, returned so the card can
+show it to them, and it can never become a destination the page selected.
+`keep` is clamped on both sides of the bridge — a value that crossed IPC is not
+a value you checked, and `keep: 0` would empty the folder of every automatic
+export.
 
 `drive.request` takes a URL the renderer chose, which is the one place this
 surface is broad. **The main process validates it against an allowlist of
@@ -560,16 +591,21 @@ desktop/
   credentials.ts The Google client id and secret, from the environment or from
                  a file written beside main.js at package time.
   drive.ts       The session: tokens, refresh-or-forget, the request allowlist.
-  files.ts       Dialogs. Backup writing and retention pruning land here in
-                 phase 4.
+  files.ts       Dialogs, the remembered export folder, the automatic write
+                 and the retention pruning. Everything allowed to touch a disk.
   builder.yml    electron-builder config.
 ```
 
-`src/` gains only `driveTransport*.ts` and `fileTransport*.ts`, each a
-three-file seam (the interface, the web half, the desktop half) picked by a
-Vite alias. Nothing else in the app knows a desktop build exists — with one
-exception: the UI on `/backup` needs to show a connected account and a
-reconnect state, which the web build simply never enters.
+`src/` gains three seams — `driveTransport*.ts`, `fileTransport*.ts` and
+`backupTransport*.ts` — each three files (the interface, the web half, the
+desktop half) picked by a Vite alias. `backupTransport.web.ts` is the odd one:
+its half exists to be *absent*, because a browser tab cannot be handed a folder
+to write to unattended, and `AutoExportCard` renders nothing at all rather than
+describing a feature that platform will never have.
+
+Nothing else in the app knows a desktop build exists — with one exception: the
+UI on `/backup` needs to show a connected account and a reconnect state, which
+the web build simply never enters.
 
 ### Scripts and gates
 
@@ -683,8 +719,10 @@ precisely the kind that does it, so the list is part of the spec:
 - **`/privacy` — network list.** It mirrors the CSP. The desktop build adds
   `https://oauth2.googleapis.com` (token exchange) and the loopback listener,
   which is not a remote host but is a socket and should be described.
-- **`/privacy` — storage list.** It names every key. Add the encrypted refresh
-  token file, the chosen export folder, and the last auto-export time. Name
+- **`/privacy` — storage list.** *Done in phase 4*: the two auto-export keys,
+  the folder the shell remembers, the fact that the desktop app writes outside
+  itself at all, and the Drive token bullet, which said the token is never
+  written to disk and had been wrong since phase 2. **Still outstanding**: name
   where the library lives on each platform (`%APPDATA%\myTome`,
   `~/Library/Application Support/myTome`, `~/.config/myTome`) and say it is not
   the same library as the browser's.
