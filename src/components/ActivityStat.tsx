@@ -1,5 +1,4 @@
 import { Box, LinearProgress, Paper, Stack, Typography } from "@mui/material";
-import { brandFontFamily } from "../theme";
 
 /**
  * One figure with its label, and optionally a bar under it — the tile the
@@ -46,7 +45,8 @@ export function ActivityStat({
       <Stack direction="row" spacing={0.75} sx={{ alignItems: "baseline", mt: 0.25 }}>
         <Typography
           sx={{
-            fontFamily: brandFontFamily,
+            fontWeight: 700,
+            letterSpacing: "-0.03em",
             fontSize: dense ? "1.6rem" : "2.1rem",
             lineHeight: 1.1,
             color: tone === "primary" ? "text.primary" : `${tone}.main`,

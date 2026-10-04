@@ -21,6 +21,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  type Theme,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
@@ -480,15 +481,29 @@ function ManuscriptSection({
         // phone width where the surface's own padding is only 20px.
         ...(sectioned && active
           ? {
+              // A length of brass thread with a knot at the section's head:
+              // the same mark the plot grid ties a beat on with.
               "&::before": {
                 content: '""',
                 position: "absolute",
                 left: { xs: -10, sm: -18 },
                 top: 0,
                 bottom: 0,
-                width: 3,
+                width: 2,
                 borderRadius: 2,
                 bgcolor: "primary.main",
+              },
+              "&::after": {
+                content: '""',
+                position: "absolute",
+                left: { xs: -15, sm: -23 },
+                top: 6,
+                width: 12,
+                height: 12,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                boxShadow: (t: Theme) =>
+                  `0 0 0 3px ${t.palette.background.default}, 0 0 ${t.loom.halo}px ${t.palette.primary.main}`,
               },
             }
           : {}),

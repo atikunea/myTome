@@ -183,7 +183,7 @@ function ImagePickerDialog({
                 component="img"
                 src={preview}
                 alt={alt}
-                sx={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 1, bgcolor: "#eee" }}
+                sx={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 1, bgcolor: (t) => t.loom.panel }}
               />
             ) : null}
             <TextField

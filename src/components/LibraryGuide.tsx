@@ -7,7 +7,6 @@ import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import TimelineIcon from "@mui/icons-material/Timeline";
-import { brandFontFamily } from "../theme";
 import { SpineDiagram } from "./SpineDiagram";
 
 /**
@@ -65,8 +64,7 @@ export function LibraryGuide({ firstTome = false }: { firstTome?: boolean }) {
       <Typography
         variant="h1"
         sx={{
-          fontFamily: brandFontFamily,
-          fontWeight: 400,
+          fontWeight: 700,
           fontSize: { xs: "2.15rem", sm: "3.1rem" },
           letterSpacing: "-0.03em",
           lineHeight: 1.06,
@@ -95,7 +93,7 @@ export function LibraryGuide({ firstTome = false }: { firstTome?: boolean }) {
                   sx={{
                     flex: "0 0 auto",
                     width: 24,
-                    fontFamily: brandFontFamily,
+                    fontWeight: 700,
                     fontSize: "1.5rem",
                     lineHeight: 1,
                     color: "primary.main",

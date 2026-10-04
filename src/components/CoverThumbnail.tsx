@@ -2,7 +2,15 @@ import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import type { ImageSource } from "../models/Tome";
 import { useImageSrc } from "../hooks/useObjectUrl";
-import { brandFontFamily } from "../theme";
+
+/** Hard-stopped 2px lines at even heights, one per colour: threads, not a wash. */
+const threadStripes = (colors: readonly string[]) =>
+  colors
+    .map((color, i) => {
+      const at = `${((i + 1) * 100) / (colors.length + 1)}%`;
+      return `linear-gradient(to bottom, transparent calc(${at} - 1px), ${color} calc(${at} - 1px), ${color} calc(${at} + 1px), transparent calc(${at} + 1px))`;
+    })
+    .join(", ");
 
 /**
  * A cover, or a monogram standing in for one. `sx` sizes both — callers are
@@ -32,7 +40,7 @@ export function CoverThumbnail({
         src={url}
         alt={alt}
         sx={[
-          { display: "block", width: "100%", objectFit: "cover", bgcolor: "#eee" },
+          { display: "block", width: "100%", objectFit: "cover", bgcolor: (t) => t.loom.panel },
           // MUI's array form rather than a spread: an `SxProps` may be an array or
           // a callback, and spreading two of them widens every property past
           // what `sx` accepts.
@@ -47,9 +55,13 @@ export function CoverThumbnail({
       sx={{
         display: "grid",
         placeItems: "center",
-        background: "linear-gradient(135deg, #d7b799, #8e6048)",
-        color: "#fff",
-        fontFamily: brandFontFamily,
+        // A tome without a cover is drawn as Loom draws a book: three threads
+        // across its own well, and its initial over them.
+        bgcolor: (t) => t.loom.panel,
+        backgroundImage: (t) => threadStripes(t.loom.threads.slice(0, 3)),
+        color: "text.primary",
+        fontWeight: 700,
+        letterSpacing: "-0.04em",
         fontSize: "3rem",
         ...sx,
       }}

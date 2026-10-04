@@ -1,30 +1,68 @@
 import { NavLink } from "react-router-dom";
-import { Box, ListItemButton, ListItemText, Typography } from "@mui/material";
+import {
+  Box,
+  IconButton,
+  ListItemButton,
+  ListItemText,
+  Tooltip,
+  Typography,
+  useTheme,
+  type Theme,
+} from "@mui/material";
+import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import InsightsIcon from "@mui/icons-material/Insights";
-import SettingsIcon from "@mui/icons-material/Settings";
-import TimelineIcon from "@mui/icons-material/Timeline";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import type { Plot } from "../models/Plot";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useObservable } from "../hooks/useObservable";
-import { brandFontFamily } from "../theme";
+import { threadColor } from "../theme";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 
 /** Height of the xs top bar, in px. Fixed so it never grows with the page. */
 const NAV_BAR_HEIGHT = 56;
 
+/**
+ * A nav item is a pill. The current one is washed in brass and ringed with it:
+ * the one place in the nav that says "you are here".
+ */
 const navItemSx = {
-  color: "#dfd7d1",
-  borderRadius: "7px",
-  px: 1.1,
-  py: { xs: 0.5, sm: 1 },
+  color: "text.secondary",
+  borderRadius: 999,
+  px: 1.5,
+  py: { xs: 0.5, sm: 0.75 },
   flex: "0 0 auto",
-  "&:hover": { bgcolor: "#44372f", color: "#fff" },
-  "&.active": { bgcolor: "#44372f", color: "#fff" },
-};
+  "& .MuiListItemText-primary": { fontWeight: 500, fontSize: "0.9rem" },
+  "&:hover": { bgcolor: "action.hover", color: "text.primary" },
+  "&.active": {
+    bgcolor: (t: Theme) => t.loom.brassSoft,
+    color: "primary.main",
+    boxShadow: (t: Theme) => `inset 0 0 0 1px ${t.loom.brassLine}`,
+  },
+} as const;
+
+/** The disc a plot is listed with: its thread colour, so the nav names it the way the grid draws it. */
+function Knot({ color }: { color: string }) {
+  return (
+    <Box
+      aria-hidden
+      sx={(t) => ({
+        width: 9,
+        height: 9,
+        mr: 1.25,
+        ml: 0.5,
+        flexShrink: 0,
+        borderRadius: "50%",
+        bgcolor: color,
+        boxShadow: `0 0 ${t.loom.halo / 2}px ${color}`,
+      })}
+    />
+  );
+}
 
 export function SideNav() {
+  const theme = useTheme();
   const { tome, types } = useTomeWorkspace();
   const plots =
     useObservable<Plot[]>((cb) => store.observePlots(tome?.id ?? "", cb), [tome?.id]) ?? [];
@@ -34,8 +72,13 @@ export function SideNav() {
     <Box
       component="aside"
       sx={{
-        bgcolor: "#27201c",
-        color: "#eee",
+        // The nav follows the colour mode: a step darker than the page in dark,
+        // a step tinted from it in light.
+        bgcolor: (t) => t.loom.nav,
+        color: "text.primary",
+        borderRight: { xs: 0, sm: 1 },
+        borderBottom: { xs: 1, sm: 0 },
+        borderColor: "divider",
         display: "flex",
         flexDirection: { xs: "row", sm: "column" },
         alignItems: { xs: "center", sm: "stretch" },
@@ -48,10 +91,10 @@ export function SideNav() {
         overflowY: { xs: "hidden", sm: "visible" },
         scrollbarWidth: "thin",
         "&::-webkit-scrollbar": { height: 6 },
-        "&::-webkit-scrollbar-thumb": { bgcolor: "#5a4a3f", borderRadius: 3 },
+        "&::-webkit-scrollbar-thumb": { bgcolor: "divider", borderRadius: 3 },
         whiteSpace: { xs: "nowrap", sm: "normal" },
-        py: { xs: 0, sm: 4 },
-        px: { xs: 1.75, sm: 2.5 },
+        py: { xs: 0, sm: 3.5 },
+        px: { xs: 1.75, sm: 2 },
         gap: 0.5,
       }}
     >
@@ -59,45 +102,86 @@ export function SideNav() {
         component={NavLink}
         to="/tomes"
         sx={{
-          fontFamily: brandFontFamily,
-          fontSize: { xs: "1.25rem", sm: "1.7rem" },
-          color: "#fff",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 1,
+          fontSize: { xs: "1.2rem", sm: "1.45rem" },
+          fontWeight: 700,
+          letterSpacing: "-0.03em",
+          color: "text.primary",
           textDecoration: "none",
-          mb: { xs: 0, sm: 4.5 },
+          mb: { xs: 0, sm: 3 },
           mr: { xs: 1.5, sm: 0 },
+          px: { sm: 1 },
           flex: "0 0 auto",
         }}
       >
-        myTome
+        <Box
+          aria-hidden
+          sx={(t) => ({
+            width: 12,
+            height: 12,
+            borderRadius: "50%",
+            bgcolor: t.loom.brass,
+            boxShadow: `0 0 ${t.loom.halo}px ${t.loom.brass}`,
+          })}
+        />
+        mytome
       </Typography>
-      <NavLabel>{tome.title}</NavLabel>
+      <Box
+        sx={{
+          display: { xs: "none", sm: "block" },
+          mx: 0.5,
+          mb: 1.5,
+          p: 1.75,
+          borderRadius: 4,
+          bgcolor: "background.paper",
+          border: 1,
+          borderColor: "divider",
+          boxShadow: (t) => t.loom.lift,
+        }}
+      >
+        <Typography
+          variant="overline"
+          color="text.secondary"
+          sx={{ display: "block", lineHeight: 1.6 }}
+        >
+          Tome
+        </Typography>
+        <Typography
+          sx={{ fontWeight: 600, fontSize: "1.05rem", lineHeight: 1.25, overflowWrap: "anywhere" }}
+        >
+          {tome.title}
+        </Typography>
+      </Box>
       <ListItemButton
         component={NavLink}
         to={`/tomes/${tome.id}/dashboard`}
         sx={navItemSx}
       >
+        <DashboardOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
         <ListItemText primary="Overview" />
       </ListItemButton>
-      <NavLabel>PLOTS</NavLabel>
+      <NavLabel>Plots</NavLabel>
       {plots.length ? (
-        plots.map((plot) => (
+        plots.map((plot, index) => (
           <ListItemButton
             key={plot.id}
             component={NavLink}
             to={`/tomes/${tome.id}/plots/${plot.id}`}
             sx={navItemSx}
           >
-            <TimelineIcon fontSize="small" sx={{ mr: 1 }} />
+            <Knot color={threadColor(theme, index)} />
             <ListItemText primary={plot.name} />
           </ListItemButton>
         ))
       ) : (
         <ListItemButton component={NavLink} to={`/tomes/${tome.id}/plots`} sx={navItemSx}>
-          <TimelineIcon fontSize="small" sx={{ mr: 1 }} />
+          <Knot color={threadColor(theme, 0)} />
           <ListItemText primary="Main Plot" />
         </ListItemButton>
       )}
-      <NavLabel>WRITE</NavLabel>
+      <NavLabel>Write</NavLabel>
       <ListItemButton
         component={NavLink}
         to={`/tomes/${tome.id}/write`}
@@ -116,7 +200,32 @@ export function SideNav() {
         <InsightsIcon fontSize="small" sx={{ mr: 1 }} />
         <ListItemText primary="Activity" />
       </ListItemButton>
-      <NavLabel>ELEMENTS</NavLabel>
+      {/*
+        Editing the element types is a setting *of* this list, so it sits on
+        the list's own heading rather than as one more item in it. The heading
+        is hidden in the xs top bar; the gear is not, or a phone would lose the
+        only way in.
+      */}
+      <Box sx={{ display: "flex", alignItems: "center", flex: "0 0 auto" }}>
+        <NavLabel>Elements</NavLabel>
+        <Box sx={{ flex: 1, display: { xs: "none", sm: "block" } }} />
+        <Tooltip title="Edit element types">
+          <IconButton
+            component={NavLink}
+            to={`/tomes/${tome.id}/elements/settings`}
+            aria-label="Edit element types"
+            size="small"
+            sx={{
+              mt: { sm: "13px" },
+              color: "text.secondary",
+              "&:hover": { color: "primary.main" },
+              "&.active": { color: "primary.main", bgcolor: (t) => t.loom.brassSoft },
+            }}
+          >
+            <SettingsOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
       {types.map((type) => (
         <ListItemButton
           key={type.id}
@@ -128,14 +237,6 @@ export function SideNav() {
           <ListItemText primary={type.name} />
         </ListItemButton>
       ))}
-      <ListItemButton
-        component={NavLink}
-        to={`/tomes/${tome.id}/elements/settings`}
-        sx={navItemSx}
-      >
-        <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
-        <ListItemText primary="Manage Elements" />
-      </ListItemButton>
     </Box>
   );
 }
@@ -143,13 +244,12 @@ export function SideNav() {
 function NavLabel({ children }: { children: React.ReactNode }) {
   return (
     <Typography
+      variant="overline"
       sx={{
         display: { xs: "none", sm: "block" },
-        m: "18px 9px 5px",
-        color: "#bfa998",
-        fontSize: "0.72rem",
-        fontWeight: 800,
-        letterSpacing: "0.12em",
+        m: "18px 12px 5px",
+        lineHeight: 1.6,
+        color: "text.secondary",
       }}
     >
       {children}

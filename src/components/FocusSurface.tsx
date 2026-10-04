@@ -139,14 +139,16 @@ export function FocusSurface({
             height: fullScreen ? "100%" : "calc(100% - 52px)",
             maxWidth: "none",
             m: fullScreen ? 0 : "26px",
-            bgcolor: "background.paper",
+            // The page's own ground, not paper: prose sits on the night, and
+            // the chrome above it is the step darker the nav is.
+            bgcolor: "background.default",
             backgroundImage: "none",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
           },
         },
-        backdrop: { sx: { bgcolor: "rgba(28, 24, 21, 0.6)" } },
+        backdrop: { sx: { bgcolor: (t) => t.loom.backdrop } },
       }}
       onKeyDownCapture={(event) => {
         // Modifier chords and navigation are not writing; only actual typing
@@ -168,6 +170,9 @@ export function FocusSurface({
           // floats there too, and would swallow clicks meant for this menu.
           pr: 6,
           py: 1,
+          bgcolor: (t) => t.loom.nav,
+          borderBottom: 1,
+          borderColor: "divider",
           ...chromeSx,
         }}
       >

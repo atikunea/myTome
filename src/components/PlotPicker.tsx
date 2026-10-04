@@ -14,6 +14,7 @@ import {
   Tabs,
   TextField,
   Tooltip,
+  useTheme,
   type TabProps,
 } from "@mui/material";
 import {
@@ -46,6 +47,7 @@ import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
 import { defaultPlotTemplateId, plotTemplateById } from "../models/PlotTemplate";
 import { PlotTemplatePicker } from "./PlotTemplatePicker";
+import { threadColor } from "../theme";
 
 /**
  * A button nested inside a tab — the drag handle and the column toggle are both
@@ -87,6 +89,7 @@ const tabButtonSx = {
  */
 function SortablePlotTab({
   name,
+  thread,
   showHandle,
   shown,
   primary,
@@ -96,6 +99,8 @@ function SortablePlotTab({
   ...tabProps
 }: TabProps & {
   name: string;
+  /** The plot's thread colour, drawn as a short length of thread before its name. */
+  thread: string;
   showHandle: boolean;
   /** This plot is currently drawn as a column. */
   shown: boolean;
@@ -133,10 +138,14 @@ function SortablePlotTab({
         opacity: isDragging ? 0.75 : undefined,
       }}
       // A tab can be drawn as a column without being the one the tablist calls
-      // selected — several columns, one `value`. Colouring the others primary is
-      // what says "this is on screen", and the toggle below carries the state
-      // for anyone not looking at colour.
-      sx={shown && !primary ? { color: "primary.main" } : undefined}
+      // selected — several columns, one `value`. A solid pill says "this is on
+      // screen" and a dashed one says it is not; the toggle below carries the
+      // state for anyone not looking at borders.
+      sx={
+        shown
+          ? { color: "text.primary", bgcolor: "background.paper" }
+          : { borderStyle: "dashed" }
+      }
       label={
         <Stack direction="row" sx={{ alignItems: "center", gap: 0.25 }}>
           {showHandle ? (
@@ -161,6 +170,11 @@ function SortablePlotTab({
               <DragIndicatorIcon sx={{ fontSize: 18 }} />
             </Box>
           ) : null}
+          <Box
+            component="span"
+            aria-hidden
+            sx={{ width: 18, height: 3, borderRadius: 2, bgcolor: thread, mx: 0.75, flexShrink: 0 }}
+          />
           {name}
           {/*
             The whole of "compare" is this button. There is no compare mode and no
@@ -237,6 +251,7 @@ export function PlotPicker({
 }) {
   const navigate = useNavigate();
   const confirmAction = useConfirm();
+  const theme = useTheme();
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState("");
   const [plotTemplateId, setPlotTemplateId] = useState(defaultPlotTemplateId);
@@ -331,7 +346,7 @@ export function PlotPicker({
   };
 
   return (
-    <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
+    <Box sx={{ mb: 3 }}>
       <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
         <DndContext
           sensors={sensors}
@@ -348,13 +363,35 @@ export function PlotPicker({
               }}
               variant="scrollable"
               scrollButtons="auto"
-              sx={{ flex: 1, minHeight: 44, "& .MuiTab-root": { minHeight: 44 } }}
+              sx={{
+                flex: 1,
+                minHeight: 48,
+                // Loom's tabs are pills on the warp, not an underlined strip.
+                // The indicator stays mounted — `Tabs` measures it — but unseen;
+                // the selected tab is ringed in brass instead.
+                "& .MuiTabs-indicator": { display: "none" },
+                "& .MuiTabs-flexContainer": { gap: 1, py: 0.5 },
+                "& .MuiTab-root": {
+                  minHeight: 40,
+                  borderRadius: 999,
+                  border: 1,
+                  borderColor: "divider",
+                  px: 2,
+                  color: "text.secondary",
+                },
+                "& .MuiTab-root.Mui-selected": {
+                  color: "text.primary",
+                  boxShadow: (t) => `inset 0 0 0 1px ${t.palette.primary.main}`,
+                  borderColor: "primary.main",
+                },
+              }}
             >
               {ordered.map((plot) => (
                 <SortablePlotTab
                   key={plot.id}
                   value={plot.id}
                   name={plot.name}
+                  thread={threadColor(theme, plots.findIndex((p) => p.id === plot.id))}
                   showHandle={ordered.length > 1}
                   shown={shown.has(plot.id)}
                   primary={plot.id === current.id}

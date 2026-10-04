@@ -12,7 +12,9 @@ const ColorModeContext = createContext<{
 function initialMode(): PaletteMode {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored === "light" || stored === "dark") return stored;
-  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  // Loom is dark-first: night blue is the look, and light is the alternate an
+  // author chooses rather than one the operating system picks for them.
+  return "dark";
 }
 
 export function ColorModeProvider({ children }: { children: ReactNode }) {
