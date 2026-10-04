@@ -17,7 +17,7 @@ import {
 import { arrayMove } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
-import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { Box, IconButton, Tooltip, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import UnfoldMoreIcon from "@mui/icons-material/UnfoldMore";
@@ -27,6 +27,7 @@ import type { SaveState } from "../hooks/autosave";
 import { plotRowName, type Plot, type PlotItem, type PlotRow } from "../models/Plot";
 import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
+import { monoFontFamily, threadColor } from "../theme";
 import { BeatDot } from "./BeatDot";
 import { InlineTextField } from "./InlineTextField";
 import { EmptyState } from "./EmptyState";
@@ -172,6 +173,8 @@ export function PlotGrid({
   items,
   types,
   elements,
+  threadIndex,
+  wordCountOf,
   renderColumnHeader,
   onOpenItem,
   onOpenElement,
@@ -188,6 +191,14 @@ export function PlotGrid({
   items: PlotItem[];
   types: ElementType[];
   elements: Element[];
+  /**
+   * A plot's position among **all** the tome's plots, which picks its thread
+   * colour. Not its position among the columns drawn: a plot keeps its colour
+   * whether it is on screen alone or beside two others.
+   */
+  threadIndex: (plotId: string) => number;
+  /** How many words a beat's texts hold together, for its card's foot. */
+  wordCountOf: (item: PlotItem) => number;
   /**
    * What sits atop a column. Omitted by the single-plot view, whose plot tabs
    * already name the one column and sit directly above this grid — a header
@@ -209,6 +220,8 @@ export function PlotGrid({
   onSaveState: (state: SaveState, retry: () => void) => void;
 }) {
   const confirmAction = useConfirm();
+  const theme = useTheme();
+  const colorOf = (plot: Plot) => threadColor(theme, threadIndex(plot.id));
   // Which quiet runs the author has opened back up, by the ids of the rows in
   // them. Purely how much is on screen, so it is state rather than a route — the
   // same call `ElementPage` makes about which field is being edited.
@@ -384,7 +397,7 @@ export function PlotGrid({
                 />
                 {plots.map((plot) => (
                   <Box key={plot.id} sx={{ minWidth: 0, display: "flex", minHeight: 30 }}>
-                    <Track part={part} />
+                    <Track part={part} color={colorOf(plot)} />
                   </Box>
                 ))}
               </Fragment>
@@ -408,6 +421,8 @@ export function PlotGrid({
                       item={item}
                       types={types}
                       part={part}
+                      thread={colorOf(plot)}
+                      words={wordCountOf(item)}
                       attachments={item.attachedElementIds
                         .map((id) => elementsById.get(id))
                         .filter((element): element is Element => Boolean(element))}
@@ -423,6 +438,7 @@ export function PlotGrid({
                       row={entry.row}
                       rowLabel={plotRowName(entry.row, entry.index)}
                       part={part}
+                      thread={colorOf(plot)}
                       onAdd={() => onAddBeat(plot.id, entry.row.id)}
                     />
                   );
@@ -449,13 +465,22 @@ export function PlotGrid({
  * Each segment overshoots its cell by the height of the insert strip between two
  * rows, which is what makes a track drawn cell by cell read as one unbroken line.
  */
-function Track({ part, children }: { part: TrackPart; children?: ReactNode }) {
+function Track({
+  part,
+  color,
+  children,
+}: {
+  part: TrackPart;
+  /** The plot's thread colour — the line *is* the plot, so it is never neutral. */
+  color: string;
+  children?: ReactNode;
+}) {
   const segment = {
     position: "absolute",
     left: "50%",
     width: "2px",
     ml: "-1px",
-    bgcolor: "divider",
+    bgcolor: color,
   } as const;
   // A segment that carries on into the next cell overshoots by the insert
   // strip's height so the line bridges it; one that ends the track stops flush
@@ -509,9 +534,30 @@ function RowGutter({
         // label is the only thing in the flow and the centring is exact.
         display: "flex",
         alignItems: "center",
+        gap: 1,
         "&:hover .row-action, &:focus-within .row-action": { opacity: 1 },
       }}
     >
+      {/* The row's place on the spine, which a name never replaces. */}
+      <Box
+        aria-hidden
+        sx={{
+          flexShrink: 0,
+          width: 28,
+          height: 28,
+          borderRadius: "50%",
+          border: 1,
+          borderColor: (t) => t.loom.ring,
+          display: { xs: "none", sm: "flex" },
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: monoFontFamily,
+          fontSize: "0.7rem",
+          color: "text.secondary",
+        }}
+      >
+        {String(index + 1).padStart(2, "0")}
+      </Box>
       {/*
         `typography` on the wrapper rather than on the field: `InlineTextField`
         sets `font: inherit` on the input, and `letter-spacing` and
@@ -660,6 +706,8 @@ function BeatCell({
   attachments,
   types,
   part,
+  thread,
+  words,
   onOpen,
   onOpenElement,
   onWrite,
@@ -669,6 +717,8 @@ function BeatCell({
   attachments: Element[];
   types: ElementType[];
   part: TrackPart;
+  thread: string;
+  words: number;
   onOpen: () => void;
   onOpenElement: (element: Element) => void;
   /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
@@ -693,8 +743,8 @@ function BeatCell({
     // No vertical padding on the cell itself: the track has to run its whole
     // height for the line to meet the next cell's. The card carries the spacing.
     <Box ref={setDropRef} sx={{ minWidth: 0, display: "flex", alignItems: "stretch" }}>
-      <Track part={part}>
-        <BeatDot item={item} />
+      <Track part={part} color={thread}>
+        <BeatDot item={item} thread={thread} />
       </Track>
       <Box
         ref={setDragRef}
@@ -715,6 +765,7 @@ function BeatCell({
       >
         <PlotBeatCard
           item={item}
+          words={words}
           attachments={attachments}
           types={types}
           onOpen={onOpen}
@@ -734,12 +785,14 @@ function EmptyCell({
   row,
   rowLabel,
   part,
+  thread,
   onAdd,
 }: {
   plot: Plot;
   row: PlotRow;
   rowLabel: string;
   part: TrackPart;
+  thread: string;
   onAdd: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -748,7 +801,23 @@ function EmptyCell({
   });
   return (
     <Box ref={setNodeRef} sx={{ minWidth: 0, display: "flex", alignItems: "stretch" }}>
-      <Track part={part} />
+      {/* A hollow knot: the thread runs on, with nothing tied to it here. */}
+      <Track part={part} color={thread}>
+        <Box
+          aria-hidden
+          sx={(t) => ({
+            width: 10,
+            height: 10,
+            boxSizing: "border-box",
+            borderRadius: "50%",
+            border: 1,
+            borderStyle: "dashed",
+            borderColor: thread,
+            bgcolor: "background.default",
+            boxShadow: `0 0 0 3px ${t.palette.background.default}`,
+          })}
+        />
+      </Track>
       <Box
         component="button"
         type="button"
@@ -761,7 +830,12 @@ function EmptyCell({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          borderRadius: 1,
+          gap: 0.5,
+          font: "inherit",
+          fontSize: "0.8125rem",
+          // A card radius, not a pill: a gap stretches to its row, and a full
+          // radius on a tall row draws an oval.
+          borderRadius: 4,
           border: 1,
           borderStyle: "dashed",
           borderColor: isOver ? "primary.main" : "divider",
@@ -774,6 +848,7 @@ function EmptyCell({
         }}
       >
         <AddIcon fontSize="small" />
+        Tie a beat
       </Box>
     </Box>
   );

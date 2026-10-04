@@ -25,8 +25,9 @@ root `AGENTS.md`.
 - **Reach for an MUI component before writing bespoke markup** — that is project
   policy, not a style nit. Style with `sx` / `styled()` and theme tokens
   (`text.secondary`, `divider`, `color="error"`, …) so both colour modes stay
-  correct. No `.css` files, no hex colours (`SideNav`'s permanent `#27201c` is
-  the one exception), no inline `<svg>` icons.
+  correct. No `.css` files, no hex colours outside `theme.ts` (Loom's own
+  tokens live on `theme.loom`, and a plot's colour is `threadColor`), no
+  inline `<svg>` icons.
 - **One breakpoint: MUI's `sm`.** Don't invent others. Wide content scrolls
   inside its own scrollport, never the body. `PlotGrid` never stacks its
   columns at any width — stacked columns are not aligned, and alignment is the

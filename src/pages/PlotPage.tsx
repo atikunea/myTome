@@ -16,6 +16,7 @@ import { PlotPicker } from "../components/PlotPicker";
 import { RemoveEmptyRowsButton } from "../components/RemoveEmptyRowsButton";
 import { SaveStatus } from "../components/SaveStatus";
 import { ManuscriptExportDialog } from "../components/ManuscriptExportDialog";
+import { threadColor } from "../theme";
 
 /**
  * The plotting screen: **one or more** of a tome's plots drawn against its
@@ -82,12 +83,24 @@ export function PlotPage({
   const elements =
     useObservable<Element[]>((cb) => store.observeTomeElements(tome!.id, cb), [tome?.id]) ?? [];
   // The export needs the texts themselves: a beat holds only their ids, and the
-  // rows are tome-level rather than the plot's.
+  // rows are tome-level rather than the plot's. The cards read their word
+  // counts from the same rows.
   const writeItems =
     useObservable<WriteItem[]>(
       (cb) => store.observeWriteItems(tome!.id, cb),
       [tome?.id],
     ) ?? [];
+  const wordsById = useMemo(
+    () => new Map(writeItems.map((text) => [text.id, text.wordCount])),
+    [writeItems],
+  );
+  // A text composed into several beats counts in each of them: this is the
+  // beat's own length, not its share of the book's.
+  const wordCountOf = useCallback(
+    (item: PlotItem) =>
+      item.writeItemIds.reduce((sum, id) => sum + (wordsById.get(id) ?? 0), 0),
+    [wordsById],
+  );
 
   const requested = useMemo(() => (plotIds ?? "").split(",").filter(Boolean), [plotIds]);
   // What the URL names, in the URL's own order: the **primary** plot first, then
@@ -113,6 +126,12 @@ export function PlotPage({
     const rank = new Map(plots.map((plot, index) => [plot.id, index]));
     return [...selected].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
   }, [plots, selected]);
+
+  // A plot's thread colour follows its tab, the same order the nav lists it in.
+  const threadIndex = useCallback(
+    (plotId: string) => plots?.findIndex((plot) => plot.id === plotId) ?? 0,
+    [plots],
+  );
 
   const canonical = selected.map((plot) => plot.id).join(",");
   const plotsPath = tome ? `/tomes/${tome.id}/plots/${canonical}` : "";
@@ -234,6 +253,8 @@ export function PlotPage({
         items={items}
         types={types}
         elements={elements}
+        threadIndex={threadIndex}
+        wordCountOf={wordCountOf}
         // One column needs no header: the tab strip sits directly above it and
         // already names it. Several do, and the header is only a name and a way
         // to add a beat — which plots are drawn is the tab strip's business.
@@ -241,6 +262,21 @@ export function PlotPage({
           columns.length > 1
             ? (plot) => (
                 <Stack direction="row" sx={{ alignItems: "center", gap: 0.5 }}>
+                  <Box
+                    aria-hidden
+                    sx={(t) => {
+                      const color = threadColor(t, threadIndex(plot.id));
+                      return {
+                        width: 10,
+                        height: 10,
+                        mx: 0.75,
+                        flexShrink: 0,
+                        borderRadius: "50%",
+                        bgcolor: color,
+                        boxShadow: `0 0 ${t.loom.halo}px ${color}`,
+                      };
+                    }}
+                  />
                   <Typography
                     variant="subtitle2"
                     sx={{

@@ -135,7 +135,7 @@ src/
   pages/       Route-level screens, one per <Route> in App.tsx.
   components/  Reusable UI. Has its own AGENTS.md — read it.
   lexical/     Custom Lexical nodes and plugins, plus blocks.ts (tested in __tests__/).
-  theme.ts     getTheme(mode) — the warm-paper brand palette, light and dark.
+  theme.ts     getTheme(mode) — Loom: night-blue first, light alternate; plot thread colours.
 ```
 
 **The one layering rule: `src/models/db.ts` is imported only by files in

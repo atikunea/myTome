@@ -59,8 +59,8 @@ const DEV_SERVER_URL = "http://localhost:5173";
  * before the renderer attaches is the difference between opening a book and
  * opening a white flash. If the palette moves, move these with it.
  */
-const PAPER_LIGHT = "#fdfbf8";
-const PAPER_DARK = "#1c1815";
+const PAPER_LIGHT = "#f4f3fb";
+const PAPER_DARK = "#0f1226";
 
 /**
  * Stricter than the web policy in `vite.config.ts`, and it gets to be: the

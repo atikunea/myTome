@@ -21,6 +21,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  type Theme,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
@@ -76,6 +77,7 @@ export function ProseManuscript({
   onSaveState,
   onWordCount,
   onOpenMention,
+  onActiveChange,
 }: {
   items: WriteItem[];
   elements: Element[];
@@ -111,6 +113,11 @@ export function ProseManuscript({
   onSaveState: (state: SaveState, retry: () => void) => void;
   onWordCount: (words: number) => void;
   onOpenMention: (elementId: string) => void;
+  /**
+   * Which section holds the live editor, or none. For a page that shows the
+   * manuscript's outline beside it; nothing here depends on anyone listening.
+   */
+  onActiveChange?: (id: string | null) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [caretPoint, setCaretPoint] = useState<CaretPoint | null>(null);
@@ -133,6 +140,10 @@ export function ProseManuscript({
   useEffect(() => {
     if (!activeId) onSaveState("clean", () => {});
   }, [activeId, onSaveState]);
+
+  useEffect(() => {
+    onActiveChange?.(activeId);
+  }, [activeId, onActiveChange]);
 
   // Seeding the draft is done beside the state updates rather than inside a
   // `setActiveId` updater: React invokes updaters twice under StrictMode, and
@@ -466,6 +477,9 @@ function ManuscriptSection({
   return (
     <Box
       component="section"
+      // What an outline beside the manuscript scrolls to. An attribute rather
+      // than an `id`: one text may sit in several beats, and ids are global.
+      data-write-item={item.id}
       sx={{
         mt: first ? 0 : 5,
         position: "relative",
@@ -480,15 +494,29 @@ function ManuscriptSection({
         // phone width where the surface's own padding is only 20px.
         ...(sectioned && active
           ? {
+              // A length of brass thread with a knot at the section's head:
+              // the same mark the plot grid ties a beat on with.
               "&::before": {
                 content: '""',
                 position: "absolute",
                 left: { xs: -10, sm: -18 },
                 top: 0,
                 bottom: 0,
-                width: 3,
+                width: 2,
                 borderRadius: 2,
                 bgcolor: "primary.main",
+              },
+              "&::after": {
+                content: '""',
+                position: "absolute",
+                left: { xs: -15, sm: -23 },
+                top: 6,
+                width: 12,
+                height: 12,
+                borderRadius: "50%",
+                bgcolor: "primary.main",
+                boxShadow: (t: Theme) =>
+                  `0 0 0 3px ${t.palette.background.default}, 0 0 ${t.loom.halo}px ${t.palette.primary.main}`,
               },
             }
           : {}),

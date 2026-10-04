@@ -1,5 +1,5 @@
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
-import { Badge, Box, Card, Chip, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Card, Chip, Stack, Tooltip, Typography } from "@mui/material";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import type { PlotItem } from "../models/Plot";
@@ -9,6 +9,9 @@ import type { SaveState } from "../hooks/autosave";
 import { store } from "../services/store";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 import { InlineTextField } from "./InlineTextField";
+
+const plural = (n: number, word: string) =>
+  `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
 /**
  * The beat itself — title, description, attached elements, and the handle that
@@ -37,8 +40,14 @@ export function PlotBeatCard({
   onWrite,
   onSaveState,
   dragHandle,
+  words,
 }: {
   item: PlotItem;
+  /**
+   * The words in the beat's texts, summed. Passed in rather than read here: the
+   * card holds only the texts' ids, and the page already has the rows.
+   */
+  words: number;
   attachments: Element[];
   types: ElementType[];
   onOpen: () => void;
@@ -47,7 +56,9 @@ export function PlotBeatCard({
    * Opens the beat's manuscript. This is the way in to a beat's writing now
    * that composition has left `PlotItemDialog`, so unlike the drag handle it is
    * **always visible** rather than revealed on hover — a hover-only control is
-   * unreachable on touch, and this is not a secondary action.
+   * unreachable on touch, and this is not a secondary action. Loom gives it the
+   * card's foot as a brass pill, which is also what keeps a long title from
+   * wrapping around it.
    */
   onWrite: (item: PlotItem) => void;
   /** Where the beat label's autosave reports to. Stable, for `PlotGrid`'s reason. */
@@ -90,7 +101,8 @@ export function PlotBeatCard({
         "&:hover .beat-label input::placeholder, & .beat-label input:focus::placeholder": {
           opacity: 0.5,
         },
-        "&:hover": { borderColor: "primary.main" },
+        bgcolor: "background.paper",
+        "&:hover": { borderColor: (t) => t.loom.brassLine },
         "&:focus-visible": {
           outline: 2,
           outlineColor: "primary.main",
@@ -183,7 +195,6 @@ export function PlotBeatCard({
                   <Chip
                     key={element.id}
                     size="small"
-                    variant="outlined"
                     icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
                     label={element.name}
                     onClick={(event) => {
@@ -195,33 +206,27 @@ export function PlotBeatCard({
               })}
             </Stack>
           ) : null}
-        </Box>
-        <Tooltip
-          title={
-            item.writeItemIds.length
-              ? `Write — ${item.writeItemIds.length} ${item.writeItemIds.length === 1 ? "text" : "texts"}`
-              : "Write"
-          }
-        >
-          <IconButton
-            size="small"
-            aria-label={`Write ${item.title}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onWrite(item);
-            }}
-            sx={{ mt: -0.5, mr: -0.5, color: "text.secondary", flexShrink: 0 }}
-          >
-            <Badge
-              badgeContent={item.writeItemIds.length}
-              color="primary"
-              overlap="circular"
-              slotProps={{ badge: { sx: { fontSize: 10, height: 15, minWidth: 15 } } }}
+          <Stack direction="row" sx={{ alignItems: "center", mt: 1.5 }}>
+            <Typography variant="overline" color="text.secondary" sx={{ flex: 1, lineHeight: 1.6 }}>
+              {item.writeItemIds.length
+                ? `${plural(words, "word")} · ${plural(item.writeItemIds.length, "text")}`
+                : "No text yet"}
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<EditNoteIcon fontSize="small" />}
+              aria-label={`Write ${item.title}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onWrite(item);
+              }}
+              sx={{ minHeight: 30, py: 0 }}
             >
-              <EditNoteIcon fontSize="small" />
-            </Badge>
-          </IconButton>
-        </Tooltip>
+              Write
+            </Button>
+          </Stack>
+        </Box>
       </Stack>
     </Card>
   );

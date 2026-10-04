@@ -33,7 +33,6 @@ import { useTomes } from "../context/TomesContext";
 import { useObservable } from "../hooks/useObservable";
 import { ActivityStat } from "../components/ActivityStat";
 import { WritingGoalsDialog } from "../components/WritingGoalsDialog";
-import { brandFontFamily } from "../theme";
 
 /**
  * The daily goal, and every book that counts towards it.
@@ -83,7 +82,7 @@ export function LibraryActivityPage({ editing }: { editing?: boolean } = {}) {
         sx={{ alignItems: "flex-end", justifyContent: "space-between", mb: 3, flexWrap: "wrap" }}
       >
         <Box>
-          <Typography variant="h1" sx={{ fontFamily: brandFontFamily, fontSize: "2.1rem" }}>
+          <Typography variant="h1" sx={{ fontSize: "2.1rem" }}>
             Writing activity
           </Typography>
           <Typography color="text.secondary">

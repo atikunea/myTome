@@ -1,4 +1,4 @@
-import type { SxProps, Theme } from "@mui/material";
+import { alpha, type SxProps, type Theme } from "@mui/material";
 import { brandFontFamily, sansFontFamily } from "../theme";
 import { MENTION_ATTRIBUTE } from "../lexical/MentionNode";
 
@@ -210,12 +210,17 @@ export function manuscriptSx(face: ProseFace): SxProps<Theme> {
 
     // Mentions are styled from here rather than in `createDOM`, which runs
     // outside React and cannot reach the MUI theme.
+    //
+    // A tint rather than an underline, and no padding: both renders take this
+    // rule, so a padding would at least be equal in each — but a mention is a
+    // word in a sentence, and the line should measure the same with or
+    // without one.
     [`& [${MENTION_ATTRIBUTE}]`]: {
-      color: "primary.main",
-      textDecoration: "underline",
+      color: "info.main",
+      bgcolor: (t: Theme) => alpha(t.palette.info.main, 0.13),
       cursor: "pointer",
-      borderRadius: "3px",
-      "&:hover": { bgcolor: "action.hover" },
+      borderRadius: "4px",
+      "&:hover": { bgcolor: (t: Theme) => alpha(t.palette.info.main, 0.24) },
     },
   };
 }

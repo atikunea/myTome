@@ -14,7 +14,6 @@ import {
   signedWords,
 } from "../services/activityStats";
 import { useObservable } from "../hooks/useObservable";
-import { brandFontFamily } from "../theme";
 
 /**
  * Today against the goal, on the tome overview — the smallest of the three
@@ -63,7 +62,8 @@ export function ActivityCard({ tome }: { tome: Tome }) {
       <Stack direction="row" spacing={1} sx={{ alignItems: "baseline", mt: 0.25 }}>
         <Typography
           sx={{
-            fontFamily: brandFontFamily,
+            fontWeight: 700,
+            letterSpacing: "-0.03em",
             fontSize: "1.7rem",
             lineHeight: 1.1,
             fontVariantNumeric: "tabular-nums",
