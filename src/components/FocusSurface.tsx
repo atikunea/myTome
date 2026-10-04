@@ -15,6 +15,7 @@ import {
   useTheme,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import CheckIcon from "@mui/icons-material/Check";
 import { useProseFace } from "../context/ProseFaceContext";
@@ -76,6 +77,7 @@ export function FocusSurface({
   status,
   menu,
   footer,
+  aside,
   onClose,
   children,
 }: {
@@ -87,6 +89,14 @@ export function FocusSurface({
   menu?: (close: () => void) => ReactNode;
   /** Quiet line along the bottom — word count and the like. */
   footer?: ReactNode;
+  /**
+   * A panel down the left of the manuscript — what the page knows *about* the
+   * prose, as opposed to the prose. Hidden below `sm`, where the surface is
+   * full-bleed and every column belongs to the text, and hideable above it.
+   * Its width never changes while a section is live, so the static/live swap
+   * still lands on the same layout.
+   */
+  aside?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -98,6 +108,9 @@ export function FocusSurface({
   // Chrome recedes on the first keystroke and comes back the moment the author
   // reaches for the mouse. Nothing is removed from the layout, so nothing moves.
   const [typing, setTyping] = useState(false);
+  // Shown by default: the panel is there to be read beside the prose. Hiding
+  // it is a moment's choice, so it is not remembered past this surface.
+  const [asideOpen, setAsideOpen] = useState(true);
 
   const chromeSx = {
     opacity: typing ? 0.18 : 1,
@@ -186,6 +199,18 @@ export function FocusSurface({
         ) : null}
         <Box sx={{ flex: 1 }} />
         {status}
+        {aside ? (
+          <Tooltip title={asideOpen ? "Hide the panel" : "Show the panel"}>
+            <IconButton
+              aria-label={asideOpen ? "Hide the panel" : "Show the panel"}
+              aria-pressed={asideOpen}
+              onClick={() => setAsideOpen((open) => !open)}
+              sx={{ display: { xs: "none", sm: "inline-flex" } }}
+            >
+              <ViewSidebarOutlinedIcon sx={{ transform: "scaleX(-1)" }} />
+            </IconButton>
+          </Tooltip>
+        ) : null}
         <IconButton
           aria-label="Writing options"
           onClick={(event) => setAnchor(event.currentTarget)}
@@ -250,9 +275,28 @@ export function FocusSurface({
         {menu?.(closeMenu)}
       </Menu>
 
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+      {aside && asideOpen ? (
+        <Box
+          component="aside"
+          sx={{
+            display: { xs: "none", sm: "block" },
+            width: 300,
+            flexShrink: 0,
+            overflowY: "auto",
+            borderRight: 1,
+            borderColor: "divider",
+            p: 2.5,
+            ...chromeSx,
+          }}
+        >
+          {aside}
+        </Box>
+      ) : null}
       <Box
         sx={{
           flex: 1,
+          minWidth: 0,
           minHeight: 0,
           overflowY: "auto",
           overflowX: "hidden",
@@ -274,6 +318,7 @@ export function FocusSurface({
         >
           {children}
         </Box>
+      </Box>
       </Box>
 
       <Stack

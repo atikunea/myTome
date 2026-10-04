@@ -77,6 +77,7 @@ export function ProseManuscript({
   onSaveState,
   onWordCount,
   onOpenMention,
+  onActiveChange,
 }: {
   items: WriteItem[];
   elements: Element[];
@@ -112,6 +113,11 @@ export function ProseManuscript({
   onSaveState: (state: SaveState, retry: () => void) => void;
   onWordCount: (words: number) => void;
   onOpenMention: (elementId: string) => void;
+  /**
+   * Which section holds the live editor, or none. For a page that shows the
+   * manuscript's outline beside it; nothing here depends on anyone listening.
+   */
+  onActiveChange?: (id: string | null) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [caretPoint, setCaretPoint] = useState<CaretPoint | null>(null);
@@ -134,6 +140,10 @@ export function ProseManuscript({
   useEffect(() => {
     if (!activeId) onSaveState("clean", () => {});
   }, [activeId, onSaveState]);
+
+  useEffect(() => {
+    onActiveChange?.(activeId);
+  }, [activeId, onActiveChange]);
 
   // Seeding the draft is done beside the state updates rather than inside a
   // `setActiveId` updater: React invokes updaters twice under StrictMode, and
@@ -467,6 +477,9 @@ function ManuscriptSection({
   return (
     <Box
       component="section"
+      // What an outline beside the manuscript scrolls to. An attribute rather
+      // than an `id`: one text may sit in several beats, and ids are global.
+      data-write-item={item.id}
       sx={{
         mt: first ? 0 : 5,
         position: "relative",

@@ -8,6 +8,7 @@ import {
   MenuItem,
   Stack,
   Typography,
+  useTheme,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
@@ -18,7 +19,7 @@ import LinkOffIcon from "@mui/icons-material/LinkOff";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import type { Element } from "../models/Element";
-import type { Plot, PlotItem } from "../models/Plot";
+import { plotRowName, type Plot, type PlotItem, type PlotRow } from "../models/Plot";
 import type { WriteItem, WriteItemType } from "../models/WriteItem";
 import {
   untitledWriteItem,
@@ -31,6 +32,8 @@ import { useConfirm } from "../context/ConfirmContext";
 import { useProseFace } from "../context/ProseFaceContext";
 import { useObservable } from "../hooks/useObservable";
 import type { SaveState } from "../hooks/autosave";
+import { threadColor } from "../theme";
+import { BeatPanel } from "../components/BeatPanel";
 import { FocusSurface } from "../components/FocusSurface";
 import { ProseManuscript } from "../components/ProseManuscript";
 import { SaveStatus } from "../components/SaveStatus";
@@ -75,6 +78,10 @@ export function BeatManuscriptPage({ adding = false }: { adding?: boolean }) {
 
   return (
     <BeatFocus
+      // Keyed on the beat: the panel can step sideways to another plot's beat
+      // on the same row, and that must be a fresh surface — its own drafts to
+      // sweep, its own section to open — not this one with new props.
+      key={beat.id}
       beat={beat}
       tomeId={tome.id}
       plotId={plotId ?? beat.plotId}
@@ -100,8 +107,10 @@ function BeatFocus({
   insertAt?: number;
 }) {
   const navigate = useNavigate();
+  const theme = useTheme();
   const confirmAction = useConfirm();
   const { types } = useTomeWorkspace();
+  const [activeTextId, setActiveTextId] = useState<string | null>(null);
   const { face } = useProseFace();
   const [save, setSave] = useState<{ state: SaveState; retry: () => void }>({
     state: "clean",
@@ -135,6 +144,29 @@ function BeatFocus({
     useObservable<Element[]>((cb) => store.observeTomeElements(tomeId, cb), [tomeId]) ?? [];
   const writeItems =
     useObservable<WriteItem[]>((cb) => store.observeWriteItems(tomeId, cb), [tomeId]) ?? [];
+  // For the panel: the thread colours, and what the other plots have on this row.
+  const plots =
+    useObservable<Plot[]>((cb) => store.observePlots(tomeId, cb), [tomeId]) ?? [];
+  const tomeBeats =
+    useObservable<PlotItem[]>((cb) => store.observeTomePlotItems(tomeId, cb), [tomeId]) ?? [];
+  const rows =
+    useObservable<PlotRow[]>((cb) => store.observePlotRows(tomeId, cb), [tomeId]) ?? [];
+
+  const sameRow = useMemo(() => {
+    const rank = new Map(plots.map((p, index) => [p.id, index]));
+    return tomeBeats
+      .filter((other) => other.plotRowId === beat.plotRowId && other.id !== beat.id)
+      .sort((a, b) => (rank.get(a.plotId) ?? 0) - (rank.get(b.plotId) ?? 0));
+  }, [tomeBeats, plots, beat.plotRowId, beat.id]);
+  const rowIndex = rows.findIndex((row) => row.id === beat.plotRowId);
+  const rowName = rowIndex < 0 ? undefined : plotRowName(rows[rowIndex], rowIndex);
+  const attachments = useMemo(
+    () =>
+      beat.attachedElementIds
+        .map((id) => elements.find((element) => element.id === id))
+        .filter((element): element is Element => Boolean(element)),
+    [beat.attachedElementIds, elements],
+  );
 
   /** The beat's text in reading order. `writeItemIds` is the order; this resolves it. */
   const items = useMemo(() => {
@@ -225,6 +257,17 @@ function BeatFocus({
     await store.setPlotItemWriteItems(beat.id, order);
   };
 
+  const openElement = (element: Element) =>
+    navigate(`/tomes/${tomeId}/elements/${element.elementTypeId}/${element.id}`);
+
+  const editBeat = () => navigate(`/tomes/${tomeId}/plots/${plotId}/items/${beat.id}`);
+
+  /** Scrolls a section to the top of the surface. Entering it is still a click on the prose. */
+  const jumpToText = (row: WriteItem) =>
+    document
+      .querySelector(`[data-write-item="${CSS.escape(row.id)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+
   const removeFromBeat = (row: WriteItem) =>
     store.setPlotItemWriteItems(
       beat.id,
@@ -236,7 +279,20 @@ function BeatFocus({
       onClose={close}
       context={
         <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", minWidth: 0 }}>
-          <TimelineIcon sx={{ fontSize: 16, color: "text.disabled" }} />
+          {/* The plot's own length of thread, as the tabs and the nav draw it. */}
+          <Box
+            aria-hidden
+            sx={{
+              width: 18,
+              height: 3,
+              flexShrink: 0,
+              borderRadius: 2,
+              bgcolor: threadColor(
+                theme,
+                plots.findIndex((candidate) => candidate.id === plotId),
+              ),
+            }}
+          />
           <Typography variant="body2" color="text.secondary" noWrap>
             {plot?.name ?? "Plot"}
             {beat.name ? ` · ${beat.name}` : ""}
@@ -255,13 +311,37 @@ function BeatFocus({
           key="beat"
           onClick={() => {
             closeMenu();
-            navigate(`/tomes/${tomeId}/plots/${plotId}/items/${beat.id}`);
+            editBeat();
           }}
         >
           <TimelineIcon fontSize="small" sx={{ mr: 1.5, color: "text.secondary" }} />
           Beat details…
         </MenuItem>,
       ]}
+      aside={
+        <BeatPanel
+          beat={beat}
+          texts={items}
+          activeTextId={activeTextId}
+          attachments={attachments}
+          types={types}
+          sameRow={sameRow}
+          rowName={rowName}
+          plots={plots}
+          onJumpToText={jumpToText}
+          onNewText={(anchor) => setAddMenu({ anchor })}
+          onComposeExisting={() => openPicker()}
+          onEditBeat={editBeat}
+          onOpenElement={openElement}
+          onOpenBeat={(other) =>
+            // Replaced, not pushed: closing should land on the plot page the
+            // author came from, not walk back through every beat they visited.
+            navigate(`/tomes/${tomeId}/plots/${other.plotId}/items/${other.id}/write`, {
+              replace: true,
+            })
+          }
+        />
+      }
       footer={
         <Typography variant="caption" color="text.secondary">
           {items.length} {items.length === 1 ? "text" : "texts"} ·{" "}
@@ -281,10 +361,10 @@ function BeatFocus({
           onInsertAt={(at, anchor) => setAddMenu({ anchor, at })}
           onSaveState={handleSaveState}
           onWordCount={setWords}
+          onActiveChange={setActiveTextId}
           onOpenMention={(elementId) => {
             const element = elements.find((candidate) => candidate.id === elementId);
-            if (!element) return;
-            navigate(`/tomes/${tomeId}/elements/${element.elementTypeId}/${element.id}`);
+            if (element) openElement(element);
           }}
           sectionMenu={(row, closeMenu) => {
             const index = beat.writeItemIds.indexOf(row.id);
