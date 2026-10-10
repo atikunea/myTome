@@ -443,7 +443,7 @@ in `App.tsx`.
 
 - **The privacy page's network list is the CSP in `vite.config.ts`, and its
   storage list names every `localStorage` key** (colour mode, prose face, prose
-  line width, first-line indent, guide dismissal, Drive's last-sync mark). A new
+  line width, first-line indent, hidden side menu, guide dismissal, Drive's last-sync mark). A new
   host, scope or key makes it wrong until it is edited.
 - **Terms clause 8 says the repo carries no licence.** Adding a `LICENSE` edits
   that clause in the same commit.
