@@ -16,7 +16,7 @@ import {
  * Everything here is a claim about the code, so it has to be re-read whenever
  * the code moves: the storage list mirrors `models/db.ts` plus the three
  * `localStorage` keys in `context/`, the guide dismissal in `GuideStrip`, the
- * line width in `FocusSurface`, the sync mark in `services/drive.ts` and the
+ * hidden side menu in `layouts/WorkspaceLayout`, the line width in `FocusSurface`, the sync mark in `services/drive.ts` and the
  * two auto-export keys in `services/autoExport.ts`; and the network list
  * mirrors the CSP in `vite.config.ts` — which is the exhaustive answer to
  * "where can this app talk to", and is what this page should be checked
@@ -35,7 +35,7 @@ export function PrivacyPolicyPage() {
     <PolicyPage
       title="Privacy"
       lede="myTome has no server, no accounts, and no analytics. Your writing stays in this browser unless you deliberately move it somewhere else."
-      updated="20 September 2026"
+      updated="10 October 2026"
       sibling={{ to: "/terms", label: "Terms of use" }}
     >
       <PolicySection title="The short version">
@@ -64,7 +64,7 @@ export function PrivacyPolicyPage() {
             "Your work — tomes, author profiles, element types and their fields, elements, relationships, plots, plot rows, beats and prose — in the browser's IndexedDB.",
             "How much you wrote and when: a running total of words for each day you write, the sittings those days were made of, and the goals and targets you set. All of it is counted from your own prose as you save it, and it is kept in that same database.",
             "Cover, element and author images you choose from your machine, kept in that same database as files. An image you supply as a web address is stored as the address, and your browser fetches it from that host each time it is shown.",
-            "Five small preferences: light or dark mode, your prose typeface, the line width of the writing view, whether its paragraphs indent their first line, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
+            "Six small preferences: light or dark mode, your prose typeface, the line width of the writing view, whether its paragraphs indent their first line, whether you have hidden the side menu, and whether you have dismissed the guide on the library page. If you connect Google Drive, the time of your last sync is remembered the same way.",
             "In the desktop app only, two more of those: how often to write an automatic backup and how many to keep, along with when the last one was written. The folder you chose for them is remembered by the app itself rather than by the page.",
           ]}
         />

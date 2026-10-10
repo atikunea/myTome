@@ -13,6 +13,7 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import InsightsIcon from "@mui/icons-material/Insights";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import MenuOpenIcon from "@mui/icons-material/MenuOpen";
 import type { Plot } from "../models/Plot";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
@@ -61,7 +62,12 @@ function Knot({ color }: { color: string }) {
   );
 }
 
-export function SideNav() {
+/**
+ * `hidden` removes the nav from `sm` up only — below that it is the top bar,
+ * and the only way around the tome on a phone. The layout owns the flag
+ * because it also decides the grid's columns.
+ */
+export function SideNav({ hidden, onHide }: { hidden: boolean; onHide: () => void }) {
   const theme = useTheme();
   const { tome, types } = useTomeWorkspace();
   const plots =
@@ -79,7 +85,8 @@ export function SideNav() {
         borderRight: { xs: 0, sm: 1 },
         borderBottom: { xs: 1, sm: 0 },
         borderColor: "divider",
-        display: "flex",
+        display: { xs: "flex", sm: hidden ? "none" : "flex" },
+        position: "relative",
         flexDirection: { xs: "row", sm: "column" },
         alignItems: { xs: "center", sm: "stretch" },
         // Below sm this is a top bar, and its height must not move: fixed, and
@@ -128,6 +135,23 @@ export function SideNav() {
         />
         mytome
       </Typography>
+      <Tooltip title="Hide menu">
+        <IconButton
+          aria-label="Hide menu"
+          onClick={onHide}
+          size="small"
+          sx={{
+            display: { xs: "none", sm: "inline-flex" },
+            position: "absolute",
+            top: 30,
+            right: 12,
+            color: "text.secondary",
+            "&:hover": { color: "primary.main" },
+          }}
+        >
+          <MenuOpenIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
       <Box
         sx={{
           display: { xs: "none", sm: "block" },
