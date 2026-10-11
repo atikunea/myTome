@@ -1,22 +1,43 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
   Box,
   Button,
   Card,
-  CardActions,
   CardContent,
-  Grid,
+  Divider,
   IconButton,
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 import AddIcon from "@mui/icons-material/Add";
 import CloseIcon from "@mui/icons-material/Close";
-import type { FieldDefinition } from "../models/ElementType";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import type { ElementType, FieldDefinition } from "../models/ElementType";
 import { store } from "../services/store";
 import { useTomeWorkspace } from "../context/TomeWorkspaceContext";
 import { useConfirm } from "../context/ConfirmContext";
@@ -153,7 +174,7 @@ export function ElementTypesPage({ creating = false }: { creating?: boolean }) {
 
   return (
     <Box>
-      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 3.25 }}>
+      <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "center", mb: 3.25 }}>
         <Box>
           <Typography variant="overline" color="primary" sx={{ fontWeight: 800, letterSpacing: "0.12em" }}>
             ELEMENT CONFIGURATION
@@ -161,53 +182,203 @@ export function ElementTypesPage({ creating = false }: { creating?: boolean }) {
           <Typography variant="h2" sx={{ fontSize: "1.7rem" }}>
             Element types
           </Typography>
-          <Typography color="text.secondary">Define the building blocks for this tome.</Typography>
+          <Typography color="text.secondary">
+            Define the building blocks for this tome. Drag a type by its handle to change its
+            place in the side menu.
+          </Typography>
         </Box>
-        <Button startIcon={<AddIcon />} onClick={() => goTo("/new")}>
+        <Button startIcon={<AddIcon />} onClick={() => goTo("/new")} sx={{ flex: "0 0 auto", whiteSpace: "nowrap" }}>
           New type
         </Button>
       </Stack>
-      <Grid container spacing={1.9}>
-        {types.map((type) => (
-          <Grid key={type.id} size={{ xs: 12, sm: 6, md: 4 }}>
-            <Paper variant="outlined" sx={{ p: 2.5 }}>
-              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                <ElementTypeIcon icon={type.icon} color="primary" fontSize="small" />
-                <Typography variant="h3" sx={{ fontSize: "1.15rem" }}>
-                  {type.name}
-                </Typography>
-              </Stack>
-              <Typography color="text.secondary" sx={{ my: 1 }}>
-                {type.description || "No description"}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {type.fieldDefinitions.length} custom field{type.fieldDefinitions.length === 1 ? "" : "s"}
-              </Typography>
-              <CardActions sx={{ px: 0, pb: 0, pt: 1.75, gap: 0.5 }}>
-                <Button size="small" onClick={() => goTo(`/${type.id}`)}>
-                  Configure
-                </Button>
-                <Button
-                  size="small"
-                  color="error"
-                  onClick={async () => {
-                    const count = await store.countElements(type.id);
-                    confirmAction(
-                      `Permanently delete "${type.name}" and all ${count} of its elements? This cannot be undone.`,
-                      async () => {
-                        await store.deleteType(type);
-                        goTo();
-                      },
-                    );
-                  }}
-                >
-                  Delete
-                </Button>
-              </CardActions>
-            </Paper>
-          </Grid>
-        ))}
-      </Grid>
+      <ElementTypeList
+        tomeId={tome.id}
+        types={types}
+        onConfigure={(type) => goTo(`/${type.id}`)}
+        onDelete={async (type) => {
+          const count = await store.countElements(type.id);
+          confirmAction(
+            `Permanently delete "${type.name}" and all ${count} of its elements? This cannot be undone.`,
+            async () => {
+              await store.deleteType(type);
+              goTo();
+            },
+          );
+        }}
+      />
     </Box>
+  );
+}
+
+/**
+ * The tome's types as one column, in the order the side menu shows them, so
+ * that dragging a row here is visibly the same act as moving it there. A
+ * wrapping grid would read left-to-right and hide that.
+ *
+ * Saved on drop, like the plot tabs: the rendered order is held locally and
+ * re-seeded only when the stored set changes, so the live query's echo of this
+ * page's own write does not snap the row back for a frame.
+ */
+function ElementTypeList({
+  tomeId,
+  types,
+  onConfigure,
+  onDelete,
+}: {
+  tomeId: string;
+  types: ElementType[];
+  onConfigure: (type: ElementType) => void;
+  onDelete: (type: ElementType) => void;
+}) {
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
+  const storedKey = types.map((type) => type.id).join("|");
+  useEffect(() => {
+    setOrderedIds((currentIds) => {
+      const stored = storedKey ? storedKey.split("|") : [];
+      const sameSet =
+        currentIds.length === stored.length && currentIds.every((id) => stored.includes(id));
+      return sameSet ? currentIds : stored;
+    });
+  }, [storedKey]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const byId = useMemo(() => new Map(types.map((type) => [type.id, type])), [types]);
+  const ordered = orderedIds
+    .map((id) => byId.get(id))
+    .filter((type): type is ElementType => Boolean(type));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const from = orderedIds.indexOf(String(active.id));
+    const to = orderedIds.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(orderedIds, from, to);
+    setOrderedIds(next);
+    store.reorderTypes(tomeId, next);
+  };
+
+  if (!ordered.length) {
+    return <Typography color="text.secondary">No element types yet.</Typography>;
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ maxWidth: 900 }}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
+          <Stack divider={<Divider />}>
+            {ordered.map((type) => (
+              <ElementTypeRow
+                key={type.id}
+                type={type}
+                onConfigure={() => onConfigure(type)}
+                onDelete={() => onDelete(type)}
+              />
+            ))}
+          </Stack>
+        </SortableContext>
+      </DndContext>
+    </Paper>
+  );
+}
+
+function ElementTypeRow({
+  type,
+  onConfigure,
+  onDelete,
+}: {
+  type: ElementType;
+  onConfigure: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: type.id });
+  const fieldCount = type.fieldDefinitions.length;
+
+  return (
+    <Stack
+      ref={setNodeRef}
+      direction="row"
+      spacing={1.25}
+      sx={{
+        alignItems: "center",
+        px: { xs: 1, sm: 1.5 },
+        py: 1.25,
+        transform: CSS.Translate.toString(transform),
+        transition,
+        // The lifted row passes over its neighbours, so it needs their paper.
+        zIndex: isDragging ? 1 : undefined,
+        position: isDragging ? "relative" : undefined,
+        bgcolor: isDragging ? "background.paper" : undefined,
+        boxShadow: isDragging ? 3 : undefined,
+      }}
+    >
+      {/*
+        A plain button with a native title, not IconButton inside a Tooltip:
+        ButtonBase swallows the keys dnd-kit's KeyboardSensor needs, and Tooltip
+        clones its child and costs the handle its activator ref.
+      */}
+      <Box
+        component="button"
+        type="button"
+        ref={setActivatorNodeRef}
+        title="Drag to reorder"
+        aria-label={`Reorder ${type.name}`}
+        sx={{
+          flex: "0 0 auto",
+          p: 0.5,
+          display: "inline-flex",
+          border: 0,
+          borderRadius: "50%",
+          bgcolor: "transparent",
+          color: "text.secondary",
+          cursor: "grab",
+          touchAction: "none",
+          "&:hover": { bgcolor: "action.hover" },
+          "&:active": { cursor: "grabbing" },
+        }}
+        {...attributes}
+        {...listeners}
+      >
+        <DragIndicatorIcon fontSize="small" />
+      </Box>
+      <ElementTypeIcon icon={type.icon} color="primary" fontSize="small" />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="h3" sx={{ fontSize: "1.05rem" }} noWrap>
+          {type.name}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" noWrap>
+          {type.description || "No description"}
+        </Typography>
+      </Box>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{ flex: "0 0 auto", display: { xs: "none", sm: "block" }, whiteSpace: "nowrap" }}
+      >
+        {fieldCount} custom field{fieldCount === 1 ? "" : "s"}
+      </Typography>
+      <Stack direction="row" sx={{ flex: "0 0 auto" }}>
+        <Tooltip title={`Configure ${type.name}`}>
+          <IconButton aria-label={`Configure ${type.name}`} size="small" onClick={onConfigure}>
+            <SettingsOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={`Delete ${type.name}`}>
+          <IconButton aria-label={`Delete ${type.name}`} size="small" color="error" onClick={onDelete}>
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+    </Stack>
   );
 }

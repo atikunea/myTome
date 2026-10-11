@@ -171,7 +171,7 @@ export const spineStore = {
       // Another tab changed the spine mid-drag, so this order is about a set
       // that no longer exists.
       if (!sameSet(stored, orderedIds)) return;
-      await applyOrder(db.plotRows, orderedIds);
+      await applyOrder(db.plotRows, orderedIds, now());
       await syncPlotSortOrder(tomeId);
     });
   },

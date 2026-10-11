@@ -3,6 +3,7 @@ import { db } from "../../models/db";
 import { store } from "../store";
 import {
   addBeat,
+  backdateTome,
   beatsOf,
   columnOf,
   expectSpineIntact,
@@ -245,5 +246,35 @@ describe("createPlotFromTemplate", () => {
     expect(plot.name).toBe("Bare");
     expect(await db.plotItems.where("plotId").equals(plot.id).count()).toBe(0);
     await expectSpineIntact(tome.id);
+  });
+});
+
+describe("spine reorders reach a sync", () => {
+  const backdated = "2001-01-01T00:00:00.000Z";
+
+  it("reorderPlotRows moves the rows' updatedAt", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    for (const t of ["a1", "a2"]) await addBeat(tome.id, plots[0].id, t);
+    await backdateTome(tome.id);
+
+    const spine = await rowIds(tome.id);
+    await store.reorderPlotRows(tome.id, [spine[1], spine[0]]);
+    await expectSpineIntact(tome.id);
+
+    const rows = await db.plotRows.where("tomeId").equals(tome.id).toArray();
+    expect(rows.every((row) => row.updatedAt > backdated)).toBe(true);
+  });
+
+  it("reorderPlotItems moves the beats' updatedAt", async () => {
+    const { tome, plots } = await makeTome(["A"]);
+    for (const t of ["a1", "a2"]) await addBeat(tome.id, plots[0].id, t);
+    await backdateTome(tome.id);
+
+    const a = await beatsOf(plots[0].id);
+    await store.reorderPlotItems(plots[0].id, [a[1].id, a[0].id]);
+    await expectSpineIntact(tome.id);
+
+    const beats = await beatsOf(plots[0].id);
+    expect(beats.every((beat) => beat.updatedAt > backdated)).toBe(true);
   });
 });

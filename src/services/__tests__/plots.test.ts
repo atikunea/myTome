@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { db } from "../../models/db";
 import { store } from "../store";
-import { addBeat, expectSpineIntact, makeTome } from "./helpers";
+import { addBeat, backdateTome, expectSpineIntact, makeTome } from "./helpers";
 
 /**
  * The plot row itself, as distinct from its beats: naming, ordering and the
@@ -177,5 +177,17 @@ describe("setPlotItemName", () => {
       sortOrder: beat.sortOrder,
     });
     await expectSpineIntact(tome.id);
+  });
+});
+
+describe("reorderPlots and sync", () => {
+  it("moves updatedAt, so the new order reaches touchedAt", async () => {
+    const { tome, plots } = await makeTome(["A", "B"]);
+    await backdateTome(tome.id);
+
+    await store.reorderPlots(tome.id, [plots[1].id, plots[0].id]);
+
+    const after = await db.plots.where("tomeId").equals(tome.id).toArray();
+    expect(after.every((plot) => plot.updatedAt > "2001-01-01T00:00:00.000Z")).toBe(true);
   });
 });

@@ -99,7 +99,7 @@ export const plotStore = {
       const stored = await plotRange(tomeId).primaryKeys();
       // Another tab added or deleted a plot while this drag was in flight.
       if (!sameSet(stored, orderedIds)) return;
-      await applyOrder(db.plots, orderedIds);
+      await applyOrder(db.plots, orderedIds, now());
     });
   },
   async deletePlot(plot: Pick<Plot, "id" | "tomeId">) {
@@ -182,10 +182,12 @@ export const plotStore = {
       const held = stored.map((item) => item.plotRowId).sort(byRank(rank));
       // `held` is already in row-rank order, so the index this writes and the
       // rank of the row it writes alongside it agree by construction — this is
-      // not `sortOrder` authored from a list position.
+      // not `sortOrder` authored from a list position. `updatedAt` moves so a
+      // sync carries the new order (see `applyOrder`).
+      const time = now();
       await Promise.all(
         orderedIds.map((id, index) =>
-          db.plotItems.update(id, { plotRowId: held[index], sortOrder: index }),
+          db.plotItems.update(id, { plotRowId: held[index], sortOrder: index, updatedAt: time }),
         ),
       );
     });
