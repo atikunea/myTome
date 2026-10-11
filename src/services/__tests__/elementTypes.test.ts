@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { db } from "../../models/db";
 import type { FieldDefinition } from "../../models/ElementType";
 import { store } from "../store";
-import { makeTome } from "./helpers";
+import { backdateTome, makeTome } from "./helpers";
 
 /**
  * The per-tome element type registry and its custom fields.
@@ -182,5 +182,78 @@ describe("the delete-warning counts", () => {
     const { type } = await seed();
 
     expect(await store.countField(type.id, "height")).toBe(0);
+  });
+});
+
+describe("reorderTypes", () => {
+  const typesOf = async (tomeId: string) =>
+    (await db.elementTypes.where("tomeId").equals(tomeId).sortBy("sortOrder")).map((t) => ({
+      name: t.name,
+      sortOrder: t.sortOrder,
+    }));
+
+  it("renumbers the types into the order given and moves their updatedAt", async () => {
+    const { tome } = await makeTome();
+    const types = [];
+    for (const name of ["Character", "Place", "Faction"])
+      types.push(await store.saveType({ tomeId: tome.id, name, fieldDefinitions: [] }));
+    await backdateTome(tome.id);
+
+    await store.reorderTypes(tome.id, [types[2].id, types[0].id, types[1].id]);
+
+    expect(await typesOf(tome.id)).toEqual([
+      { name: "Faction", sortOrder: 0 },
+      { name: "Character", sortOrder: 1 },
+      { name: "Place", sortOrder: 2 },
+    ]);
+    // Without this a sync compares touchedAt, sees nothing new, and the other
+    // device keeps its old menu order.
+    const stored = await db.elementTypes.where("tomeId").equals(tome.id).toArray();
+    expect(stored.every((t) => t.updatedAt > "2001-01-01T00:00:00.000Z")).toBe(true);
+  });
+
+  it("drops a stale drag whose type set no longer matches", async () => {
+    const { tome } = await makeTome();
+    const a = await store.saveType({ tomeId: tome.id, name: "A", fieldDefinitions: [] });
+    const b = await store.saveType({ tomeId: tome.id, name: "B", fieldDefinitions: [] });
+    const c = await store.saveType({ tomeId: tome.id, name: "C", fieldDefinitions: [] });
+    // Another tab deleted C while this drag was in flight.
+    await store.deleteType(c);
+
+    await store.reorderTypes(tome.id, [c.id, b.id, a.id]);
+
+    expect((await typesOf(tome.id)).map((t) => t.name)).toEqual(["A", "B"]);
+  });
+
+  it("leaves another tome's types untouched", async () => {
+    const { tome } = await makeTome();
+    const other = await makeTome();
+    const a = await store.saveType({ tomeId: tome.id, name: "A", fieldDefinitions: [] });
+    const b = await store.saveType({ tomeId: tome.id, name: "B", fieldDefinitions: [] });
+    await store.saveType({ tomeId: other.tome.id, name: "X", fieldDefinitions: [] });
+    await store.saveType({ tomeId: other.tome.id, name: "Y", fieldDefinitions: [] });
+
+    await store.reorderTypes(tome.id, [b.id, a.id]);
+
+    expect((await typesOf(other.tome.id)).map((t) => t.name)).toEqual(["X", "Y"]);
+  });
+});
+
+describe("deleteType and order", () => {
+  it("compacts the order, so a type created next lands last rather than tying", async () => {
+    const { tome } = await makeTome();
+    const a = await store.saveType({ tomeId: tome.id, name: "A", fieldDefinitions: [] });
+    await store.saveType({ tomeId: tome.id, name: "B", fieldDefinitions: [] });
+    await store.saveType({ tomeId: tome.id, name: "C", fieldDefinitions: [] });
+
+    await store.deleteType(a);
+    await store.saveType({ tomeId: tome.id, name: "D", fieldDefinitions: [] });
+
+    const stored = await db.elementTypes.where("tomeId").equals(tome.id).sortBy("sortOrder");
+    expect(stored.map((t) => [t.name, t.sortOrder])).toEqual([
+      ["B", 0],
+      ["C", 1],
+      ["D", 2],
+    ]);
   });
 });

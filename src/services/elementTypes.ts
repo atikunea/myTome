@@ -1,23 +1,32 @@
 import Dexie from "dexie";
 import { db } from "../models/db";
 import type { ElementType } from "../models/ElementType";
-import { detachElements, now, observe, slugify, uid } from "./internal";
+import { applyOrder, detachElements, now, observe, sameSet, slugify, uid } from "./internal";
 import { validateFields } from "./validate";
 
 /**
  * The per-tome element type registry — Character, Place, Faction — and the
  * custom field definitions that live on it.
+ *
+ * A type's `sortOrder` is its place in the side menu, set by dragging on the
+ * element types page.
  */
+const typeRange = (tomeId: string) =>
+  db.elementTypes
+    .where("[tomeId+sortOrder]")
+    .between([tomeId, Dexie.minKey], [tomeId, Dexie.maxKey]);
+
 export const elementTypeStore = {
   observeTypes(tomeId: string, callback: (v: ElementType[]) => void) {
-    return observe(
-      () =>
-        db.elementTypes
-          .where("[tomeId+sortOrder]")
-          .between([tomeId, Dexie.minKey], [tomeId, Dexie.maxKey])
-          .toArray(),
-      callback,
-    );
+    return observe(() => typeRange(tomeId).toArray(), callback);
+  },
+  async reorderTypes(tomeId: string, orderedIds: string[]) {
+    await db.transaction("rw", db.elementTypes, async () => {
+      const stored = await typeRange(tomeId).primaryKeys();
+      // Another tab added or deleted a type while this drag was in flight.
+      if (!sameSet(stored, orderedIds)) return;
+      await applyOrder(db.elementTypes, orderedIds, now());
+    });
   },
   async saveType(
     input: Partial<ElementType> &
@@ -90,6 +99,9 @@ export const elementTypeStore = {
           .delete();
         await db.elements.where("elementTypeId").equals(type.id).delete();
         await db.elementTypes.delete(type.id);
+        // A new type takes `sortOrder = count`, which would tie with the last
+        // type if this left a gap.
+        await applyOrder(db.elementTypes, await typeRange(type.tomeId).primaryKeys());
       },
     );
   },

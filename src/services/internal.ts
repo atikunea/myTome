@@ -117,12 +117,23 @@ export const detachWriteItem = async (writeItemId: string) => {
  * row, never authored from an index. Use `syncPlotSortOrder` in `spine.ts`. The
  * one sanctioned exception is `deletePlotItem`, which compacts what is left of a
  * single plot after a removal that changed no row assignment.
+ *
+ * Pass `updatedAt` when the order itself is the author's edit — a drag. A sync
+ * or merge only sees a tome change through `touchedAt`, the newest `updatedAt`
+ * in it, so a reorder that writes `sortOrder` alone is never carried to another
+ * device. A compaction after a delete passes nothing: the order it writes says
+ * nothing new.
  */
 export const applyOrder = async (
-  table: { update: (id: string, changes: { sortOrder: number }) => Promise<number> },
+  table: {
+    update: (id: string, changes: { sortOrder: number; updatedAt?: string }) => Promise<number>;
+  },
   orderedIds: string[],
+  updatedAt?: string,
 ) => {
   await Promise.all(
-    orderedIds.map((id, index) => table.update(id, { sortOrder: index })),
+    orderedIds.map((id, index) =>
+      table.update(id, updatedAt ? { sortOrder: index, updatedAt } : { sortOrder: index }),
+    ),
   );
 };
