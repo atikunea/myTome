@@ -55,8 +55,13 @@ export function InlineTextField({
   // edit made elsewhere on the page — but never while an edit of our own is
   // waiting, or the author's half-typed word would be replaced by the echo of
   // what they typed a moment ago.
+  //
+  // The store trims what it saves, so the echo of "Mira " is "Mira". That is
+  // the row agreeing with the screen, not a change from elsewhere: adopting it
+  // would delete the space the author paused after. Blur tidies it instead.
   useEffect(() => {
     if (autosave.isDirty()) return;
+    if (value === latest.current.trim()) return;
     latest.current = value;
     setDraft(value);
   }, [value, autosave]);
@@ -80,6 +85,11 @@ export function InlineTextField({
       }}
       onFocus={onFocus}
       onBlur={() => {
+        const trimmed = latest.current.trim();
+        if (trimmed !== latest.current) {
+          latest.current = trimmed;
+          setDraft(trimmed);
+        }
         if (autosave.isDirty()) void autosave.saveNow();
       }}
       onKeyDown={(event) => {
