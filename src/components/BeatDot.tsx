@@ -16,10 +16,23 @@ import { ElementTypeIcon } from "./ElementTypeIcon";
  *
  * It sizes itself to `ICON_DOT_SIZE` in `PlotGrid` when it carries an icon, so
  * the track column can be a fixed width whether or not a beat has one.
+ *
+ * **With `onClick` it is the button that opens the dot's popover.** A plain
+ * `button`, not `ButtonBase`, because it sits in a draggable cell (see
+ * `src/components/AGENTS.md`). The hit area is padded out to 28px so the
+ * 12px knot is reachable by a finger, without changing what is drawn.
  */
-export function BeatDot({ item, thread }: { item: PlotItem; thread: string }) {
+export function BeatDot({
+  item,
+  thread,
+  onClick,
+}: {
+  item: PlotItem;
+  thread: string;
+  onClick?: (anchor: HTMLElement) => void;
+}) {
   const filled = (item.dotVariant ?? "filled") === "filled";
-  return (
+  const knot = (
     <Box
       aria-hidden
       sx={(theme) => {
@@ -48,6 +61,37 @@ export function BeatDot({ item, thread }: { item: PlotItem; thread: string }) {
       }}
     >
       {item.icon ? <ElementTypeIcon icon={item.icon} fontSize="small" /> : null}
+    </Box>
+  );
+  if (!onClick) return knot;
+  return (
+    <Box
+      component="button"
+      type="button"
+      title="Dot style"
+      aria-label={`Dot for ${item.title}`}
+      aria-haspopup="dialog"
+      onClick={(event: React.MouseEvent<HTMLElement>) => {
+        event.stopPropagation();
+        onClick(event.currentTarget);
+      }}
+      sx={{
+        position: "relative",
+        zIndex: 1,
+        width: 28,
+        height: 28,
+        p: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        border: 0,
+        borderRadius: "50%",
+        bgcolor: "transparent",
+        cursor: "pointer",
+        "&:focus-visible": { outline: 2, outlineColor: "primary.main", outlineOffset: 2 },
+      }}
+    >
+      {knot}
     </Box>
   );
 }

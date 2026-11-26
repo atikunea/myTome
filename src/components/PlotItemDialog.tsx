@@ -9,32 +9,18 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  MenuItem,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
-  Tooltip,
-  Typography,
 } from "@mui/material";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
 import type { PlotDotColor, PlotDotVariant, PlotItem } from "../models/Plot";
-import { plotDotColors } from "../models/Plot";
 import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
-import { ElementTypeIcon, elementTypeIconOptions } from "./ElementTypeIcon";
+import { ElementTypeIcon } from "./ElementTypeIcon";
+import { DotStyleControls } from "./DotStyleControls";
 
-const colorLabels: Record<PlotDotColor, string> = {
-  grey: "Neutral",
-  primary: "Primary",
-  secondary: "Secondary",
-  success: "Success",
-  warning: "Warning",
-  error: "Danger",
-  info: "Info",
-};
 
 /**
  * Create/edit dialog for a plot item: what the beat *is* and how it is drawn.
@@ -63,6 +49,7 @@ export function PlotItemDialog({
   plotId,
   elements,
   types,
+  thread,
   onOpenManuscript,
   onClose,
 }: {
@@ -74,6 +61,8 @@ export function PlotItemDialog({
   plotId: string;
   elements: Element[];
   types: ElementType[];
+  /** The plot's thread colour, which the "Thread" swatch is drawn in. */
+  thread: string;
   /** Opens the beat's manuscript. Absent for a beat that does not exist yet. */
   onOpenManuscript?: (item: PlotItem) => void;
   onClose: () => void;
@@ -153,58 +142,17 @@ export function PlotItemDialog({
               minRows={3}
               defaultValue={item?.description ?? ""}
             />
-            <TextField
-              select
-              label="Icon"
-              value={icon}
-              onChange={(event) => setIcon(event.target.value)}
-              fullWidth
-            >
-              <MenuItem value="">No icon</MenuItem>
-              {elementTypeIconOptions.map((option) => (
-                <MenuItem key={option.key} value={option.key}>
-                  <option.Icon fontSize="small" sx={{ mr: 1, verticalAlign: "text-bottom" }} />
-                  {option.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Dot color
-              </Typography>
-              <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
-                {plotDotColors.map((color) => (
-                  <Tooltip key={color} title={colorLabels[color]}>
-                    <Box
-                      component="button"
-                      type="button"
-                      aria-label={colorLabels[color]}
-                      aria-pressed={dotColor === color}
-                      onClick={() => setDotColor(color)}
-                      sx={{
-                        width: 30,
-                        height: 30,
-                        p: 0,
-                        borderRadius: "50%",
-                        cursor: "pointer",
-                        bgcolor: color === "grey" ? "grey.400" : `${color}.main`,
-                        border: 3,
-                        borderColor: dotColor === color ? "text.primary" : "transparent",
-                      }}
-                    />
-                  </Tooltip>
-                ))}
-              </Stack>
-            </Box>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={dotVariant}
-              onChange={(_, value: PlotDotVariant | null) => value && setDotVariant(value)}
-            >
-              <ToggleButton value="filled">Filled</ToggleButton>
-              <ToggleButton value="outlined">Outlined</ToggleButton>
-            </ToggleButtonGroup>
+            <DotStyleControls
+              dotColor={dotColor}
+              dotVariant={dotVariant}
+              icon={icon}
+              thread={thread}
+              onChange={(patch) => {
+                if (patch.dotColor) setDotColor(patch.dotColor);
+                if (patch.dotVariant) setDotVariant(patch.dotVariant);
+                if (patch.icon !== undefined) setIcon(patch.icon);
+              }}
+            />
             <Autocomplete
               multiple
               disableCloseOnSelect

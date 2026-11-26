@@ -29,6 +29,7 @@ import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
 import { monoFontFamily, threadColor } from "../theme";
 import { BeatDot } from "./BeatDot";
+import { BeatDotPopover } from "./BeatDotPopover";
 import { InlineTextField } from "./InlineTextField";
 import { EmptyState } from "./EmptyState";
 import { PlotBeatCard } from "./PlotBeatCard";
@@ -733,13 +734,21 @@ function BeatCell({
     transform,
     isDragging,
   } = useDraggable({ id: item.id, data });
+  // The dot popover's anchor: which field is being edited, so state, not a route.
+  const [dotAnchor, setDotAnchor] = useState<HTMLElement | null>(null);
 
   return (
     // No vertical padding on the cell itself: the track has to run its whole
     // height for the line to meet the next cell's. The card carries the spacing.
     <Box ref={setDropRef} sx={{ minWidth: 0, display: "flex", alignItems: "stretch" }}>
       <Track part={part} color={thread}>
-        <BeatDot item={item} thread={thread} />
+        <BeatDot item={item} thread={thread} onClick={setDotAnchor} />
+        <BeatDotPopover
+          item={item}
+          thread={thread}
+          anchor={dotAnchor}
+          onClose={() => setDotAnchor(null)}
+        />
       </Track>
       <Box
         ref={setDragRef}

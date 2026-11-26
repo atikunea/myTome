@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Box, Button, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Button, IconButton, Stack, Tooltip, Typography, useTheme } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import IosShareIcon from "@mui/icons-material/IosShare";
 import type { Element } from "../models/Element";
@@ -132,6 +132,8 @@ export function PlotPage({
     (plotId: string) => plots?.findIndex((plot) => plot.id === plotId) ?? 0,
     [plots],
   );
+
+  const theme = useTheme();
 
   const canonical = selected.map((plot) => plot.id).join(",");
   const plotsPath = tome ? `/tomes/${tome.id}/plots/${canonical}` : "";
@@ -322,6 +324,7 @@ export function PlotPage({
         // the route, because with several columns on screen a position alone does
         // not say which plot is being added to.
         plotId={editingItem?.plotId ?? insertPlot?.id ?? primary.id}
+        thread={threadColor(theme, threadIndex(editingItem?.plotId ?? insertPlot?.id ?? primary.id))}
         elements={elements}
         types={types}
         onOpenManuscript={(item) =>
