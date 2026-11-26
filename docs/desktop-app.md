@@ -584,7 +584,10 @@ desktop/
   bridge.ts      The types all three sides share. Imports nothing.
   preload.cts    The surface above, and nothing more. CommonJS, because a
                  sandboxed preload cannot be an ES module.
-  menu.ts        The application menu, Edit roles included.
+  menu.ts        The application menu, Edit roles included. Its page items open
+                 a fixed list of library-level routes (`menuRoutes`) by
+                 changing the window's hash — never a tome, plot or other id,
+                 and no bridge member.
   oauth.ts       PKCE, loopback listener, token exchange, refresh. Pure where
                  it can be — the PKCE and callback parsing are testable.
   vault.ts       safeStorage read/write/delete for the refresh token.

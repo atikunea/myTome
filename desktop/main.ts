@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { DriveRequestInit } from "./bridge.js";
 import * as drive from "./drive.js";
 import * as files from "./files.js";
-import { buildApplicationMenu } from "./menu.js";
+import { buildApplicationMenu, type MenuRoute } from "./menu.js";
 
 /**
  * The myTome desktop shell.
@@ -252,6 +252,36 @@ const createWindow = (): BrowserWindow => {
   return win;
 };
 
+/** The window a menu click is about: the focused one, else the only one. */
+const menuWindow = (): BrowserWindow | undefined =>
+  BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+
+/**
+ * A menu route is a fragment change on the page already loaded — the same
+ * URL with a new `#…` — so Chromium makes it a same-document navigation: no
+ * reload, the editor's pending autosave intact, and the `HashRouter` sees an
+ * ordinary `hashchange`. Nothing about the library crosses to this process;
+ * the route is one of the fixed strings in `menu.ts`.
+ */
+const navigateTo = (route: MenuRoute): void => {
+  const win = menuWindow();
+  if (!win) return;
+  const current = win.webContents.getURL();
+  if (!current) return;
+  const base = current.split("#")[0];
+  void win.webContents.loadURL(`${base}#${route}`);
+};
+
+const goBack = (): void => {
+  const history = menuWindow()?.webContents.navigationHistory;
+  if (history?.canGoBack()) history.goBack();
+};
+
+const goForward = (): void => {
+  const history = menuWindow()?.webContents.navigationHistory;
+  if (history?.canGoForward()) history.goForward();
+};
+
 /**
  * Two instances sharing one `userData` means two Chromium profiles opening the
  * same LevelDB, which is how an author's library gets corrupted rather than
@@ -278,7 +308,23 @@ if (!app.requestSingleInstanceLock()) {
     serveRenderer();
     hardenSession();
     registerIpc();
-    Menu.setApplicationMenu(buildApplicationMenu({ appName: app.getName(), openExternal, isDev }));
+    // macOS fills its About panel from the bundle; Windows and Linux show only
+    // what is set here, so the menu's About item has something to say.
+    app.setAboutPanelOptions({
+      applicationName: "myTome",
+      applicationVersion: app.getVersion(),
+      copyright: `© ${new Date().getFullYear()} Art Atikune`,
+    });
+    Menu.setApplicationMenu(
+      buildApplicationMenu({
+        appName: app.getName(),
+        openExternal,
+        navigate: navigateTo,
+        goBack,
+        goForward,
+        isDev,
+      }),
+    );
     createWindow();
 
     // macOS keeps the process alive with no windows; clicking the dock icon
