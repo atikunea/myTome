@@ -59,8 +59,8 @@ const plural = (n: number, word: string) =>
  *
  * **Everything on the card is edited where it is drawn** — label, title,
  * description, attachments — each through its own narrow setter, so the card
- * is not a button and opens no dialog. `PlotItemDialog` is the create form; the
- * old `items/:itemId` link still opens it in edit mode so those links resolve.
+ * is not a button and opens no dialog. `PlotItemDialog` only creates; the
+ * old `items/:itemId` edit link lands on the grid (`PlotPage`).
  *
  * It does not call `useSortable` itself. Whichever container registered the beat
  * as draggable owns the node ref and the transform, and passes the handle's
@@ -209,8 +209,12 @@ export function PlotBeatCard({
             A title is required, so a blank one is never saved: the field puts
             the stored title back on blur, and `save` skips a blank value in case
             the debounce fires first.
+
+            Not a heading: a heading holding only an input reads as an empty one,
+            and a grid of beats would fill the headings list with blanks. The
+            field's own label names it.
           */}
-          <Box component="h3" sx={{ typography: "h6", fontSize: "1.15rem", minWidth: 0, m: 0 }}>
+          <Box sx={{ typography: "h6", fontSize: "1.15rem", minWidth: 0 }}>
             <InlineTextField
               value={item.title}
               required
@@ -233,7 +237,13 @@ export function PlotBeatCard({
               sx={{ lineHeight: 1.5 }}
             />
           </Box>
-          {/* The ✕ detaches; the chip body still opens the element. */}
+          {/*
+            The ✕ detaches; the chip body still opens the element. The ✕ sits
+            inside the chip's own button, so to a screen reader it is never a
+            control of its own: the chip is named for the element and says how
+            to detach (MUI's Chip removes on Delete or Backspace). `titleAccess`
+            is the tooltip a pointer sees on the ✕.
+          */}
           {attachments.length ? (
             <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
               {attachments.map((element) => {
@@ -251,7 +261,10 @@ export function PlotBeatCard({
                         attachments.filter((other) => other.id !== element.id).map((other) => other.id),
                       )
                     }
-                    deleteIcon={<CancelIcon aria-label={`Detach ${element.name}`} />}
+                    aria-label={element.name}
+                    aria-description="Press Delete to detach"
+                    aria-keyshortcuts="Delete"
+                    deleteIcon={<CancelIcon titleAccess={`Detach ${element.name}`} />}
                   />
                 );
               })}
@@ -391,7 +404,11 @@ function AttachButton({
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
         slotProps={{
-          paper: { sx: { p: 2, width: 340, maxWidth: "calc(100vw - 32px)" } },
+          paper: {
+            role: "dialog",
+            "aria-label": `Attach elements to ${item.title}`,
+            sx: { p: 2, width: 340, maxWidth: "calc(100vw - 32px)" },
+          },
           // Focus the search box once the popover has settled. `autoFocus` on
           // the field loses: the Popover's focus trap and the button that was
           // clicked both take focus back after the field mounts, and an

@@ -144,8 +144,10 @@ export function PlotPage({
       // A hand-edited URL naming a deleted or repeated plot is rewritten to what
       // is actually on screen. `rows/:rowId` goes the same way: it addressed the
       // rename dialog, and a label is edited in the gutter now, so there is
-      // nothing for that address to reopen.
-      if (canonical !== plotIds || (!creating && rowId)) navigate(plotsPath, { replace: true });
+      // nothing for that address to reopen. `items/:itemId` likewise: it opened
+      // the beat's edit dialog, and a beat is edited on its card now, so an old
+      // link lands on the grid with the beat in it.
+      if (canonical !== plotIds || (!creating && (rowId || itemId))) navigate(plotsPath, { replace: true });
       return;
     }
     if (plots.length) {
@@ -159,7 +161,7 @@ export function PlotPage({
     return () => {
       active = false;
     };
-  }, [tome, plots, selected, canonical, plotIds, plotsPath, creating, rowId, navigate]);
+  }, [tome, plots, selected, canonical, plotIds, plotsPath, creating, rowId, itemId, navigate]);
 
   if (!tome || !plots) return null;
   if (!selected.length) return null;
@@ -177,7 +179,6 @@ export function PlotPage({
 
   const closeDialog = () => navigate(plotsPath);
   const withColumns = (ids: string[]) => `/tomes/${tome.id}/plots/${ids.join(",")}`;
-  const editingItem = itemId ? allItems.find((item) => item.id === itemId) : undefined;
   const insertPlot = creating ? columns.find((plot) => plot.id === sidePlotId) : undefined;
 
   return (
@@ -315,21 +316,15 @@ export function PlotPage({
       />
 
       <PlotItemDialog
-        open={Boolean(editingItem) || Boolean(insertPlot)}
-        item={editingItem}
-        // Only a create carries a row from the route; an edit keeps the one it has.
-        plotRowId={creating ? rowId : undefined}
+        open={Boolean(insertPlot)}
+        plotRowId={rowId}
         tomeId={tome.id}
-        // An existing beat carries the plot it belongs to; a new one takes it from
-        // the route, because with several columns on screen a position alone does
-        // not say which plot is being added to.
-        plotId={editingItem?.plotId ?? insertPlot?.id ?? primary.id}
-        thread={threadColor(theme, threadIndex(editingItem?.plotId ?? insertPlot?.id ?? primary.id))}
+        // The plot comes from the route, because with several columns on screen
+        // a position alone does not say which plot is being added to.
+        plotId={insertPlot?.id ?? primary.id}
+        thread={threadColor(theme, threadIndex(insertPlot?.id ?? primary.id))}
         elements={elements}
         types={types}
-        onOpenManuscript={(item) =>
-          navigate(`/tomes/${tome.id}/plots/${item.plotId}/items/${item.id}/write`)
-        }
         onClose={closeDialog}
       />
 

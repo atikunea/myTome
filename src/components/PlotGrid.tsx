@@ -745,7 +745,7 @@ function BeatCell({
     // height for the line to meet the next cell's. The card carries the spacing.
     <Box ref={setDropRef} sx={{ minWidth: 0, display: "flex", alignItems: "stretch" }}>
       <Track part={part} color={thread}>
-        <BeatDot item={item} thread={thread} onClick={setDotAnchor} />
+        <BeatDot item={item} thread={thread} onClick={setDotAnchor} expanded={Boolean(dotAnchor)} />
         <BeatDotPopover
           item={item}
           thread={thread}

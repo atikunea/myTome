@@ -27,10 +27,13 @@ export function BeatDot({
   item,
   thread,
   onClick,
+  expanded = false,
 }: {
   item: PlotItem;
   thread: string;
   onClick?: (anchor: HTMLElement) => void;
+  /** Whether the popover this dot opens is open, for `aria-expanded`. */
+  expanded?: boolean;
 }) {
   const filled = (item.dotVariant ?? "filled") === "filled";
   const knot = (
@@ -69,6 +72,7 @@ export function BeatDot({
       title="Dot style"
       aria-label={`Dot for ${item.title}`}
       aria-haspopup="dialog"
+      aria-expanded={expanded}
       onClick={(event: React.MouseEvent<HTMLElement>) => {
         event.stopPropagation();
         onClick(event.currentTarget);

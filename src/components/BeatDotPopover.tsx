@@ -29,7 +29,14 @@ export function BeatDotPopover({
       onClose={onClose}
       anchorOrigin={{ vertical: "center", horizontal: "right" }}
       transformOrigin={{ vertical: "center", horizontal: "left" }}
-      slotProps={{ paper: { sx: { p: 2, width: 300, maxWidth: "calc(100vw - 32px)" } } }}
+      slotProps={{
+        // The dot button says it opens a dialog, so the paper has to be one.
+        paper: {
+          role: "dialog",
+          "aria-label": `Dot style for ${item.title}`,
+          sx: { p: 2, width: 300, maxWidth: "calc(100vw - 32px)" },
+        },
+      }}
     >
       <DotStyleControls
         dotColor={item.dotColor ?? "grey"}

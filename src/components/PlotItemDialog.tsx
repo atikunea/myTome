@@ -10,50 +10,40 @@ import {
   Stack,
   TextField,
 } from "@mui/material";
-import EditNoteIcon from "@mui/icons-material/EditNote";
 import type { Element } from "../models/Element";
 import type { ElementType } from "../models/ElementType";
-import type { PlotDotColor, PlotDotVariant, PlotItem } from "../models/Plot";
+import type { PlotDotColor, PlotDotVariant } from "../models/Plot";
 import { store } from "../services/store";
-import { useConfirm } from "../context/ConfirmContext";
 import { ElementAttachPicker } from "./ElementAttachPicker";
 import { DotStyleControls } from "./DotStyleControls";
 
-
 /**
- * Create/edit dialog for a plot item: what the beat *is* and how it is drawn.
- * `item` edits an existing row; without one it creates, on `plotRowId` if the
- * route named a cell and at the end of the plot otherwise. Either way the row is
- * only written on save, so cancelling leaves no empty item behind.
+ * The form a new beat is created with: what it *is* and how it is drawn. It
+ * creates on `plotRowId` if the route named a cell, and at the end of the plot
+ * otherwise. The row is only written on save, so cancelling leaves no empty
+ * beat behind.
  *
- * **The beat label is deliberately not here either.** `item.name` is typed on
- * the card, where it is read, so this dialog carries the stored value through a
- * save without offering to edit it — see `handleSubmit`. Two fields writing one
- * value is how they drift.
+ * **It only creates.** An existing beat is edited on its card — label, title,
+ * description, dot and attachments each through a narrow setter — so a second
+ * place editing the same values would only be a way for them to drift. The old
+ * `items/:itemId` edit link now lands on the grid instead (`PlotPage`).
  *
- * **Composition is deliberately not here.** The beat's `writeItemIds` — the
- * prose it is made of, in reading order — are edited in the beat's manuscript
- * instead, beside the text they order. That is why this dialog is short again,
- * and why the old "save the composition on the way out" defence is gone: there
- * is no longer a navigation out of an unsaved list to defend against.
- * `savePlotItem` falls back to the stored `writeItemIds` when a caller omits
- * them, so saving from here leaves the composition untouched.
+ * No beat label (it is typed on the card, where it is read) and no
+ * composition: a beat's `writeItemIds` are edited in its manuscript, beside the
+ * text they order.
  */
 export function PlotItemDialog({
   open,
-  item,
   plotRowId,
   tomeId,
   plotId,
   elements,
   types,
   thread,
-  onOpenManuscript,
   onClose,
 }: {
   open: boolean;
-  item?: PlotItem;
-  /** Places a new beat on a specific spine row — the grid creates in a cell. */
+  /** Places the new beat on a specific spine row — the grid creates in a cell. */
   plotRowId?: string;
   tomeId: string;
   plotId: string;
@@ -61,11 +51,8 @@ export function PlotItemDialog({
   types: ElementType[];
   /** The plot's thread colour, which the "Thread" swatch is drawn in. */
   thread: string;
-  /** Opens the beat's manuscript. Absent for a beat that does not exist yet. */
-  onOpenManuscript?: (item: PlotItem) => void;
   onClose: () => void;
 }) {
-  const confirmAction = useConfirm();
   const [error, setError] = useState("");
   const [icon, setIcon] = useState<string>("");
   const [dotColor, setDotColor] = useState<PlotDotColor>("grey");
@@ -75,42 +62,28 @@ export function PlotItemDialog({
   useEffect(() => {
     if (!open) return;
     setError("");
-    setIcon(item?.icon ?? "");
-    setDotColor(item?.dotColor ?? "grey");
-    setDotVariant(item?.dotVariant ?? "filled");
-    setAttached(
-      (item?.attachedElementIds ?? [])
-        .map((id) => elements.find((element) => element.id === id))
-        .filter((element): element is Element => Boolean(element)),
-    );
-    // `elements` is intentionally excluded: re-resolving attachments on every live
-    // element update would discard in-progress edits to the picker.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, item?.id]);
+    setIcon("");
+    setDotColor("grey");
+    setDotVariant("filled");
+    setAttached([]);
+  }, [open]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     try {
-      await store.savePlotItem(
-        {
-          id: item?.id,
-          tomeId,
-          plotId,
-          // Not a field here any more — the label is typed on the card. It still
-          // has to be *carried*, because `savePlotItem` takes `name` as required
-          // and writes what it is given: omitting it, or passing "", would clear
-          // the label every time anything else about the beat was saved.
-          name: item?.name ?? "",
-          title: String(data.get("title") ?? ""),
-          description: String(data.get("description") ?? ""),
-          icon: icon || undefined,
-          dotColor,
-          dotVariant,
-          attachedElementIds: attached.map((element) => element.id),
-          plotRowId,
-        },
-      );
+      await store.savePlotItem({
+        tomeId,
+        plotId,
+        name: "",
+        title: String(data.get("title") ?? ""),
+        description: String(data.get("description") ?? ""),
+        icon: icon || undefined,
+        dotColor,
+        dotVariant,
+        attachedElementIds: attached.map((element) => element.id),
+        plotRowId,
+      });
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save this item.");
@@ -120,25 +93,18 @@ export function PlotItemDialog({
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <Box component="form" onSubmit={handleSubmit}>
-        <DialogTitle>{item ? "Edit item" : "New plot item"}</DialogTitle>
+        <DialogTitle>New plot item</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2.5}>
             {error ? <Alert severity="error">{error}</Alert> : null}
-            <TextField
-              name="title"
-              label="Title"
-              required
-              fullWidth
-              autoFocus
-              defaultValue={item?.title ?? ""}
-            />
+            <TextField name="title" label="Title" required fullWidth autoFocus defaultValue="" />
             <TextField
               name="description"
               label="Description"
               fullWidth
               multiline
               minRows={3}
-              defaultValue={item?.description ?? ""}
+              defaultValue=""
             />
             <DotStyleControls
               dotColor={dotColor}
@@ -162,25 +128,6 @@ export function PlotItemDialog({
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          {item ? (
-            <Button
-              color="error"
-              sx={{ mr: "auto" }}
-              onClick={() =>
-                confirmAction(`Delete "${item.title}" from this plot?`, async () => {
-                  await store.deletePlotItem(item);
-                  onClose();
-                })
-              }
-            >
-              Delete
-            </Button>
-          ) : null}
-          {item && onOpenManuscript ? (
-            <Button startIcon={<EditNoteIcon />} onClick={() => onOpenManuscript(item)}>
-              Write
-            </Button>
-          ) : null}
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="contained">
             Save item

@@ -73,8 +73,8 @@ Each of these bit in more than one component:
   `zIndex.modal + 1`, which is why `FocusSurface`'s header keeps `pr: 6`.
 - **`savePlotItem` writes `name`, `icon`, `dotColor` and `dotVariant` exactly as
   given**, with no fallback to the stored row, so a partial item wipes them.
-  Pass the whole item (`PlotItemDialog` carries `item.name` through a save it
-  no longer edits), or use a narrow setter (`setPlotItemName`). Only the two id
+  Pass the whole item, or — for an existing beat, which is only ever edited
+  on its card — a narrow setter (`setPlotItemName`, `setPlotItemDot`, …). Only the two id
   arrays and `plotRowId` fall back to the stored row.
 
 ## Object URLs: hold the Blob, derive the URL
