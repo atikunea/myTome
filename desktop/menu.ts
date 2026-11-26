@@ -24,10 +24,33 @@ import { Menu, type MenuItemConstructorOptions } from "electron";
 
 const isMac = process.platform === "darwin";
 
+/**
+ * Every page the menu can open, and the only ones. A menu item never names a
+ * tome, a plot or anything else in the library: the main process holds none
+ * of that, and these are the library-level routes that need none of it.
+ * `main.ts` turns one into a hash change, which the renderer's `HashRouter`
+ * picks up like any link — `src/` has no menu code and no bridge member.
+ */
+export const menuRoutes = {
+  library: "/tomes",
+  newTome: "/tomes/new",
+  guide: "/tomes/guide",
+  authors: "/authors",
+  activity: "/activity",
+  backup: "/backup",
+} as const;
+
+export type MenuRoute = (typeof menuRoutes)[keyof typeof menuRoutes];
+
 export interface MenuOptions {
   appName: string;
   /** The https-only wrapper from `main.ts`. Never `shell.openExternal` directly. */
   openExternal: (url: string) => void;
+  /** Opens one of `menuRoutes` in the focused window. */
+  navigate: (route: MenuRoute) => void;
+  /** History in the focused window. The desktop window has no back button. */
+  goBack: () => void;
+  goForward: () => void;
   /** Dev builds get the reload and DevTools items; see `viewMenu`. */
   isDev: boolean;
 }
@@ -76,7 +99,26 @@ const viewMenu = (isDev: boolean): MenuItemConstructorOptions => ({
   ],
 });
 
-export function buildApplicationMenu({ appName, openExternal, isDev }: MenuOptions): Menu {
+/**
+ * Back and Forward use the platform's browser convention, and both pairs are
+ * chosen to miss the editor: Alt+Left/Right is no text-editing key on Windows
+ * or Linux, and Cmd+[ / Cmd+] is none on macOS — where Alt+Left *is* one
+ * (word jump), which is why the Mac does not get the Windows pair.
+ */
+const goMenu = ({ navigate, goBack, goForward }: MenuOptions): MenuItemConstructorOptions => ({
+  label: "Go",
+  submenu: [
+    { label: "Back", accelerator: isMac ? "Cmd+[" : "Alt+Left", click: goBack },
+    { label: "Forward", accelerator: isMac ? "Cmd+]" : "Alt+Right", click: goForward },
+    { type: "separator" },
+    { label: "Library", click: () => navigate(menuRoutes.library) },
+    { label: "Authors", click: () => navigate(menuRoutes.authors) },
+    { label: "Activity", click: () => navigate(menuRoutes.activity) },
+  ],
+});
+
+export function buildApplicationMenu(options: MenuOptions): Menu {
+  const { appName, openExternal, navigate, isDev } = options;
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
       ? ([
@@ -96,10 +138,17 @@ export function buildApplicationMenu({ appName, openExternal, isDev }: MenuOptio
       : []),
     {
       label: "File",
-      submenu: [isMac ? { role: "close" } : { role: "quit" }],
+      submenu: [
+        { label: "New Tome…", accelerator: "CmdOrCtrl+N", click: () => navigate(menuRoutes.newTome) },
+        { type: "separator" },
+        { label: "Backup && Restore…", click: () => navigate(menuRoutes.backup) },
+        { type: "separator" },
+        isMac ? { role: "close" } : { role: "quit" },
+      ],
     },
     editMenu,
     viewMenu(isDev),
+    goMenu(options),
     {
       label: "Window",
       submenu: [
@@ -112,10 +161,14 @@ export function buildApplicationMenu({ appName, openExternal, isDev }: MenuOptio
     {
       role: "help",
       submenu: [
+        { label: "Getting Started Guide", click: () => navigate(menuRoutes.guide) },
         {
           label: "myTome on GitHub",
           click: () => openExternal(repositoryUrl),
         },
+        // macOS has About under the app menu. Elsewhere the role opens
+        // Electron's own message box, filled by `setAboutPanelOptions` in main.ts.
+        ...(isMac ? [] : ([{ type: "separator" }, { role: "about" }] satisfies MenuItemConstructorOptions[])),
       ],
     },
   ];
