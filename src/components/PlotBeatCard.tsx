@@ -1,6 +1,20 @@
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { useState } from "react";
-import { Box, Button, Card, Chip, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Card,
+  Chip,
+  ListItemIcon,
+  Menu,
+  MenuItem,
+  Popover,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import CancelIcon from "@mui/icons-material/Cancel";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
@@ -12,6 +26,7 @@ import type { SaveState } from "../hooks/autosave";
 import { store } from "../services/store";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 import { InlineTextField } from "./InlineTextField";
+import { ElementAttachPicker } from "./ElementAttachPicker";
 import { useConfirm } from "../context/ConfirmContext";
 
 const plural = (n: number, word: string) =>
@@ -44,6 +59,7 @@ export function PlotBeatCard({
   item,
   attachments,
   types,
+  elements,
   onOpenElement,
   onWrite,
   onSaveState,
@@ -57,6 +73,8 @@ export function PlotBeatCard({
    */
   words: number;
   attachments: Element[];
+  /** The tome's elements, for the attach picker. */
+  elements: Element[];
   types: ElementType[];
   onOpenElement: (element: Element) => void;
   /**
@@ -195,22 +213,32 @@ export function PlotBeatCard({
               sx={{ lineHeight: 1.5 }}
             />
           </Box>
-          {attachments.length ? (
-            <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
-              {attachments.map((element) => {
-                const type = types.find((t) => t.id === element.elementTypeId);
-                return (
-                  <Chip
-                    key={element.id}
-                    size="small"
-                    icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
-                    label={element.name}
-                    onClick={() => onOpenElement(element)}
-                  />
-                );
-              })}
-            </Stack>
-          ) : null}
+          {/*
+            Always drawn, so the "+" is there to attach the first element. The
+            ✕ detaches; the chip body still opens the element.
+          */}
+          <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
+            {attachments.map((element) => {
+              const type = types.find((t) => t.id === element.elementTypeId);
+              return (
+                <Chip
+                  key={element.id}
+                  size="small"
+                  icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
+                  label={element.name}
+                  onClick={() => onOpenElement(element)}
+                  onDelete={() =>
+                    void store.setPlotItemAttachments(
+                      item.id,
+                      attachments.filter((other) => other.id !== element.id).map((other) => other.id),
+                    )
+                  }
+                  deleteIcon={<CancelIcon aria-label={`Detach ${element.name}`} />}
+                />
+              );
+            })}
+            <AttachChip item={item} attachments={attachments} elements={elements} types={types} />
+          </Stack>
           <Stack direction="row" sx={{ alignItems: "center", mt: 1.5 }}>
             <Typography variant="overline" color="text.secondary" sx={{ flex: 1, lineHeight: 1.6 }}>
               {item.writeItemIds.length
@@ -287,6 +315,58 @@ function BeatMenu({ item }: { item: PlotItem }) {
           Delete beat
         </MenuItem>
       </Menu>
+    </>
+  );
+}
+
+/**
+ * The "+" after a beat's chips. Always visible, since touch has no hover. Each
+ * pick saves at once — there is nothing to confirm about an association.
+ */
+function AttachChip({
+  item,
+  attachments,
+  elements,
+  types,
+}: {
+  item: PlotItem;
+  attachments: Element[];
+  elements: Element[];
+  types: ElementType[];
+}) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <Chip
+        size="small"
+        variant="outlined"
+        icon={<AddIcon fontSize="small" />}
+        label={attachments.length ? undefined : "Attach"}
+        aria-label={`Attach elements to ${item.title}`}
+        onClick={(event) => setAnchor(event.currentTarget)}
+        sx={attachments.length ? { "& .MuiChip-label": { display: "none" }, "& .MuiChip-icon": { mx: 0.5 } } : undefined}
+      />
+      <Popover
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        slotProps={{ paper: { sx: { p: 2, width: 340, maxWidth: "calc(100vw - 32px)" } } }}
+      >
+        <ElementAttachPicker
+          elements={elements}
+          types={types}
+          value={attachments}
+          onChange={(value) =>
+            void store.setPlotItemAttachments(
+              item.id,
+              value.map((element) => element.id),
+            )
+          }
+          label="Attached elements"
+          autoFocus
+        />
+      </Popover>
     </>
   );
 }

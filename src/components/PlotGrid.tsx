@@ -419,6 +419,7 @@ export function PlotGrid({
                       key={plot.id}
                       item={item}
                       types={types}
+                      elements={elements}
                       part={part}
                       thread={colorOf(plot)}
                       words={wordCountOf(item)}
@@ -703,6 +704,7 @@ function BeatCell({
   item,
   attachments,
   types,
+  elements,
   part,
   thread,
   words,
@@ -713,6 +715,7 @@ function BeatCell({
   item: PlotItem;
   attachments: Element[];
   types: ElementType[];
+  elements: Element[];
   part: TrackPart;
   thread: string;
   words: number;
@@ -772,6 +775,7 @@ function BeatCell({
           words={words}
           attachments={attachments}
           types={types}
+          elements={elements}
           onOpenElement={onOpenElement}
           onWrite={onWrite}
           onSaveState={onSaveState}

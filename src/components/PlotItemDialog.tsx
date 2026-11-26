@@ -1,10 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -18,7 +16,7 @@ import type { ElementType } from "../models/ElementType";
 import type { PlotDotColor, PlotDotVariant, PlotItem } from "../models/Plot";
 import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
-import { ElementTypeIcon } from "./ElementTypeIcon";
+import { ElementAttachPicker } from "./ElementAttachPicker";
 import { DotStyleControls } from "./DotStyleControls";
 
 
@@ -153,55 +151,13 @@ export function PlotItemDialog({
                 if (patch.icon !== undefined) setIcon(patch.icon);
               }}
             />
-            <Autocomplete
-              multiple
-              disableCloseOnSelect
-              options={[...elements].sort((a, b) =>
-                a.elementTypeId.localeCompare(b.elementTypeId) || a.name.localeCompare(b.name),
-              )}
+            <ElementAttachPicker
+              elements={elements}
+              types={types}
               value={attached}
-              onChange={(_, value) => setAttached(value)}
-              getOptionLabel={(option) => option.name}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              groupBy={(option) =>
-                types.find((t) => t.id === option.elementTypeId)?.name ?? "Other"
-              }
-              renderOption={(props, option) => {
-                const type = types.find((t) => t.id === option.elementTypeId);
-                return (
-                  <Box component="li" {...props} key={option.id}>
-                    <ElementTypeIcon
-                      icon={type?.icon}
-                      fontSize="small"
-                      sx={{ mr: 1, color: "text.secondary" }}
-                    />
-                    {option.name}
-                  </Box>
-                );
-              }}
-              renderValue={(value, getItemProps) =>
-                value.map((option, index) => {
-                  const type = types.find((t) => t.id === option.elementTypeId);
-                  const { key, ...itemProps } = getItemProps({ index });
-                  return (
-                    <Chip
-                      key={key}
-                      size="small"
-                      variant="outlined"
-                      icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
-                      label={option.name}
-                      {...itemProps}
-                    />
-                  );
-                })
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Attached elements"
-                  helperText="Elements involved in this beat — no description, just an association"
-                />
-              )}
+              onChange={setAttached}
+              label="Attached elements"
+              helperText="Elements involved in this beat — no description, just an association"
             />
           </Stack>
         </DialogContent>
