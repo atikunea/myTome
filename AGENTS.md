@@ -427,8 +427,10 @@ in `App.tsx`.
 - **A beat's manuscript has one address**, `plots/:plotId/items/:itemId/write`,
   never scoped to the columns on screen.
 - **Old links keep resolving**: `plots/compare/:plotIds[/*]`
-  (`PlotCompareRedirect`) and `plots/:plotIds/rows/:rowId` land on the current
-  shapes. Don't remove them without deciding those links may 404.
+  (`PlotCompareRedirect`), `plots/:plotIds/rows/:rowId` and
+  `plots/:plotIds/items/:itemId` land on the current shapes — the last two on
+  the grid, since a row label and a beat are both edited where they sit. Don't
+  remove them without deciding those links may 404.
 - **The activity tracker splits by what the number is about.** `/activity` is
   library-level because the daily goal is one row every book is measured against
   — one habit, one streak — while `/tomes/:tomeId/activity` draws one book's

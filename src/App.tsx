@@ -103,6 +103,12 @@ export default function App() {
                   */}
                   <Route path="plots" element={<PlotPage />} />
                   <Route path="plots/:plotIds" element={<PlotPage />} />
+                  {/*
+                    Legacy, like `rows/:rowId` below. It opened a beat's edit
+                    dialog; a beat is edited on its card now, so `PlotPage`
+                    replaces the address with the plot's own and the beat is
+                    simply on screen.
+                  */}
                   <Route path="plots/:plotIds/items/:itemId" element={<PlotPage />} />
                   {/*
                     Legacy. A row label is edited in the gutter now, so there is

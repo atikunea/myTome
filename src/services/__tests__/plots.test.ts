@@ -180,6 +180,94 @@ describe("setPlotItemName", () => {
   });
 });
 
+/**
+ * The card edits a beat one field at a time, so each of these must write its
+ * own field and nothing else — the same reason `setPlotItemName` exists.
+ */
+async function drawnBeat() {
+  const { tome, plots } = await makeTome(["Main"]);
+  const beat = await store.savePlotItem({
+    tomeId: tome.id,
+    plotId: plots[0].id,
+    name: "Act I",
+    title: "The ford",
+    description: "Crossing at dusk",
+    icon: "Place",
+    dotColor: "warning",
+    dotVariant: "outlined",
+    attachedElementIds: ["mira"],
+  });
+  return { tome, beat };
+}
+
+describe("setPlotItemTitle", () => {
+  it("trims the title and leaves the rest of the beat alone", async () => {
+    const { tome, beat } = await drawnBeat();
+
+    await store.setPlotItemTitle(beat.id, "  The crossing  ");
+
+    expect(await db.plotItems.get(beat.id)).toMatchObject({
+      name: "Act I",
+      title: "The crossing",
+      description: "Crossing at dusk",
+      icon: "Place",
+      dotColor: "warning",
+      dotVariant: "outlined",
+      attachedElementIds: ["mira"],
+    });
+    await expectSpineIntact(tome.id);
+  });
+});
+
+describe("setPlotItemDescription", () => {
+  it("keeps inner line breaks and trims only the end", async () => {
+    const { beat } = await drawnBeat();
+
+    await store.setPlotItemDescription(beat.id, "Line one\nLine two  \n");
+
+    expect((await db.plotItems.get(beat.id))?.description).toBe("Line one\nLine two");
+  });
+});
+
+describe("setPlotItemDot", () => {
+  it("writes only the keys it is given, and clears the icon on undefined", async () => {
+    const { beat } = await drawnBeat();
+
+    await store.setPlotItemDot(beat.id, { dotVariant: "filled" });
+    expect(await db.plotItems.get(beat.id)).toMatchObject({
+      dotColor: "warning",
+      dotVariant: "filled",
+      icon: "Place",
+      name: "Act I",
+      title: "The ford",
+      description: "Crossing at dusk",
+      attachedElementIds: ["mira"],
+      writeItemIds: [],
+      plotRowId: beat.plotRowId,
+    });
+
+    await store.setPlotItemDot(beat.id, { icon: undefined });
+    const stored = await db.plotItems.get(beat.id);
+    expect(stored?.icon).toBeUndefined();
+    expect(stored?.dotColor).toBe("warning");
+  });
+});
+
+describe("setPlotItemAttachments", () => {
+  it("drops repeats in first-seen order and leaves the rest alone", async () => {
+    const { beat } = await drawnBeat();
+
+    await store.setPlotItemAttachments(beat.id, ["a", "b", "a"]);
+
+    expect(await db.plotItems.get(beat.id)).toMatchObject({
+      attachedElementIds: ["a", "b"],
+      title: "The ford",
+      dotColor: "warning",
+      writeItemIds: [],
+    });
+  });
+});
+
 describe("reorderPlots and sync", () => {
   it("moves updatedAt, so the new order reaches touchedAt", async () => {
     const { tome, plots } = await makeTome(["A", "B"]);

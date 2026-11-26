@@ -1,4 +1,5 @@
 import { createTheme, type PaletteMode, type Theme, type ThemeOptions } from "@mui/material/styles";
+import type { PlotDotColor } from "./models/Plot";
 
 import gelasioLatin from "./assets/fonts/gelasio-latin.woff2";
 import gelasioLatinExt from "./assets/fonts/gelasio-latin-ext.woff2";
@@ -43,6 +44,15 @@ export interface LoomTokens {
   lift: string;
   /** The writing surface's scrim. */
   backdrop: string;
+  /**
+   * The colours a beat's dot can be given, by its stored name. Their own set,
+   * not MUI's palette roles: in dark mode `primary` and `warning` are the same
+   * brass, and `secondary` and `error` are near-twins, so seven swatches drew as
+   * four colours. One hue each, spaced round the wheel, deepened in light mode
+   * to read on white. The stored names stay the palette-role names they always
+   * were, so no beat, backup or synced file changes — only how they are drawn.
+   */
+  dots: Readonly<Record<Exclude<PlotDotColor, "grey">, string>>;
   /** Plot thread colours, assigned by a plot's position in its tome. */
   threads: readonly string[];
 }
@@ -69,6 +79,14 @@ const darkLoom: LoomTokens = {
   lift: "none",
   backdrop: "rgba(5, 7, 20, 0.72)",
   threads: ["#e7b95a", "#f08a6c", "#6fd3c1", "#b79cff", "#7fb2f0", "#e58fb6"],
+  dots: {
+    primary: "#f4e66a",
+    warning: "#ff9a4d",
+    error: "#ff6b6b",
+    secondary: "#b38cff",
+    info: "#5ea8ff",
+    success: "#6fd68a",
+  },
 };
 
 const lightLoom: LoomTokens = {
@@ -84,6 +102,14 @@ const lightLoom: LoomTokens = {
   lift: "0 1px 2px rgba(22, 26, 51, 0.06), 0 8px 22px rgba(22, 26, 51, 0.07)",
   backdrop: "rgba(22, 26, 51, 0.45)",
   threads: ["#c4922f", "#d9623f", "#1e9c88", "#7c5ce0", "#3f7fd1", "#c2508a"],
+  dots: {
+    primary: "#8f8100",
+    warning: "#d9661f",
+    error: "#d33a3a",
+    secondary: "#7a4fd6",
+    info: "#2f6fd6",
+    success: "#2e9150",
+  },
 };
 
 /**
@@ -93,6 +119,15 @@ const lightLoom: LoomTokens = {
  */
 export const threadColor = (theme: Theme, index: number) =>
   theme.loom.threads[Math.max(index, 0) % theme.loom.threads.length];
+
+/**
+ * What a beat's dot is drawn in. `grey` — every beat's default — is the
+ * plot's own thread, and so is any name this build does not know: a backup or
+ * a synced file from a newer build may carry a colour added after this one
+ * shipped, and drawing it in the thread beats throwing on the plot page.
+ */
+export const dotColor = (theme: Theme, color: PlotDotColor | undefined, thread: string) =>
+  (color && color !== "grey" && theme.loom.dots[color]) || thread;
 
 const lightPalette: ThemeOptions["palette"] = {
   mode: "light" as PaletteMode,

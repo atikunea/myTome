@@ -29,6 +29,7 @@ import { store } from "../services/store";
 import { useConfirm } from "../context/ConfirmContext";
 import { monoFontFamily, threadColor } from "../theme";
 import { BeatDot } from "./BeatDot";
+import { BeatDotPopover } from "./BeatDotPopover";
 import { InlineTextField } from "./InlineTextField";
 import { EmptyState } from "./EmptyState";
 import { PlotBeatCard } from "./PlotBeatCard";
@@ -176,7 +177,6 @@ export function PlotGrid({
   threadIndex,
   wordCountOf,
   renderColumnHeader,
-  onOpenItem,
   onOpenElement,
   onWrite,
   onAddBeat,
@@ -205,7 +205,6 @@ export function PlotGrid({
    * there would be the plot's name for the third time on one screen.
    */
   renderColumnHeader?: (plot: Plot) => ReactNode;
-  onOpenItem: (item: PlotItem) => void;
   onOpenElement: (element: Element) => void;
   /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
   onWrite: (item: PlotItem) => void;
@@ -420,13 +419,13 @@ export function PlotGrid({
                       key={plot.id}
                       item={item}
                       types={types}
+                      elements={elements}
                       part={part}
                       thread={colorOf(plot)}
                       words={wordCountOf(item)}
                       attachments={item.attachedElementIds
                         .map((id) => elementsById.get(id))
                         .filter((element): element is Element => Boolean(element))}
-                      onOpen={() => onOpenItem(item)}
                       onOpenElement={onOpenElement}
                       onWrite={onWrite}
                       onSaveState={onSaveState}
@@ -705,10 +704,10 @@ function BeatCell({
   item,
   attachments,
   types,
+  elements,
   part,
   thread,
   words,
-  onOpen,
   onOpenElement,
   onWrite,
   onSaveState,
@@ -716,10 +715,10 @@ function BeatCell({
   item: PlotItem;
   attachments: Element[];
   types: ElementType[];
+  elements: Element[];
   part: TrackPart;
   thread: string;
   words: number;
-  onOpen: () => void;
   onOpenElement: (element: Element) => void;
   /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
   onWrite: (item: PlotItem) => void;
@@ -738,13 +737,21 @@ function BeatCell({
     transform,
     isDragging,
   } = useDraggable({ id: item.id, data });
+  // The dot popover's anchor: which field is being edited, so state, not a route.
+  const [dotAnchor, setDotAnchor] = useState<HTMLElement | null>(null);
 
   return (
     // No vertical padding on the cell itself: the track has to run its whole
     // height for the line to meet the next cell's. The card carries the spacing.
     <Box ref={setDropRef} sx={{ minWidth: 0, display: "flex", alignItems: "stretch" }}>
       <Track part={part} color={thread}>
-        <BeatDot item={item} thread={thread} />
+        <BeatDot item={item} thread={thread} onClick={setDotAnchor} expanded={Boolean(dotAnchor)} />
+        <BeatDotPopover
+          item={item}
+          thread={thread}
+          anchor={dotAnchor}
+          onClose={() => setDotAnchor(null)}
+        />
       </Track>
       <Box
         ref={setDragRef}
@@ -768,7 +775,7 @@ function BeatCell({
           words={words}
           attachments={attachments}
           types={types}
-          onOpen={onOpen}
+          elements={elements}
           onOpenElement={onOpenElement}
           onWrite={onWrite}
           onSaveState={onSaveState}

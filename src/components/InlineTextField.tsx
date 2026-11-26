@@ -21,6 +21,7 @@ export function InlineTextField({
   value,
   placeholder,
   multiline = false,
+  required = false,
   ariaLabel,
   sx,
   save,
@@ -30,6 +31,12 @@ export function InlineTextField({
   value: string;
   placeholder: string;
   multiline?: boolean;
+  /**
+   * The value cannot be blank — a beat's title. Leaving the field empty puts
+   * the stored value back on blur instead of saving. The caller's `save` must
+   * also refuse a blank value, because the debounce can fire before the blur.
+   */
+  required?: boolean;
   ariaLabel: string;
   sx?: SxProps<Theme>;
   save: (value: string) => Promise<void>;
@@ -85,6 +92,15 @@ export function InlineTextField({
       }}
       onFocus={onFocus}
       onBlur={() => {
+        if (required && !latest.current.trim()) {
+          latest.current = value;
+          setDraft(value);
+          // `reset`, not `cancel`: cancel leaves the machine dirty, which
+          // would stall the status, stop this field following the row, and
+          // have the unmount flush write a stale value back over a newer one.
+          autosave.reset();
+          return;
+        }
         const trimmed = latest.current.trim();
         if (trimmed !== latest.current) {
           latest.current = trimmed;
