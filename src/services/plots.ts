@@ -205,6 +205,39 @@ export const plotStore = {
   async setPlotItemName(itemId: string, name: string) {
     await db.plotItems.update(itemId, { name: name.trim(), updatedAt: now() });
   },
+  /**
+   * The rest of the card's inline edits, narrow for the same reason as
+   * `setPlotItemName`. A title is required, but that is the caller's check
+   * (`validatePlotItem`): the card simply does not save a blank one.
+   */
+  async setPlotItemTitle(itemId: string, title: string) {
+    await db.plotItems.update(itemId, { title: title.trim(), updatedAt: now() });
+  },
+  /** Only the end is trimmed: a description's own line breaks are the author's. */
+  async setPlotItemDescription(itemId: string, description: string) {
+    await db.plotItems.update(itemId, { description: description.trimEnd(), updatedAt: now() });
+  },
+  /**
+   * Writes only the keys present in `patch`, so choosing a variant never resets
+   * the colour. An `icon` key set to `undefined` removes the stored icon —
+   * Dexie deletes a field updated to `undefined`.
+   */
+  async setPlotItemDot(
+    itemId: string,
+    patch: Partial<Pick<PlotItem, "dotColor" | "dotVariant" | "icon">>,
+  ) {
+    const changes: Partial<PlotItem> = { updatedAt: now() };
+    if ("dotColor" in patch) changes.dotColor = patch.dotColor;
+    if ("dotVariant" in patch) changes.dotVariant = patch.dotVariant;
+    if ("icon" in patch) changes.icon = patch.icon;
+    await db.plotItems.update(itemId, changes);
+  },
+  async setPlotItemAttachments(itemId: string, elementIds: string[]) {
+    await db.plotItems.update(itemId, {
+      attachedElementIds: [...new Set(elementIds)],
+      updatedAt: now(),
+    });
+  },
   async deletePlotItem(item: Pick<PlotItem, "id" | "plotId">) {
     await db.transaction("rw", db.plotItems, async () => {
       await db.plotItems.delete(item.id);
