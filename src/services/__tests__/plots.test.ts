@@ -238,7 +238,12 @@ describe("setPlotItemDot", () => {
       dotColor: "warning",
       dotVariant: "filled",
       icon: "Place",
+      name: "Act I",
       title: "The ford",
+      description: "Crossing at dusk",
+      attachedElementIds: ["mira"],
+      writeItemIds: [],
+      plotRowId: beat.plotRowId,
     });
 
     await store.setPlotItemDot(beat.id, { icon: undefined });
