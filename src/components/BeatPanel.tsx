@@ -79,7 +79,7 @@ export function BeatPanel({
     <Stack spacing={2}>
       <PanelCard label="The beat">
         {beat.description ? (
-          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.55 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.55, whiteSpace: "pre-line" }}>
             {beat.description}
           </Typography>
         ) : (
