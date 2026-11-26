@@ -302,7 +302,6 @@ export function PlotPage({
               )
             : undefined
         }
-        onOpenItem={(item) => navigate(`${plotsPath}/items/${item.id}`)}
         onOpenElement={(element) =>
           navigate(`/tomes/${tome.id}/elements/${element.elementTypeId}/${element.id}`)
         }

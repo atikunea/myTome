@@ -1,5 +1,8 @@
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
-import { Box, Button, Card, Chip, Stack, Tooltip, Typography } from "@mui/material";
+import { useState } from "react";
+import { Box, Button, Card, Chip, ListItemIcon, Menu, MenuItem, Stack, Tooltip, Typography } from "@mui/material";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import type { PlotItem } from "../models/Plot";
@@ -9,6 +12,7 @@ import type { SaveState } from "../hooks/autosave";
 import { store } from "../services/store";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 import { InlineTextField } from "./InlineTextField";
+import { useConfirm } from "../context/ConfirmContext";
 
 const plural = (n: number, word: string) =>
   `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
@@ -26,6 +30,11 @@ const plural = (n: number, word: string) =>
  * the compare view. The dot moved to the track for the same reason: one place
  * per thing.
  *
+ * **Everything on the card is edited where it is drawn** — label, title,
+ * description, attachments — each through its own narrow setter, so the card
+ * is not a button and opens no dialog. `PlotItemDialog` is the create form; the
+ * old `items/:itemId` link still opens it in edit mode so those links resolve.
+ *
  * It does not call `useSortable` itself. Whichever container registered the beat
  * as draggable owns the node ref and the transform, and passes the handle's
  * wiring down through `dragHandle` — in a grid the draggable node is the cell,
@@ -35,7 +44,6 @@ export function PlotBeatCard({
   item,
   attachments,
   types,
-  onOpen,
   onOpenElement,
   onWrite,
   onSaveState,
@@ -50,7 +58,6 @@ export function PlotBeatCard({
   words: number;
   attachments: Element[];
   types: ElementType[];
-  onOpen: () => void;
   onOpenElement: (element: Element) => void;
   /**
    * Opens the beat's manuscript. This is the way in to a beat's writing now
@@ -73,41 +80,26 @@ export function PlotBeatCard({
   return (
     <Card
       variant="outlined"
-      role="button"
-      tabIndex={0}
-      aria-label={`Edit ${item.title}`}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        // The card is the click target for editing, so it needs the keyboard
-        // activation a real button would give it for free.
-        if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
       sx={{
         p: 2,
-        cursor: "pointer",
         transition: "border-color 120ms ease",
         // The reveal lives here rather than on the container so that a card
         // carries its own handle affordance into whatever layout holds it.
-        "&:hover .drag-handle": { opacity: 1 },
+        // Below `sm` there is no hover, so the menu stays visible there.
+        "&:hover .drag-handle, &:hover .beat-menu": { opacity: 1 },
+        "& .beat-menu": { opacity: { xs: 1, sm: 0 } },
         // An unnamed beat keeps its label slot but says nothing in it until the
         // card is under the pointer or the field has focus. Most beats never get
         // a label, and a grid of cards each reading "BEAT LABEL" would be worse
-        // than the thing it is advertising.
-        "& .beat-label input::placeholder": { opacity: 0, transition: "opacity 120ms ease" },
-        "&:hover .beat-label input::placeholder, & .beat-label input:focus::placeholder": {
-          opacity: 0.5,
+        // than the thing it is advertising. An empty description does the same.
+        "& .beat-label input::placeholder, & .beat-description textarea::placeholder": {
+          opacity: 0,
+          transition: "opacity 120ms ease",
         },
+        "&:hover .beat-label input::placeholder, & .beat-label input:focus::placeholder, &:hover .beat-description textarea::placeholder, & .beat-description textarea:focus::placeholder":
+          { opacity: 0.5 },
         bgcolor: "background.paper",
         "&:hover": { borderColor: (t) => t.loom.brassLine },
-        "&:focus-visible": {
-          outline: 2,
-          outlineColor: "primary.main",
-          outlineOffset: 2,
-        },
       }}
     >
       <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
@@ -165,10 +157,6 @@ export function PlotBeatCard({
           <Box
             className="beat-label"
             sx={{ typography: "overline", color: "text.secondary", lineHeight: 1.6 }}
-            // The card is the click target for the dialog, so the field has to
-            // keep its own clicks — the same guard the chips and the write
-            // button make.
-            onClick={(event) => event.stopPropagation()}
           >
             <InlineTextField
               value={item.name}
@@ -179,14 +167,34 @@ export function PlotBeatCard({
               sx={{ lineHeight: 1.6, "& input": { textTransform: "uppercase" } }}
             />
           </Box>
-          <Typography variant="h6" component="h3" sx={{ fontSize: "1.15rem", minWidth: 0 }}>
-            {item.title}
-          </Typography>
-          {item.description ? (
-            <Typography color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5, whiteSpace: "pre-line" }}>
-              {item.description}
-            </Typography>
-          ) : null}
+          {/*
+            A title is required, so a blank one is never saved: the field puts
+            the stored title back on blur, and `save` skips a blank value in case
+            the debounce fires first.
+          */}
+          <Box component="h3" sx={{ typography: "h6", fontSize: "1.15rem", minWidth: 0, m: 0 }}>
+            <InlineTextField
+              value={item.title}
+              required
+              placeholder="Untitled beat"
+              ariaLabel={`Title of ${item.title}`}
+              save={(title) =>
+                title.trim() ? store.setPlotItemTitle(item.id, title) : Promise.resolve()
+              }
+              onSaveState={onSaveState}
+            />
+          </Box>
+          <Box className="beat-description" sx={{ color: "text.secondary", mt: 0.5, lineHeight: 1.5 }}>
+            <InlineTextField
+              value={item.description}
+              multiline
+              placeholder="Add a description"
+              ariaLabel={`Description of ${item.title}`}
+              save={(description) => store.setPlotItemDescription(item.id, description)}
+              onSaveState={onSaveState}
+              sx={{ lineHeight: 1.5 }}
+            />
+          </Box>
           {attachments.length ? (
             <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
               {attachments.map((element) => {
@@ -197,10 +205,7 @@ export function PlotBeatCard({
                     size="small"
                     icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
                     label={element.name}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenElement(element);
-                    }}
+                    onClick={() => onOpenElement(element)}
                   />
                 );
               })}
@@ -212,15 +217,13 @@ export function PlotBeatCard({
                 ? `${plural(words, "word")} · ${plural(item.writeItemIds.length, "text")}`
                 : "No text yet"}
             </Typography>
+            <BeatMenu item={item} />
             <Button
               size="small"
               variant="outlined"
               startIcon={<EditNoteIcon fontSize="small" />}
               aria-label={`Write ${item.title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onWrite(item);
-              }}
+              onClick={() => onWrite(item)}
               sx={{ minHeight: 30, py: 0 }}
             >
               Write
@@ -229,5 +232,61 @@ export function PlotBeatCard({
         </Box>
       </Stack>
     </Card>
+  );
+}
+
+/**
+ * The card's own actions. Only Delete lives here: everything else about a beat
+ * is edited where it is drawn, so the card stopped opening a dialog.
+ *
+ * A plain button, for the drag handle's reason — it sits inside a draggable
+ * cell. Revealed on hover like the handle where there is hover, always shown
+ * below `sm` where there is not; `:focus-visible` shows it to the keyboard.
+ */
+function BeatMenu({ item }: { item: PlotItem }) {
+  const confirmAction = useConfirm();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <Box
+        component="button"
+        type="button"
+        className="beat-menu"
+        title="More actions"
+        aria-label={`More actions for ${item.title}`}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(anchor)}
+        onClick={(event: React.MouseEvent<HTMLElement>) => setAnchor(event.currentTarget)}
+        sx={{
+          mr: 0.5,
+          p: 0.5,
+          display: "inline-flex",
+          border: 0,
+          borderRadius: "50%",
+          bgcolor: "transparent",
+          color: "text.secondary",
+          cursor: "pointer",
+          transition: "opacity 120ms ease",
+          "&:hover": { bgcolor: "action.hover" },
+          "&:focus-visible": { opacity: 1 },
+        }}
+      >
+        <MoreVertIcon fontSize="small" />
+      </Box>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+        <MenuItem
+          sx={{ color: "error.main" }}
+          onClick={() => {
+            setAnchor(null);
+            confirmAction(`Delete "${item.title}" from this plot?`, () => store.deletePlotItem(item));
+          }}
+        >
+          <ListItemIcon sx={{ color: "inherit" }}>
+            <DeleteOutlineIcon fontSize="small" />
+          </ListItemIcon>
+          Delete beat
+        </MenuItem>
+      </Menu>
+    </>
   );
 }

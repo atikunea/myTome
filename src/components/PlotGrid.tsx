@@ -176,7 +176,6 @@ export function PlotGrid({
   threadIndex,
   wordCountOf,
   renderColumnHeader,
-  onOpenItem,
   onOpenElement,
   onWrite,
   onAddBeat,
@@ -205,7 +204,6 @@ export function PlotGrid({
    * there would be the plot's name for the third time on one screen.
    */
   renderColumnHeader?: (plot: Plot) => ReactNode;
-  onOpenItem: (item: PlotItem) => void;
   onOpenElement: (element: Element) => void;
   /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
   onWrite: (item: PlotItem) => void;
@@ -426,7 +424,6 @@ export function PlotGrid({
                       attachments={item.attachedElementIds
                         .map((id) => elementsById.get(id))
                         .filter((element): element is Element => Boolean(element))}
-                      onOpen={() => onOpenItem(item)}
                       onOpenElement={onOpenElement}
                       onWrite={onWrite}
                       onSaveState={onSaveState}
@@ -708,7 +705,6 @@ function BeatCell({
   part,
   thread,
   words,
-  onOpen,
   onOpenElement,
   onWrite,
   onSaveState,
@@ -719,7 +715,6 @@ function BeatCell({
   part: TrackPart;
   thread: string;
   words: number;
-  onOpen: () => void;
   onOpenElement: (element: Element) => void;
   /** Opens the beat's manuscript. Threaded through to the card like `onOpenElement`. */
   onWrite: (item: PlotItem) => void;
@@ -768,7 +763,6 @@ function BeatCell({
           words={words}
           attachments={attachments}
           types={types}
-          onOpen={onOpen}
           onOpenElement={onOpenElement}
           onWrite={onWrite}
           onSaveState={onSaveState}
