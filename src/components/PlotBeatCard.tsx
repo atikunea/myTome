@@ -29,6 +29,18 @@ import { InlineTextField } from "./InlineTextField";
 import { ElementAttachPicker } from "./ElementAttachPicker";
 import { useConfirm } from "../context/ConfirmContext";
 
+/**
+ * Attach and Write, side by side in the card's foot. Tighter than MUI's small
+ * button so the pair fits a narrow column on one line.
+ */
+const footButtonSx = {
+  minHeight: 30,
+  py: 0,
+  px: 1,
+  minWidth: 0,
+  "& .MuiButton-startIcon": { mr: 0.5 },
+} as const;
+
 const plural = (n: number, word: string) =>
   `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
@@ -173,19 +185,26 @@ export function PlotBeatCard({
             MUI's own `InputBase-input` resets `text-transform`. Same pair as the
             row gutter in `PlotGrid`.
           */}
-          <Box
-            className="beat-label"
-            sx={{ typography: "overline", color: "text.secondary", lineHeight: 1.6 }}
-          >
-            <InlineTextField
-              value={item.name}
-              placeholder="Beat label"
-              ariaLabel={`Beat label for ${item.title}`}
-              save={(name) => store.setPlotItemName(item.id, name)}
-              onSaveState={onSaveState}
-              sx={{ lineHeight: 1.6, "& input": { textTransform: "uppercase" } }}
-            />
-          </Box>
+          {/*
+            The menu shares the label's line, in the card's top-right corner —
+            the mirror of the drag handle at top-left.
+          */}
+          <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
+            <Box
+              className="beat-label"
+              sx={{ typography: "overline", color: "text.secondary", lineHeight: 1.6, flex: 1, minWidth: 0 }}
+            >
+              <InlineTextField
+                value={item.name}
+                placeholder="Beat label"
+                ariaLabel={`Beat label for ${item.title}`}
+                save={(name) => store.setPlotItemName(item.id, name)}
+                onSaveState={onSaveState}
+                sx={{ lineHeight: 1.6, "& input": { textTransform: "uppercase" } }}
+              />
+            </Box>
+            <BeatMenu item={item} />
+          </Stack>
           {/*
             A title is required, so a blank one is never saved: the field puts
             the stored title back on blur, and `save` skips a blank value in case
@@ -214,49 +233,59 @@ export function PlotBeatCard({
               sx={{ lineHeight: 1.5 }}
             />
           </Box>
-          {/*
-            Always drawn, so the "+" is there to attach the first element. The
-            ✕ detaches; the chip body still opens the element.
-          */}
-          <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
-            {attachments.map((element) => {
-              const type = types.find((t) => t.id === element.elementTypeId);
-              return (
-                <Chip
-                  key={element.id}
-                  size="small"
-                  icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
-                  label={element.name}
-                  onClick={() => onOpenElement(element)}
-                  onDelete={() =>
-                    void store.setPlotItemAttachments(
-                      item.id,
-                      attachments.filter((other) => other.id !== element.id).map((other) => other.id),
-                    )
-                  }
-                  deleteIcon={<CancelIcon aria-label={`Detach ${element.name}`} />}
-                />
-              );
-            })}
-            <AttachChip item={item} attachments={attachments} elements={elements} types={types} />
-          </Stack>
-          <Stack direction="row" sx={{ alignItems: "center", mt: 1.5 }}>
-            <Typography variant="overline" color="text.secondary" sx={{ flex: 1, lineHeight: 1.6 }}>
+          {/* The ✕ detaches; the chip body still opens the element. */}
+          {attachments.length ? (
+            <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
+              {attachments.map((element) => {
+                const type = types.find((t) => t.id === element.elementTypeId);
+                return (
+                  <Chip
+                    key={element.id}
+                    size="small"
+                    icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
+                    label={element.name}
+                    onClick={() => onOpenElement(element)}
+                    onDelete={() =>
+                      void store.setPlotItemAttachments(
+                        item.id,
+                        attachments.filter((other) => other.id !== element.id).map((other) => other.id),
+                      )
+                    }
+                    deleteIcon={<CancelIcon aria-label={`Detach ${element.name}`} />}
+                  />
+                );
+              })}
+            </Stack>
+          ) : null}
+          {/* Wraps rather than squeezing the count when a column is narrow. */}
+          <Stack direction="row" useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", gap: 1, mt: 1.5 }}>
+            <Typography variant="overline" color="text.secondary" sx={{ flex: "1 1 auto", lineHeight: 1.6 }}>
               {item.writeItemIds.length
                 ? `${plural(words, "word")} · ${plural(item.writeItemIds.length, "text")}`
                 : "No text yet"}
             </Typography>
-            <BeatMenu item={item} />
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<EditNoteIcon fontSize="small" />}
-              aria-label={`Write ${item.title}`}
-              onClick={() => onWrite(item)}
-              sx={{ minHeight: 30, py: 0 }}
+            {/*
+              One pair: if the foot is too narrow, both drop below the count
+              together; only a column narrower than the pair itself (two plots
+              on a phone) stacks Attach over Write.
+            */}
+            <Stack
+              direction="row"
+              useFlexGap
+              sx={{ ml: "auto", gap: 0.75, flexWrap: "wrap", justifyContent: "flex-end" }}
             >
-              Write
-            </Button>
+              <AttachButton item={item} attachments={attachments} elements={elements} types={types} />
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<EditNoteIcon fontSize="small" />}
+                aria-label={`Write ${item.title}`}
+                onClick={() => onWrite(item)}
+                sx={footButtonSx}
+              >
+                Write
+              </Button>
+            </Stack>
           </Stack>
         </Box>
       </Stack>
@@ -269,8 +298,9 @@ export function PlotBeatCard({
  * is edited where it is drawn, so the card stopped opening a dialog.
  *
  * A plain button, for the drag handle's reason — it sits inside a draggable
- * cell. Revealed on hover like the handle where there is hover, always shown
- * below `sm` where there is not; `:focus-visible` shows it to the keyboard.
+ * cell. It sits in the card's top-right corner, opposite the handle, and like
+ * the handle is revealed on hover where there is hover and always shown where
+ * there is not; `:focus-visible` shows it to the keyboard.
  */
 function BeatMenu({ item }: { item: PlotItem }) {
   const confirmAction = useConfirm();
@@ -287,7 +317,9 @@ function BeatMenu({ item }: { item: PlotItem }) {
         aria-expanded={Boolean(anchor)}
         onClick={(event: React.MouseEvent<HTMLElement>) => setAnchor(event.currentTarget)}
         sx={{
-          mr: 0.5,
+          // Pulled into the corner the way the drag handle is pulled left.
+          mt: -0.25,
+          mr: -0.5,
           p: 0.5,
           display: "inline-flex",
           border: 0,
@@ -321,10 +353,12 @@ function BeatMenu({ item }: { item: PlotItem }) {
 }
 
 /**
- * The "+" after a beat's chips. Always visible, since touch has no hover. Each
- * pick saves at once — there is nothing to confirm about an association.
+ * Attach, beside Write in the card's foot: the two things a beat is *given* —
+ * its cast and its prose. Always visible, since touch has no hover. Each pick
+ * saves at once — there is nothing to confirm about an association. The chips
+ * it produces still sit under the description.
  */
-function AttachChip({
+function AttachButton({
   item,
   attachments,
   elements,
@@ -338,24 +372,28 @@ function AttachChip({
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
     <>
-      <Chip
+      <Button
         size="small"
         variant="outlined"
-        icon={<AddIcon fontSize="small" />}
-        label={attachments.length ? undefined : "Attach"}
+        startIcon={<AddIcon fontSize="small" />}
         aria-label={`Attach elements to ${item.title}`}
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(event.currentTarget)}
-        sx={attachments.length ? { "& .MuiChip-label": { display: "none" }, "& .MuiChip-icon": { mx: 0.5 } } : undefined}
-      />
+        sx={footButtonSx}
+      >
+        Attach
+      </Button>
       <Popover
         open={Boolean(anchor)}
         anchorEl={anchor}
         onClose={() => setAnchor(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
         slotProps={{
           paper: { sx: { p: 2, width: 340, maxWidth: "calc(100vw - 32px)" } },
           // Focus the search box once the popover has settled. `autoFocus` on
-          // the field loses: the Popover's focus trap and the chip that was
+          // the field loses: the Popover's focus trap and the button that was
           // clicked both take focus back after the field mounts, and an
           // Autocomplete without focus ignores clicks on its options.
           transition: {
