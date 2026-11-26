@@ -351,7 +351,16 @@ function AttachChip({
         anchorEl={anchor}
         onClose={() => setAnchor(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
-        slotProps={{ paper: { sx: { p: 2, width: 340, maxWidth: "calc(100vw - 32px)" } } }}
+        slotProps={{
+          paper: { sx: { p: 2, width: 340, maxWidth: "calc(100vw - 32px)" } },
+          // Focus the search box once the popover has settled. `autoFocus` on
+          // the field loses: the Popover's focus trap and the chip that was
+          // clicked both take focus back after the field mounts, and an
+          // Autocomplete without focus ignores clicks on its options.
+          transition: {
+            onEntered: (node: HTMLElement) => node.querySelector("input")?.focus(),
+          },
+        }}
       >
         <ElementAttachPicker
           elements={elements}
