@@ -237,70 +237,74 @@ export function PlotBeatCard({
               sx={{ lineHeight: 1.5 }}
             />
           </Box>
-          {/*
-            The ✕ detaches; the chip body still opens the element. The ✕ sits
-            inside the chip's own button, so to a screen reader it is never a
-            control of its own: the chip is named for the element and says how
-            to detach (MUI's Chip removes on Delete or Backspace). `titleAccess`
-            is the tooltip a pointer sees on the ✕.
-          */}
-          {attachments.length ? (
-            <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
-              {attachments.map((element) => {
-                const type = types.find((t) => t.id === element.elementTypeId);
-                return (
-                  <Chip
-                    key={element.id}
-                    size="small"
-                    icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
-                    label={element.name}
-                    onClick={() => onOpenElement(element)}
-                    onDelete={() =>
-                      void store.setPlotItemAttachments(
-                        item.id,
-                        attachments.filter((other) => other.id !== element.id).map((other) => other.id),
-                      )
-                    }
-                    aria-label={element.name}
-                    aria-description="Press Delete to detach"
-                    aria-keyshortcuts="Delete"
-                    deleteIcon={<CancelIcon titleAccess={`Detach ${element.name}`} />}
-                  />
-                );
-              })}
-            </Stack>
-          ) : null}
-          {/* Wraps rather than squeezing the count when a column is narrow. */}
-          <Stack direction="row" useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", gap: 1, mt: 1.5 }}>
-            <Typography variant="overline" color="text.secondary" sx={{ flex: "1 1 auto", lineHeight: 1.6 }}>
-              {item.writeItemIds.length
-                ? `${plural(words, "word")} · ${plural(item.writeItemIds.length, "text")}`
-                : "No text yet"}
-            </Typography>
-            {/*
-              One pair: if the foot is too narrow, both drop below the count
-              together; only a column narrower than the pair itself (two plots
-              on a phone) stacks Attach over Write.
-            */}
-            <Stack
-              direction="row"
-              useFlexGap
-              sx={{ ml: "auto", gap: 0.75, flexWrap: "wrap", justifyContent: "flex-end" }}
-            >
-              <AttachButton item={item} attachments={attachments} elements={elements} types={types} />
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<EditNoteIcon fontSize="small" />}
-                aria-label={`Write ${item.title}`}
-                onClick={() => onWrite(item)}
-                sx={footButtonSx}
-              >
-                Write
-              </Button>
-            </Stack>
-          </Stack>
         </Box>
+      </Stack>
+      {/*
+        The chips and the foot sit outside the handle's row, so they span the
+        card's full width. In the narrowest column (two plots on a phone) the
+        handle's 38px left Attach and Write too little room beside it.
+
+        The ✕ detaches; the chip body still opens the element. The ✕ sits
+        inside the chip's own button, so to a screen reader it is never a
+        control of its own: the chip is named for the element and says how
+        to detach (MUI's Chip removes on Delete or Backspace). `titleAccess`
+        is the tooltip a pointer sees on the ✕.
+      */}
+      {attachments.length ? (
+        <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 0.75, mt: 1.25 }}>
+          {attachments.map((element) => {
+            const type = types.find((t) => t.id === element.elementTypeId);
+            return (
+              <Chip
+                key={element.id}
+                size="small"
+                icon={<ElementTypeIcon icon={type?.icon} fontSize="small" />}
+                label={element.name}
+                onClick={() => onOpenElement(element)}
+                onDelete={() =>
+                  void store.setPlotItemAttachments(
+                    item.id,
+                    attachments.filter((other) => other.id !== element.id).map((other) => other.id),
+                  )
+                }
+                aria-label={element.name}
+                aria-description="Press Delete to detach"
+                aria-keyshortcuts="Delete"
+                deleteIcon={<CancelIcon titleAccess={`Detach ${element.name}`} />}
+              />
+            );
+          })}
+        </Stack>
+      ) : null}
+      {/* Wraps rather than squeezing the count when a column is narrow. */}
+      <Stack direction="row" useFlexGap sx={{ alignItems: "center", flexWrap: "wrap", gap: 1, mt: 1.5 }}>
+        <Typography variant="overline" color="text.secondary" sx={{ flex: "1 1 auto", lineHeight: 1.6 }}>
+          {item.writeItemIds.length
+            ? `${plural(words, "word")} · ${plural(item.writeItemIds.length, "text")}`
+            : "No text yet"}
+        </Typography>
+        {/*
+          One pair: if the foot is too narrow, both drop below the count
+          together; only a column narrower than the pair itself (two plots
+          on a phone) stacks Attach over Write.
+        */}
+        <Stack
+          direction="row"
+          useFlexGap
+          sx={{ ml: "auto", gap: 0.75, flexWrap: "wrap", justifyContent: "flex-end" }}
+        >
+          <AttachButton item={item} attachments={attachments} elements={elements} types={types} />
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<EditNoteIcon fontSize="small" />}
+            aria-label={`Write ${item.title}`}
+            onClick={() => onWrite(item)}
+            sx={footButtonSx}
+          >
+            Write
+          </Button>
+        </Stack>
       </Stack>
     </Card>
   );
