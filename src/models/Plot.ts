@@ -60,14 +60,15 @@ export interface PlotItem {
   createdAt: string;
   updatedAt: string;
 }
+/** The swatch order: the thread first, then round the colour wheel. */
 export const plotDotColors: PlotDotColor[] = [
   "grey",
   "primary",
-  "secondary",
-  "success",
   "warning",
   "error",
+  "secondary",
   "info",
+  "success",
 ];
 
 /**

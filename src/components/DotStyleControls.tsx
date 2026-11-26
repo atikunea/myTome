@@ -3,15 +3,21 @@ import BlockIcon from "@mui/icons-material/Block";
 import type { PlotDotColor, PlotDotVariant } from "../models/Plot";
 import { plotDotColors } from "../models/Plot";
 import { elementTypeIconOptions } from "./ElementTypeIcon";
+import { dotColor as dotColorOf } from "../theme";
 
+/**
+ * What each swatch is called. Hue names, not the stored palette-role names:
+ * "Warning" and "Danger" promised a meaning a dot never carried. The stored
+ * values are unchanged — see `loom.dots` in `theme.ts`.
+ */
 export const dotColorLabels: Record<PlotDotColor, string> = {
   grey: "Thread",
-  primary: "Primary",
-  secondary: "Secondary",
-  success: "Success",
-  warning: "Warning",
-  error: "Danger",
-  info: "Info",
+  primary: "Yellow",
+  warning: "Orange",
+  error: "Red",
+  secondary: "Violet",
+  info: "Blue",
+  success: "Green",
 };
 
 export type DotStylePatch = {
@@ -69,7 +75,7 @@ export function DotStyleControls({
                 p: 0,
                 borderRadius: "50%",
                 cursor: "pointer",
-                bgcolor: color === "grey" ? thread : `${color}.main`,
+                bgcolor: (theme) => dotColorOf(theme, color, thread),
                 border: 3,
                 borderColor: dotColor === color ? "text.primary" : "transparent",
                 outlineOffset: 2,
@@ -108,7 +114,7 @@ export function DotStyleControls({
               <Box
                 aria-hidden
                 sx={(theme) => {
-                  const color = dotColor === "grey" ? thread : theme.palette[dotColor].main;
+                  const color = dotColorOf(theme, dotColor, thread);
                   return {
                     width: 12,
                     height: 12,

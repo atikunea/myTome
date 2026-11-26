@@ -1,5 +1,6 @@
 import { Box } from "@mui/material";
-import type { PlotDotColor, PlotItem } from "../models/Plot";
+import type { PlotItem } from "../models/Plot";
+import { dotColor } from "../theme";
 import { ElementTypeIcon } from "./ElementTypeIcon";
 
 /**
@@ -36,10 +37,7 @@ export function BeatDot({
     <Box
       aria-hidden
       sx={(theme) => {
-        const color =
-          item.dotColor && item.dotColor !== "grey"
-            ? theme.palette[item.dotColor as Exclude<PlotDotColor, "grey">].main
-            : thread;
+        const color = dotColor(theme, item.dotColor, thread);
         const ground = theme.palette.background.default;
         return {
           flexShrink: 0,
