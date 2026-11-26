@@ -183,7 +183,7 @@ export function PlotBeatCard({
             {item.title}
           </Typography>
           {item.description ? (
-            <Typography color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5 }}>
+            <Typography color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.5, whiteSpace: "pre-line" }}>
               {item.description}
             </Typography>
           ) : null}
