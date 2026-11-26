@@ -95,7 +95,10 @@ export function InlineTextField({
         if (required && !latest.current.trim()) {
           latest.current = value;
           setDraft(value);
-          autosave.cancel();
+          // `reset`, not `cancel`: cancel leaves the machine dirty, which
+          // would stall the status, stop this field following the row, and
+          // have the unmount flush write a stale value back over a newer one.
+          autosave.reset();
           return;
         }
         const trimmed = latest.current.trim();

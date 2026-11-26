@@ -103,9 +103,10 @@ export function PlotBeatCard({
         transition: "border-color 120ms ease",
         // The reveal lives here rather than on the container so that a card
         // carries its own handle affordance into whatever layout holds it.
-        // Below `sm` there is no hover, so the menu stays visible there.
+        // The menu hides only where there is hover to reveal it: a breakpoint is
+        // a width, and a tablet wider than `sm` still has no hover.
         "&:hover .drag-handle, &:hover .beat-menu": { opacity: 1 },
-        "& .beat-menu": { opacity: { xs: 1, sm: 0 } },
+        "@media (hover: hover)": { "& .beat-menu": { opacity: 0 } },
         // An unnamed beat keeps its label slot but says nothing in it until the
         // card is under the pointer or the field has focus. Most beats never get
         // a label, and a grid of cards each reading "BEAT LABEL" would be worse
